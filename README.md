@@ -179,9 +179,44 @@ trusted upstreams only. The protocol matrix is covered by end-to-end tests in
 
 TLS termination is a first-class toggle. Modes: ACME/Let's Encrypt, manual
 certificates, cert-manager on k3s, or none (TLS handled upstream by Cloudflare,
-a tunnel or a load balancer). Forwarded headers are trusted only from
-explicitly configured proxies; `X-Forwarded-*` is never trusted merely because
-it is present.
+a tunnel or a load balancer).
+
+With **ACME/Let's Encrypt** (`tls.mode: acme`), Menina terminates TLS itself and
+obtains a certificate **automatically for every hostname that has a route**:
+exposing an app (`exposure.enabled: true` with `hosts`) is enough — Menina feeds
+the live routing table into the ACME host policy, so each proxied app gets its
+own certificate. Certificates for route hosts are also **proactively acquired**
+(warmed) as soon as routes are published and refreshed on a timer, so the first
+visitor never waits for issuance and idle hosts still renew. Certificates are
+cached under `tls.acme.storageDir` and renewed automatically (both HTTP-01 on
+`:80` and TLS-ALPN-01 on `:443`). Anything under `networking.baseDomains` is
+also eligible.
+
+Prerequisites: the public DNS name must resolve to the VPS and ports `:80`/`:443`
+must be reachable. When `networking.cloudflare.apiTokenSecretRef` and a public IP
+(`networking.publicIp`, or detected automatically) are available, `menina deploy`
+creates the `A` records for the base domains and the registry domain. `menina
+doctor` validates the ACME directory reachability, the certificate directory,
+and the served certificate for every exposed hostname.
+
+Wildcards (`*.example.com`) are **not** supported: routing and ACME use
+individual hostnames, and wildcard certificates would require DNS-01. Menina
+rejects wildcard hosts with a clear configuration error.
+
+`tls.mode: manual` serves certificates you place in `tls.certDir` named
+`<host>.crt` / `<host>.key`; the directory is re-read periodically so renewed
+files are picked up without a restart. `cert-manager` certificates are not
+consumed automatically by the host proxy yet, so `setup` steers that choice to
+manual mode.
+
+HTTP→HTTPS redirects honor `tls.httpRedirect` and per-route `exposure.redirectHttp`,
+and only trust `X-Forwarded-Proto` from explicitly configured trusted proxies —
+a client cannot spoof it to bypass the redirect. If Cloudflare is proxying the
+record (orange cloud), Cloudflare owns client-facing TLS: use Cloudflare Tunnel
+mode or `tls.mode: none` instead of Menina ACME.
+
+Forwarded headers are trusted only from explicitly configured proxies; `X-Forwarded-*`
+is never trusted merely because it is present.
 
 ## Docker
 
