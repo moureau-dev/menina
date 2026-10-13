@@ -1,0 +1,15 @@
+.git
+.github
+*.md
+!README.md
+bin/
+dist/
+tmp/
+*.db
+*.db-shm
+*.db-wal
+.env
+Dockerfile
+docker-compose.yml
+.dockerignore
+.gitignore

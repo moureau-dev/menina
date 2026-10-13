@@ -1,0 +1,15 @@
+name: development
+
+apps:
+  api:
+    enabled: true
+    image:
+      tag: development
+  web:
+    enabled: true
+    image:
+      tag: development
+    exposure:
+      enabled: true
+      hosts:
+        - demo.localhost

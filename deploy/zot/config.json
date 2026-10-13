@@ -1,0 +1,41 @@
+{
+  "distSpecVersion": "1.1.0",
+  "storage": {
+    "rootDirectory": "/var/lib/registry",
+    "dedupe": true,
+    "gc": true
+  },
+  "http": {
+    "address": "0.0.0.0",
+    "port": "5000"
+  },
+  "log": {
+    "level": "info"
+  },
+  "extensions": {
+    "retention": {
+      "policy": {
+        "repositories": [
+          {
+            "patterns": ["**"],
+            "policies": [
+              { "match": [{ "tag": ".*" }], "retain": 3 }
+            ]
+          }
+        ],
+        "deleteUntagged": false
+      }
+    },
+    "events": {
+      "sinks": [
+        {
+          "type": "http",
+          "address": "http://serve:9000/v2/events",
+          "headers": {
+            "Content-Type": "application/json"
+          }
+        }
+      ]
+    }
+  }
+}

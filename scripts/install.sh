@@ -89,6 +89,29 @@ install_completion() {
   fi
 }
 
+create_service_user() {
+  if id "$APP" >/dev/null 2>&1; then
+    return 0
+  fi
+  if command -v useradd >/dev/null 2>&1; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin --user-group "$APP" \
+      || warn "could not create system user '$APP' with useradd"
+  elif command -v adduser >/dev/null 2>&1; then
+    adduser --system --no-create-home --group "$APP" \
+      || warn "could not create system user '$APP' with adduser"
+  else
+    warn "no useradd/adduser found; create the '$APP' system user before running '$APP deploy'"
+  fi
+  info "ensured system user '$APP'"
+  if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    if usermod -aG "$APP" "$SUDO_USER" >/dev/null 2>&1; then
+      info "added '$SUDO_USER' to group '$APP' (log out and back in to use the CLI without sudo)"
+    else
+      warn "could not add '$SUDO_USER' to group '$APP'; do it manually: sudo usermod -aG $APP $SUDO_USER"
+    fi
+  fi
+}
+
 install_unit_templates() {
   mkdir -p "$SHARE_DIR/systemd"
   cat > "${SHARE_DIR}/systemd/menina-serve.service" <<'EOF'
@@ -145,6 +168,7 @@ main() {
   version="$(resolve_version)"
   [ -n "$version" ] || die "could not determine the latest release version"
   download_and_verify "$version"
+  create_service_user
   install_completion
   install_unit_templates
 

@@ -1,0 +1,15 @@
+name: api
+
+image:
+  repository: registry.moureau.dev/demo/api
+
+workload:
+  type: service
+  port: 8080
+
+resources:
+  cpu: "250m"
+  memory: "256Mi"
+
+exposure:
+  enabled: false

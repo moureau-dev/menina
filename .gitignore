@@ -1,0 +1,30 @@
+# Build output
+/bin/
+/dist/
+/menina
+
+# Local runtime state (if a config dir is created inside the repo)
+*.db
+*.db-shm
+*.db-wal
+*.sock
+*.token
+/kubeconfig
+
+# Secrets / env
+.env
+.env.*
+secrets/
+*.pem
+*.key
+*.crt
+
+# Test / coverage
+*.out
+coverage.*
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

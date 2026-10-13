@@ -40,17 +40,91 @@ menina proxy   # reverse proxy (separate process, independent restarts)
 ## Install
 
 The installer **installs; it does not provision**. It downloads a verified
-native binary, installs shell completion and the systemd unit templates, then
-stops so you can inspect the binary and run provisioning explicitly:
+native binary, creates the `menina` system user, installs shell completion and
+the systemd unit templates, then stops so you can inspect the binary and run
+provisioning explicitly:
 
 ```bash
 curl -fsSL https://menina.moureau.dev/install.sh | sudo sh
-menina setup
-menina deploy
+sudo menina setup
+sudo menina deploy
 ```
 
 Installing Menina does **not** require Docker: k3s ships its own containerd
 runtime.
+
+**Prerequisites for a clean Ubuntu Server VPS**: `amd64` or `arm64`, systemd,
+`curl`, network access to `get.k3s.io` / GitHub Releases / `ghcr.io` /
+Let's Encrypt, and ports `80` and `443` reachable from the internet (plus
+`9000` reachable from the cluster for registry webhooks).
+
+**Privileges**: only `install`, `setup` and `deploy` need root — they create the
+`menina` system user, install k3s, deploy Zot, write systemd units and bind
+`:80`/`:443`. The long-running `menina serve`/`menina proxy` services run as the
+unprivileged `menina` user. Day-to-day CLI commands run as **any user in the
+`menina` group** (the installer adds `$SUDO_USER` automatically; otherwise
+`sudo usermod -aG menina $USER`, then log out and back in). The configuration
+directory is group-writable (`root:menina`, setgid) and the control socket is
+group-accessible, so project/app management, `status`, `routes`, `logs`,
+`doctor`, `app deploy`, `app rollback` and `registry credential` need no sudo.
+
+### Fresh install walkthrough (ending in HTTPS)
+
+```bash
+# 1. Install (root)
+curl -fsSL https://menina.moureau.dev/install.sh | sudo sh
+
+# 2. Configure (root). Point a wildcard-less DNS record at the VPS first
+#    (e.g. *.example.com or explicit hosts -> VPS IP). Choose:
+#      - install k3s with Traefik disabled
+#      - install Zot, set registry.example.com, generate credentials
+#      - Networking: Public VPS ingress (optionally automate DNS with a
+#        Cloudflare API token)
+#      - TLS: terminate in Menina -> ACME / Let's Encrypt, enter an email
+sudo menina setup
+
+# 3. Provision k3s, storage, Zot, the control plane and the proxy.
+#    This waits for the k3s API, deploys Zot, wires the registry route,
+#    creates the service user's kubeconfig, and starts the systemd units.
+sudo menina deploy
+
+# 4. Retrieve the registry push credential (no sudo; user in the menina group)
+menina registry credential
+
+# 5. Define an application (config files are group-writable; no sudo)
+menina project create my-app --namespace my-app
+menina environment create production --project my-app
+menina app create api --project my-app \
+  --repository registry.example.com/my-app/api --port 8080
+
+# 6. Push an image to the registry (from your build machine, not the VPS)
+docker login registry.example.com -u menina
+docker build -t registry.example.com/my-app/api:production .
+docker push registry.example.com/my-app/api:production
+
+# 7. Deploy it (the push also auto-deploys; this forces it explicitly)
+menina app deploy api --project my-app --environment production
+
+# 8. Add exposure so the app has a route and a certificate
+#    In apps/api.yml set workload port; in environments/production.yml:
+#      apps:
+#        api:
+#          enabled: true
+#          image: { tag: production }
+#          exposure:
+#            enabled: true
+#            hosts: [api.example.com]
+#    then redeploy:
+menina app deploy api --project my-app --environment production
+```
+
+`api.example.com` now terminates TLS at the VPS with a Let's Encrypt
+certificate (issued proactively once the route is published) and proxies to the
+app's Kubernetes Service. Verify with `menina doctor` and `menina routes`.
+
+`menina setup`/`menina deploy` create the registry and platform; they do **not**
+create an application for you. A deployable app needs a project/app/environment
+definition and an image pushed to the registry.
 
 ## Configuration
 

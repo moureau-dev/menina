@@ -1,0 +1,75 @@
+# Menina local stack.
+#
+# This compose file is a convenience for local development and demos. The
+# production deployment model is native: a verified binary plus systemd units
+# installed by `menina deploy`, with k3s and Zot managed by Menina itself.
+#
+#   docker compose up --build
+#
+# The `init` service runs `menina setup --non-interactive` once, writing the
+# platform configuration into a shared volume. `serve` exposes the control
+# socket, and `proxy` publishes :80/:443.
+
+x-menina: &menina
+  build:
+    context: .
+  image: menina:dev
+  user: "0:0"
+  volumes:
+    - menina-config:/etc/menina
+    - menina-data:/var/lib/menina
+    - menina-run:/run/menina
+
+services:
+  init:
+    <<: *menina
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        if [ ! -f /etc/menina/config.yml ]; then
+          menina --config-dir /etc/menina setup --non-interactive;
+          sed -i "/tokenRef:/d" /etc/menina/config.yml;
+        fi
+    volumes:
+      - menina-config:/etc/menina
+      - menina-data:/var/lib/menina
+      - ./examples/projects:/etc/menina/projects
+
+  serve:
+    <<: *menina
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    command: ["--config-dir", "/etc/menina", "serve"]
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD", "menina", "--config-dir", "/etc/menina", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  proxy:
+    <<: *menina
+    depends_on:
+      - serve
+    command: ["--config-dir", "/etc/menina", "proxy"]
+    ports:
+      - "80:80"
+      - "443:443"
+
+  zot:
+    image: ghcr.io/project-zot/zot:v2.1.2
+    command: ["serve", "/etc/zot/config.json"]
+    volumes:
+      - zot-data:/var/lib/registry
+      - ./deploy/zot:/etc/zot:ro
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+
+volumes:
+  menina-config:
+  menina-data:
+  menina-run:
+  zot-data:

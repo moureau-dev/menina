@@ -1,0 +1,15 @@
+name: web
+
+image:
+  repository: registry.moureau.dev/demo/web
+
+workload:
+  type: service
+  port: 3000
+
+resources:
+  cpu: "250m"
+  memory: "256Mi"
+
+exposure:
+  enabled: false

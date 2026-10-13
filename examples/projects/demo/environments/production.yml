@@ -1,0 +1,19 @@
+name: production
+
+apps:
+  api:
+    enabled: true
+    image:
+      tag: production
+    exposure:
+      enabled: true
+      hosts:
+        - api.demo.example.com
+  web:
+    enabled: true
+    image:
+      tag: production
+    exposure:
+      enabled: true
+      hosts:
+        - demo.example.com

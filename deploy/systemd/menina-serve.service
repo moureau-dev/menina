@@ -1,0 +1,26 @@
+[Unit]
+Description=Menina control plane
+Documentation=https://menina.moureau.dev
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@GROUP@
+ExecStart=@BINARY@ --config-dir @CONFIG_DIR@ serve
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+RuntimeDirectory=menina
+RuntimeDirectoryMode=0750
+StateDirectory=menina
+StateDirectoryMode=0750
+Environment=MENINA_CONFIG_DIR=@CONFIG_DIR@
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+ReadWritePaths=@DATA_DIR@ /run/menina
+
+[Install]
+WantedBy=multi-user.target
