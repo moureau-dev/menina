@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -252,9 +253,9 @@ func TestChooseEnvironmentsSingle(t *testing.T) {
 }
 
 func TestChooseEnvironmentsAddAndRename(t *testing.T) {
-	// multi=y; add (default development); add (default staging);
+	// multi=Yes; add (default development); add (default staging);
 	// rename #2 -> prod; done
-	in := "y\n1\n\n1\n\n2\n2\nprod\n3\n"
+	in := "1\n1\n\n1\n\n2\n2\nprod\n3\n"
 	p := &prompter{reader: bufio.NewReader(strings.NewReader(in)), enabled: true}
 	got := chooseEnvironments(p)
 	want := []string{"development", "prod"}
@@ -482,6 +483,49 @@ func TestPromptInterruptExits(t *testing.T) {
 	(&prompter{reader: bufio.NewReader(strings.NewReader("ignored\n")), enabled: true}).readLine()
 	if exited != 1 {
 		t.Fatalf("interrupted prompt exited=%d, want 1", exited)
+	}
+}
+
+func TestSelectAndYesNo(t *testing.T) {
+	// Choose the second option.
+	p := &prompter{reader: bufio.NewReader(strings.NewReader("2\n")), enabled: true}
+	if got := p.Select("pick", []Option{{Label: "a", Description: "first"}, {Label: "b"}}, 0); got != 1 {
+		t.Fatalf("Select = %d, want 1", got)
+	}
+	// Blank takes the default.
+	p = &prompter{reader: bufio.NewReader(strings.NewReader("\n")), enabled: true}
+	if got := p.Select("pick", []Option{{Label: "a"}, {Label: "b"}}, 1); got != 1 {
+		t.Fatalf("Select default = %d, want 1", got)
+	}
+	// yesNo: choosing "No" overrides a yes default.
+	p = &prompter{reader: bufio.NewReader(strings.NewReader("2\n")), enabled: true}
+	if p.yesNo("q", "yes desc", "no desc", true) {
+		t.Fatal("yesNo chose No but returned true")
+	}
+	// Blank takes the default.
+	p = &prompter{reader: bufio.NewReader(strings.NewReader("\n")), enabled: true}
+	if !p.yesNo("q", "yes desc", "no desc", true) {
+		t.Fatal("yesNo blank should default to Yes")
+	}
+}
+
+func TestSelectRendersDescriptions(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	p := &prompter{reader: bufio.NewReader(strings.NewReader("1\n")), enabled: true}
+	p.Select("  Choose", []Option{
+		{Label: "Yes", Description: "does the thing"},
+		{Label: "No", Description: "skips the thing"},
+	}, 0)
+	_ = w.Close()
+	os.Stdout = old
+	out, _ := io.ReadAll(r)
+	if !strings.Contains(string(out), "does the thing") || !strings.Contains(string(out), "2. No") {
+		t.Fatalf("select output missing labels/descriptions:\n%s", out)
 	}
 }
 

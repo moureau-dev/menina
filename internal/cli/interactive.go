@@ -164,7 +164,10 @@ func suggestEnvironmentName(envs []string) string {
 // is created. Otherwise it runs an editable list, showing the current
 // environments on every step, from which names can be added or renamed.
 func chooseEnvironments(p *prompter) []string {
-	if !p.Confirm("Do you account for multiple environments?", false) {
+	if !p.yesNo("Do you account for multiple environments?",
+		"Create separate deployment targets (e.g. development, staging, production) you can add and rename.",
+		"Create only production.",
+		false) {
 		return []string{"production"}
 	}
 	var envs []string

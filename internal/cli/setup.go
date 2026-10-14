@@ -77,13 +77,30 @@ func (p *prompter) Confirm(label string, def bool) bool {
 	return line == "y" || line == "yes"
 }
 
+// Option is a selectable choice with an optional one-line description.
+type Option struct {
+	Label       string
+	Description string
+}
+
 func (p *prompter) Choose(label string, options []string, def int) int {
+	opts := make([]Option, len(options))
+	for i, o := range options {
+		opts[i] = Option{Label: o}
+	}
+	return p.Select(label, opts, def)
+}
+
+func (p *prompter) Select(label string, options []Option, def int) int {
 	if !p.enabled {
 		return def
 	}
 	fmt.Println(label)
 	for i, o := range options {
-		fmt.Printf("  %d. %s\n", i+1, o)
+		fmt.Printf("  %d. %s\n", i+1, o.Label)
+		if o.Description != "" {
+			fmt.Printf("     %s\n", o.Description)
+		}
 	}
 	fmt.Printf("Select [%d]: ", def+1)
 	line := p.readLine()
@@ -95,6 +112,18 @@ func (p *prompter) Choose(label string, options []string, def int) int {
 		return def
 	}
 	return n - 1
+}
+
+// yesNo is a Select with Yes/No options and descriptions.
+func (p *prompter) yesNo(label, yesDesc, noDesc string, def bool) bool {
+	d := 1
+	if def {
+		d = 0
+	}
+	return p.Select(label, []Option{
+		{Label: "Yes", Description: yesDesc},
+		{Label: "No", Description: noDesc},
+	}, d) == 0
 }
 
 func newSetupCommand(app *App) *cobra.Command {
@@ -126,13 +155,19 @@ func newSetupCommand(app *App) *cobra.Command {
 			app.Infof("Welcome to Menina.\n")
 			app.Infof("Kubernetes")
 			cfg.Kubernetes.IngressOwnership = config.IngressOwnershipMenina
-			cfg.Kubernetes.DisableTraefik = p.Confirm("  Install k3s with Traefik disabled (Menina owns :80/:443)?", cfg.Kubernetes.DisableTraefik)
+			cfg.Kubernetes.DisableTraefik = p.yesNo("  Install k3s with Traefik disabled (Menina owns :80/:443)?",
+				"Menina installs k3s and owns :80/:443; Traefik and ServiceLB are disabled.",
+				"Use an existing ingress controller; Menina integrates instead of owning the ports.",
+				cfg.Kubernetes.DisableTraefik)
 			if !cfg.Kubernetes.DisableTraefik {
 				cfg.Kubernetes.IngressOwnership = config.IngressOwnershipExternal
 			}
 
 			app.Infof("\nRegistry")
-			cfg.Registry.Enabled = p.Confirm("  Install Zot on this cluster?", cfg.Registry.Enabled)
+			cfg.Registry.Enabled = p.yesNo("  Install Zot on this cluster?",
+				"Run a private OCI registry (Zot) in-cluster and route its domain.",
+				"Skip the registry; configure apps to pull from an external registry.",
+				cfg.Registry.Enabled)
 			cfg.Registry.Domain = p.Ask("  Registry domain", cfg.Registry.Domain)
 			keep := p.Ask("  Retention: keep recent tags per repository", strconv.Itoa(cfg.Registry.Retention.KeepRecentTags))
 			if n, err := strconv.Atoi(keep); err == nil {
@@ -140,13 +175,22 @@ func newSetupCommand(app *App) *cobra.Command {
 			}
 
 			app.Infof("\nNetworking")
-			mode := p.Choose("  Networking mode", []string{"Public VPS ingress", "Cloudflare Tunnel"}, 0)
+			mode := p.Select("  Networking mode", []Option{
+				{Label: "Public VPS ingress", Description: "The host is reachable by IP; Menina owns :80/:443 or serves HTTP behind a proxy (e.g. Cloudflare orange cloud)."},
+				{Label: "Cloudflare Tunnel", Description: "cloudflared fronts the host; no inbound ports are opened (Menina runs the local origin only)."},
+			}, 0)
 			if mode == 0 {
 				cfg.Networking.Mode = config.NetworkingPublic
-				if p.Confirm("  Automate public DNS via Cloudflare? (requires an API token; \"n\" = you manage DNS yourself)", false) {
+				if p.yesNo("  Automate public DNS via Cloudflare?",
+					"Menina creates/updates DNS records through the Cloudflare API (requires an API token).",
+					"You manage DNS records yourself (no token needed).",
+					false) {
 					cloudflareToken = p.Ask("  Cloudflare API token", "")
 					cfg.Networking.Cloudflare.Zone = p.Ask("  Cloudflare zone", cfg.Networking.Cloudflare.Zone)
-					cfg.Networking.Cloudflare.DNSProxied = p.Confirm("  Proxy through Cloudflare (orange cloud)?", false)
+					cfg.Networking.Cloudflare.DNSProxied = p.yesNo("  Proxy through Cloudflare (orange cloud)?",
+						"Records are proxied; Cloudflare terminates public TLS (set Cloudflare SSL mode to Flexible for an HTTP origin).",
+						"Grey cloud / DNS-only; clients reach the origin directly.",
+						false)
 					cfg.Networking.PublicIP = p.Ask("  VPS public IP (blank = auto-detect)", cfg.Networking.PublicIP)
 				}
 			} else {
@@ -162,9 +206,16 @@ func newSetupCommand(app *App) *cobra.Command {
 			cfg.Security.TrustedProxies = splitCSV(trusted)
 
 			app.Infof("\nTLS")
-			cfg.TLS.Terminate = p.Confirm("  Terminate TLS in Menina?", cfg.TLS.Terminate)
+			cfg.TLS.Terminate = p.yesNo("  Terminate TLS in Menina?",
+				"Menina serves :443 and manages certificates (ACME or manual).",
+				"TLS is handled upstream (e.g. Cloudflare); Menina serves HTTP on :80.",
+				cfg.TLS.Terminate)
 			if cfg.TLS.Terminate {
-				strat := p.Choose("  Certificate strategy", []string{"ACME / Let's Encrypt", "cert-manager on k3s (consume manually)", "Provide certificates manually"}, 0)
+				strat := p.Select("  Certificate strategy", []Option{
+					{Label: "ACME / Let's Encrypt", Description: "Menina obtains and renews certificates automatically for routed hostnames."},
+					{Label: "cert-manager on k3s (consume manually)", Description: "cert-manager issues certs; Menina serves copies you place in certDir (not consumed automatically)."},
+					{Label: "Provide certificates manually", Description: "Place <host>.crt and <host>.key files in certDir."},
+				}, 0)
 				switch strat {
 				case 0:
 					cfg.TLS.Mode = config.TLSModeACME
@@ -198,7 +249,10 @@ func newSetupCommand(app *App) *cobra.Command {
 
 			if cfg.Registry.Enabled {
 				app.Infof("\nRegistry credentials")
-				if p.Confirm("  Generate a random push credential for Zot?", true) {
+				if p.yesNo("  Generate a random push credential for Zot?",
+					"Create a random password (stored 0600, referenced as a secret) for `docker login`.",
+					"Skip; add credentials later with `menina registry credential --regenerate`.",
+					true) {
 					password, err := secrets.GeneratePassword(32)
 					if err != nil {
 						return err
@@ -238,14 +292,20 @@ func newSetupCommand(app *App) *cobra.Command {
 			}
 
 			app.Infof("\nDeploy notifications")
-			if p.Confirm("  Configure an outbound deploy webhook?", false) {
+			if p.yesNo("  Configure an outbound deploy webhook?",
+				"POST deploy outcomes (success/failure/rollback) as JSON to a receiver you run.",
+				"No outbound notifications for now (add later with webhooks.deploy).",
+				false) {
 				if url := p.Ask("  Webhook URL", ""); url != "" {
 					path := filepath.Join(cfg.Host.ConfigDir, "secrets", "deploy-webhook")
 					if err := secrets.WriteSecretFile(path, url); err != nil {
 						return err
 					}
 					cfg.Webhooks.Deploy = config.DeployWebhook{Enabled: true, URLRef: "file:" + path}
-					if p.Confirm("  Sign payloads with an HMAC secret?", false) {
+					if p.yesNo("  Sign payloads with an HMAC secret?",
+						"Adds X-Menina-Signature: sha256=<HMAC> so the receiver can verify authenticity.",
+						"Send unsigned requests.",
+						false) {
 						if s := p.Ask("  Signing secret", ""); s != "" {
 							sp := filepath.Join(cfg.Host.ConfigDir, "secrets", "deploy-webhook-signing")
 							if err := secrets.WriteSecretFile(sp, s); err != nil {
@@ -264,7 +324,10 @@ func newSetupCommand(app *App) *cobra.Command {
 			cfg.Defaults.CPU = p.Ask("  Default CPU request/limit", cfg.Defaults.CPU)
 			cfg.Defaults.Memory = p.Ask("  Default memory request/limit", cfg.Defaults.Memory)
 
-			if p.Confirm("\nReview configuration?", true) {
+			if p.yesNo("\nReview configuration?",
+				"Print the resolved config.yml for confirmation before writing it.",
+				"Write config.yml directly.",
+				true) {
 				data, _ := yaml.Marshal(cfg)
 				app.Infof("\n%s", string(data))
 			}

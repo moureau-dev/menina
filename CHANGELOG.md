@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- `menina setup` now uses numbered select menus with a one-line description per
+  option instead of `[y/N]` prompts (k3s/Traefik, install Zot, networking mode,
+  Cloudflare DNS automation and orange cloud, TLS termination and certificate
+  strategy, registry credential, deploy webhook, HMAC signing, and review). The
+  "Do you account for multiple environments?" prompt uses the same style.
+  Destructive confirmations (delete/abort) remain `[y/N]`.
+
 ## [0.0.2] - 2026-10-14
 
 A bug-fix release focused on the interactive CLI and release builds, plus
