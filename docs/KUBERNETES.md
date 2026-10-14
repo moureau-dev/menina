@@ -168,7 +168,9 @@ k3s's SQLite in its data dir; application data lives in PVCs.
 ## Operating it
 
 - `menina deploy` — reconcile infrastructure (k3s + registry) and platform
-  services; `menina deploy infra|platform` to scope it.
+  services; `menina deploy infra|platform` to scope it. `menina deploy platform`
+  refuses to run when the registry is enabled but the Zot Service is absent,
+  telling you to run `menina deploy infra` first.
 - `menina status`, `menina routes`, `menina doctor` — inspect health, routing and
   connectivity (see the [CLI reference](CLI.md)).
 - `menina serve` owns reconciliation and the routing snapshot; `menina proxy`

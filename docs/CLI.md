@@ -4,8 +4,9 @@ Menina is one binary with several modes. Commands run interactively on a
 terminal and exit; `menina serve` and `menina proxy` are the long-running
 services.
 
-See also: [Proxy](PROXY.md) · [Kubernetes (k3s)](KUBERNETES.md) ·
-[Registry](REGISTRY.md) · [docs index](README.md).
+See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
+[Kubernetes (k3s)](KUBERNETES.md) · [Registry](REGISTRY.md) ·
+[Operations](OPERATIONS.md) · [docs index](README.md).
 
 ## Conventions
 

@@ -81,10 +81,19 @@ Termination is controlled by `tls.terminate` (default true) and `tls.mode`:
 
 `networking.mode`:
 
+| Mode | Client → public TLS | Origin | Proxy → backend |
+| --- | --- | --- | --- |
+| Public VPS ingress (Menina terminates TLS) | Menina proxy `:443` (ACME) | — | plain HTTP to `ClusterIP:port` |
+| Public VPS ingress (TLS upstream) | Cloudflare / load balancer | proxy `:80` | plain HTTP to `ClusterIP:port` |
+| Cloudflare Tunnel | Cloudflare | `cloudflared` → local origin (`http://127.0.0.1:80` by default) | plain HTTP to `ClusterIP:port` |
+
 - `public` (default): the host is directly reachable; point DNS at
   `networking.publicIp` and let the proxy terminate TLS.
 - `cloudflare-tunnel`: a Cloudflare Tunnel fronts the host. The proxy still
   serves HTTP; DNS/edge are handled by Cloudflare (`networking.cloudflare.*`).
+  Menina installs the local proxy origin because the tunnel needs an origin
+  service to forward to; `cloudflared` itself is installed and configured by the
+  operator.
 
 In both cases routing, headers, and streaming behave identically.
 
