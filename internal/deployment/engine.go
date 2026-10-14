@@ -108,6 +108,12 @@ func (e *Engine) buildWorkload(app *config.ResolvedApp, digest string) Workload 
 }
 
 func (e *Engine) buildWorkloadImage(app *config.ResolvedApp, image string) Workload {
+	maxReplicas := 0
+	targetCPU := 0
+	if app.Replicas.Autoscaling() {
+		maxReplicas = app.Replicas.Max
+		targetCPU = app.Replicas.TargetCPU
+	}
 	w := Workload{
 		Project:     app.Project,
 		Environment: app.Environment,
@@ -116,7 +122,9 @@ func (e *Engine) buildWorkloadImage(app *config.ResolvedApp, image string) Workl
 		Name:        app.Name,
 		Image:       image,
 		Type:        app.Workload.Type,
-		Replicas:    app.Replicas,
+		Replicas:    app.Replicas.Min,
+		MaxReplicas: maxReplicas,
+		TargetCPU:   targetCPU,
 		Port:        app.Workload.Port,
 		Command:     app.Workload.Command,
 		Args:        app.Workload.Args,

@@ -180,8 +180,20 @@ The resolver combines a shared app definition with environment overrides:
 | `exposure` | Environment must **opt in**; `enabled` is taken from the environment. Public exposure always requires environment-level opt-in |
 | `storage` | Environment override replaces the app's storage block |
 | `health` | Environment override replaces the app's health block |
-| `replicas` | Environment override wins; otherwise the app value; otherwise platform default |
+| `replicas` | Environment override wins; otherwise the app value; otherwise platform default. Accepts a fixed count (`3`) or a range (`{min: 2, max: 10, targetCPU: 70}`), realized as a HorizontalPodAutoscaler |
 | `env` | Merged; environment keys win |
+
+Scaling (`replicas`) accepts either a fixed count or a range:
+
+```yaml
+replicas: 3                            # fixed
+replicas: { min: 2, max: 10 }          # HorizontalPodAutoscaler
+replicas: { min: 2, max: 10, targetCPU: 70 }   # targetCPU defaults to 70
+```
+
+A range creates (and keeps in sync) a `HorizontalPodAutoscaler` targeting the
+app's Deployment with a CPU-utilization metric; a fixed count removes any stale
+HPA. HPA requires the metrics API (k3s ships metrics-server by default).
 
 The resolved configuration is validated as a whole before any cluster change.
 If a config file is invalid, the last valid resolved snapshot is retained and

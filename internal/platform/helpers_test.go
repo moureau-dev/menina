@@ -56,7 +56,8 @@ func (f *fakeCluster) DeleteService(_ context.Context, namespace, name string) e
 	f.deletedSvc = append(f.deletedSvc, namespace+"/"+name)
 	return nil
 }
-func (f *fakeCluster) RestartWorkload(context.Context, string, string) error { return nil }
+func (f *fakeCluster) DeleteAutoscaler(context.Context, string, string) error { return nil }
+func (f *fakeCluster) RestartWorkload(context.Context, string, string) error  { return nil }
 func (f *fakeCluster) ListWorkloads(context.Context) ([]deployment.WorkloadRef, error) {
 	return f.workloads, nil
 }
@@ -104,7 +105,7 @@ func testResolved() *config.ResolvedConfig {
 								Project: "my-platform", Environment: "production", Name: "api", Namespace: "my-platform",
 								Enabled: true, Repository: "registry.moureau.dev/my-platform/api", Tag: "production",
 								Workload: config.WorkloadSpec{Type: config.WorkloadService, Port: 8080},
-								Replicas: 2,
+								Replicas: config.ReplicasSpec{Min: 2, Max: 2},
 								Exposure: config.ExposureSpec{Enabled: true, Hosts: []string{"api.hello.com"}, PathPrefix: "/"},
 							},
 						},

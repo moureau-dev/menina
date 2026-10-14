@@ -137,6 +137,28 @@ func TestBuildDeploymentMountsStorageConfigAndSecret(t *testing.T) {
 	}
 }
 
+func TestApplyWorkloadManagesAutoscaler(t *testing.T) {
+	f := newFakeAPI(t)
+	c := f.cluster(t)
+	ctx := context.Background()
+	w := Workload{Name: "api", Namespace: "ns", Image: "i:1", Port: 80, Replicas: 2, MaxReplicas: 10, TargetCPU: 70, Type: "service"}
+	_ = c.EnsureNamespace(ctx, "ns")
+	if err := c.ApplyWorkload(ctx, w); err != nil {
+		t.Fatal(err)
+	}
+	if f.object("/apis/autoscaling/v2/namespaces/ns/horizontalpodautoscalers", "api") == nil {
+		t.Fatal("expected an HPA when max > min")
+	}
+	// Switching back to a fixed count must remove the HPA.
+	w.MaxReplicas = 0
+	if err := c.ApplyWorkload(ctx, w); err != nil {
+		t.Fatal(err)
+	}
+	if f.object("/apis/autoscaling/v2/namespaces/ns/horizontalpodautoscalers", "api") != nil {
+		t.Fatal("HPA should be removed when autoscaling is disabled")
+	}
+}
+
 func TestParseMemoryToBytes(t *testing.T) {
 	cases := map[string]int64{"512Mi": 512 * 1024 * 1024, "1Gi": 1024 * 1024 * 1024, "500M": 500 * 1000 * 1000}
 	for in, want := range cases {

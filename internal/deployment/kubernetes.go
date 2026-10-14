@@ -21,9 +21,10 @@ const (
 	labelApp       = "menina.io/app"
 	managedByValue = "menina"
 
-	coreV1 = "/api/v1"
-	appsV1 = "/apis/apps/v1"
-	rbacV1 = "/apis/rbac.authorization.k8s.io/v1"
+	coreV1        = "/api/v1"
+	appsV1        = "/apis/apps/v1"
+	rbacV1        = "/apis/rbac.authorization.k8s.io/v1"
+	autoscalingV2 = "/apis/autoscaling/v2"
 )
 
 type KubernetesCluster struct {
@@ -116,20 +117,72 @@ func (k *KubernetesCluster) ApplyWorkload(ctx context.Context, w Workload) error
 	existing := map[string]any{}
 	err := k.client.Get(ctx, item, &existing)
 	if kube.IsNotFound(err) {
+		if err := k.client.Create(ctx, collection, desired, nil); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	} else {
+		desiredMap := kube.ToMap(desired)
+		existing["spec"] = desiredMap["spec"]
+		meta, _ := existing["metadata"].(map[string]any)
+		if meta == nil {
+			meta = map[string]any{}
+			existing["metadata"] = meta
+		}
+		meta["labels"] = k.labels(w)
+		if err := k.client.Update(ctx, item, existing, nil); err != nil {
+			return err
+		}
+	}
+	return k.applyAutoscaler(ctx, w)
+}
+
+func (k *KubernetesCluster) applyAutoscaler(ctx context.Context, w Workload) error {
+	if w.MaxReplicas > w.Replicas {
+		return k.ensureAutoscaler(ctx, w)
+	}
+	// No autoscaling: remove any stale HPA.
+	return k.DeleteAutoscaler(ctx, w.Namespace, w.Name)
+}
+
+func (k *KubernetesCluster) ensureAutoscaler(ctx context.Context, w Workload) error {
+	collection := nsResource(autoscalingV2, w.Namespace, "horizontalpodautoscalers")
+	item := collection + "/" + w.Name
+	min := int32(w.Replicas)
+	cpu := int32(w.TargetCPU)
+	desired := &kube.HorizontalPodAutoscaler{
+		TypeMeta: kube.TypeMeta{APIVersion: "autoscaling/v2", Kind: "HorizontalPodAutoscaler"},
+		Metadata: kube.ObjectMeta{Name: w.Name, Namespace: w.Namespace, Labels: k.labels(w)},
+		Spec: kube.HPASpec{
+			ScaleTargetRef: kube.CrossVersionObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Name: w.Name},
+			MinReplicas:    &min,
+			MaxReplicas:    int32(w.MaxReplicas),
+			Metrics: []kube.HPAMetric{{
+				Type:     "Resource",
+				Resource: &kube.HPAResourceMetricSource{Name: "cpu", Target: kube.HPAMetricTarget{Type: "Utilization", AverageUtilization: &cpu}},
+			}},
+		},
+	}
+	var existing kube.HorizontalPodAutoscaler
+	err := k.client.Get(ctx, item, &existing)
+	if kube.IsNotFound(err) {
 		return k.client.Create(ctx, collection, desired, nil)
 	}
 	if err != nil {
 		return err
 	}
-	desiredMap := kube.ToMap(desired)
-	existing["spec"] = desiredMap["spec"]
-	meta, _ := existing["metadata"].(map[string]any)
-	if meta == nil {
-		meta = map[string]any{}
-		existing["metadata"] = meta
+	existing.Spec = desired.Spec
+	existing.Metadata.Labels = desired.Metadata.Labels
+	return k.client.Update(ctx, item, &existing, nil)
+}
+
+func (k *KubernetesCluster) DeleteAutoscaler(ctx context.Context, namespace, name string) error {
+	err := k.client.Delete(ctx, nsResource(autoscalingV2, namespace, "horizontalpodautoscalers")+"/"+name)
+	if kube.IsNotFound(err) {
+		return nil
 	}
-	meta["labels"] = k.labels(w)
-	return k.client.Update(ctx, item, existing, nil)
+	return err
 }
 
 func (k *KubernetesCluster) DeleteWorkload(ctx context.Context, namespace, name string) error {

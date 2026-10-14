@@ -22,6 +22,8 @@ type Workload struct {
 	Image         string
 	Type          string
 	Replicas      int
+	MaxReplicas   int
+	TargetCPU     int
 	Port          int
 	Command       []string
 	Args          []string
@@ -70,6 +72,7 @@ type Cluster interface {
 	ApplyService(ctx context.Context, w Workload) error
 	DeleteWorkload(ctx context.Context, namespace, name string) error
 	DeleteService(ctx context.Context, namespace, name string) error
+	DeleteAutoscaler(ctx context.Context, namespace, name string) error
 	RestartWorkload(ctx context.Context, namespace, name string) error
 	ListWorkloads(ctx context.Context) ([]WorkloadRef, error)
 	WorkloadStatus(ctx context.Context, namespace, name string) (*WorkloadStatus, error)

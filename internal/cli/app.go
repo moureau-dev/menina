@@ -66,7 +66,7 @@ func appPath(app *App, project, name string) string {
 
 func appCreate(app *App) *cobra.Command {
 	var project, repository, workload, runAs, cpu, memory, storageSize, mountPath string
-	var port, replicas int
+	var port, replicas, minReplicas, maxReplicas, targetCPU int
 	cmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create an app definition",
@@ -86,8 +86,10 @@ func appCreate(app *App) *cobra.Command {
 			if runAs != "" {
 				af.Workload.Command = []string{runAs}
 			}
-			if replicas > 0 {
-				af.Replicas = &replicas
+			if minReplicas > 0 || maxReplicas > 0 {
+				af.Replicas = &config.ReplicasSpec{Min: minReplicas, Max: maxReplicas, TargetCPU: targetCPU}
+			} else if replicas > 0 {
+				af.Replicas = &config.ReplicasSpec{Min: replicas, Max: replicas}
 			}
 			if storageSize != "" {
 				af.Storage = &config.StorageSpec{Enabled: true, Size: storageSize, MountPath: mountPath}
@@ -105,7 +107,10 @@ func appCreate(app *App) *cobra.Command {
 	cmd.Flags().IntVar(&port, "port", 8080, "service port")
 	cmd.Flags().StringVar(&cpu, "cpu", "250m", "CPU request/limit")
 	cmd.Flags().StringVar(&memory, "memory", "256Mi", "memory request/limit")
-	cmd.Flags().IntVar(&replicas, "replicas", 1, "replica count")
+	cmd.Flags().IntVar(&replicas, "replicas", 1, "fixed replica count")
+	cmd.Flags().IntVar(&minReplicas, "min-replicas", 0, "minimum replicas (enables autoscaling)")
+	cmd.Flags().IntVar(&maxReplicas, "max-replicas", 0, "maximum replicas (enables autoscaling)")
+	cmd.Flags().IntVar(&targetCPU, "target-cpu", 70, "target CPU utilization for autoscaling")
 	cmd.Flags().StringVar(&storageSize, "storage", "", "persistent volume size (e.g. 1Gi)")
 	cmd.Flags().StringVar(&mountPath, "mount", "/data", "storage mount path")
 	cmd.Flags().StringVar(&runAs, "command", "", "container command override")

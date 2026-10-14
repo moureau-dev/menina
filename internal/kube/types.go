@@ -263,3 +263,37 @@ type SelfSubjectAccessReview struct {
 		Reason  string `json:"reason,omitempty"`
 	} `json:"status"`
 }
+
+type CrossVersionObjectReference struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+}
+
+type HPAMetricTarget struct {
+	Type               string `json:"type"`
+	AverageUtilization *int32 `json:"averageUtilization,omitempty"`
+}
+
+type HPAResourceMetricSource struct {
+	Name   string          `json:"name"`
+	Target HPAMetricTarget `json:"target"`
+}
+
+type HPAMetric struct {
+	Type     string                   `json:"type"`
+	Resource *HPAResourceMetricSource `json:"resource,omitempty"`
+}
+
+type HPASpec struct {
+	ScaleTargetRef CrossVersionObjectReference `json:"scaleTargetRef"`
+	MinReplicas    *int32                      `json:"minReplicas,omitempty"`
+	MaxReplicas    int32                       `json:"maxReplicas"`
+	Metrics        []HPAMetric                 `json:"metrics,omitempty"`
+}
+
+type HorizontalPodAutoscaler struct {
+	TypeMeta
+	Metadata ObjectMeta `json:"metadata"`
+	Spec     HPASpec    `json:"spec"`
+}

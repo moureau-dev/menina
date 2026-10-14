@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"testing"
+
+	"gopkg.in/yaml.v3"
+)
 
 func testConfig() *Config {
 	cfg := Default()
@@ -119,6 +123,47 @@ func TestResolveDeployWebhookDisabledWithoutURL(t *testing.T) {
 	}
 	if wh := rc.Projects["my-platform"].DeployWebhook; wh == nil || wh.Enabled {
 		t.Fatalf("webhook without a URL must be disabled: %+v", wh)
+	}
+}
+
+func TestReplicasSpecUnmarshal(t *testing.T) {
+	var single struct {
+		Replicas *ReplicasSpec `yaml:"replicas"`
+	}
+	if err := yaml.Unmarshal([]byte("replicas: 3\n"), &single); err != nil {
+		t.Fatal(err)
+	}
+	if single.Replicas == nil || single.Replicas.Min != 3 || single.Replicas.Max != 3 || single.Replicas.Autoscaling() {
+		t.Fatalf("single = %+v", single.Replicas)
+	}
+	var rng struct {
+		Replicas *ReplicasSpec `yaml:"replicas"`
+	}
+	if err := yaml.Unmarshal([]byte("replicas:\n  min: 2\n  max: 10\n  targetCPU: 80\n"), &rng); err != nil {
+		t.Fatal(err)
+	}
+	if rng.Replicas.Min != 2 || rng.Replicas.Max != 10 || rng.Replicas.TargetCPU != 80 || !rng.Replicas.Autoscaling() {
+		t.Fatalf("range = %+v", rng.Replicas)
+	}
+}
+
+func TestResolveAutoscalingReplicas(t *testing.T) {
+	p := testProject()
+	p.Apps["api"].Replicas = &ReplicasSpec{Min: 2, Max: 10}
+	rc, err := NewResolver(testConfig()).Resolve([]*Project{p}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, _ := rc.FindApp("my-platform", "production", "api")
+	if app.Replicas.Min != 2 || app.Replicas.Max != 10 || app.Replicas.TargetCPU != 70 || !app.Replicas.Autoscaling() {
+		t.Fatalf("replicas = %+v", app.Replicas)
+	}
+
+	p.Apps["api"].Replicas = &ReplicasSpec{Min: 3, Max: 3}
+	rc, _ = NewResolver(testConfig()).Resolve([]*Project{p}, 2)
+	app, _ = rc.FindApp("my-platform", "production", "api")
+	if app.Replicas.Autoscaling() || app.Replicas.Min != 3 {
+		t.Fatalf("fixed replicas = %+v", app.Replicas)
 	}
 }
 

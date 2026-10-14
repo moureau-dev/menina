@@ -91,6 +91,7 @@ func (r *Resolver) resolveApp(p *Project, env *EnvironmentFile, app *AppFile, ov
 		Resources:   app.Resources,
 		Exposure:    cloneExposure(app.Exposure),
 		Storage:     cloneStorage(app.Storage),
+		Replicas:    cloneReplicas(app.Replicas),
 		Health:      cloneHealth(app.Health),
 		Env:         cloneEnv(app.Env),
 		Webhook:     webhook,
@@ -152,8 +153,20 @@ func (r *Resolver) resolveApp(p *Project, env *EnvironmentFile, app *AppFile, ov
 			ra.Tag = env.Name
 		}
 	}
-	if ra.Replicas == 0 {
-		ra.Replicas = r.cfg.Defaults.Replicas
+	if ra.Replicas.Min == 0 && ra.Replicas.Max == 0 {
+		ra.Replicas = ReplicasSpec{Min: r.cfg.Defaults.Replicas, Max: r.cfg.Defaults.Replicas}
+	}
+	if ra.Replicas.Min == 0 {
+		ra.Replicas.Min = r.cfg.Defaults.Replicas
+	}
+	if ra.Replicas.Max == 0 {
+		ra.Replicas.Max = ra.Replicas.Min
+	}
+	if ra.Replicas.Max < ra.Replicas.Min {
+		ra.Replicas.Max = ra.Replicas.Min
+	}
+	if ra.Replicas.Autoscaling() && ra.Replicas.TargetCPU == 0 {
+		ra.Replicas.TargetCPU = 70
 	}
 	if ra.Resources.CPU == "" {
 		ra.Resources.CPU = r.cfg.Defaults.CPU
@@ -239,6 +252,13 @@ func cloneStorage(in *StorageSpec) *StorageSpec {
 	}
 	out := *in
 	return &out
+}
+
+func cloneReplicas(in *ReplicasSpec) ReplicasSpec {
+	if in == nil {
+		return ReplicasSpec{}
+	}
+	return *in
 }
 
 func cloneHealth(in *HealthSpec) *HealthSpec {

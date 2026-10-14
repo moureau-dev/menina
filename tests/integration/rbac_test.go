@@ -38,6 +38,7 @@ func TestProvisionedServiceIdentityIsScoped(t *testing.T) {
 	assertCan(t, client, true, "list", "", "pods", "")
 	assertCan(t, client, true, "get", "", "nodes", "")
 	assertCan(t, client, true, "create", "apps", "deployments", "menina-apps")
+	assertCan(t, client, true, "create", "autoscaling", "horizontalpodautoscalers", "menina-apps")
 	assertCan(t, client, true, "create", "", "namespaces", "")
 	assertCan(t, client, false, "delete", "", "nodes", "")
 	assertCan(t, client, false, "delete", "", "namespaces", "")

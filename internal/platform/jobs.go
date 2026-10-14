@@ -205,7 +205,7 @@ func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
 	current, err := j.cluster.WorkloadStatus(ctx, app.Namespace, app.Name)
 	if err == nil && current != nil {
 		desiredImage := app.Repository + "@" + digest
-		if current.Image == desiredImage && current.ReadyReplicas >= current.Replicas && current.Replicas >= app.Replicas {
+		if current.Image == desiredImage && current.ReadyReplicas >= current.Replicas && current.Replicas >= app.Replicas.Min {
 			j.log.Info("workload already at desired digest; no-op", "app", app.Name, "digest", digest)
 			// A previous run may have applied the workload and crashed before
 			// recording the release; make sure the history is complete.

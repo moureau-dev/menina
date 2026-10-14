@@ -87,6 +87,14 @@ func (d *deferredCluster) DeleteService(ctx context.Context, namespace, name str
 	return c.DeleteService(ctx, namespace, name)
 }
 
+func (d *deferredCluster) DeleteAutoscaler(ctx context.Context, namespace, name string) error {
+	c, err := d.get()
+	if err != nil {
+		return err
+	}
+	return c.DeleteAutoscaler(ctx, namespace, name)
+}
+
 func (d *deferredCluster) RestartWorkload(ctx context.Context, namespace, name string) error {
 	c, err := d.get()
 	if err != nil {

@@ -32,7 +32,7 @@ func TestBuildWorkloadUsesDigestAndResources(t *testing.T) {
 	engine := NewEngine(&stubCluster{}, nil, nil, deployLogger())
 	app := &config.ResolvedApp{
 		Project: "p", Environment: "prod", Name: "api", Namespace: "ns",
-		Repository: "registry/api", Tag: "prod", Replicas: 3,
+		Repository: "registry/api", Tag: "prod", Replicas: config.ReplicasSpec{Min: 3, Max: 3},
 		Workload:  config.WorkloadSpec{Type: config.WorkloadService, Port: 8080},
 		Resources: config.ResourceSpec{CPU: "500m", Memory: "512Mi"},
 		Health:    &config.HealthSpec{Readiness: "/healthz"},
@@ -60,7 +60,7 @@ func TestDeployResolvedAppliesWorkload(t *testing.T) {
 	engine := NewEngine(cluster, db, nil, deployLogger())
 	app := &config.ResolvedApp{
 		Project: "p", Environment: "prod", Name: "api", Namespace: "ns", Enabled: true,
-		Repository: "registry/api", Tag: "prod", Replicas: 1,
+		Repository: "registry/api", Tag: "prod", Replicas: config.ReplicasSpec{Min: 1, Max: 1},
 		Workload: config.WorkloadSpec{Type: config.WorkloadService, Port: 80},
 	}
 	res, err := engine.DeployResolved(context.Background(), app, "sha256:dead")

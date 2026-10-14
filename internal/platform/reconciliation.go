@@ -268,6 +268,9 @@ func (r *Reconciler) pruneWorkloads(ctx context.Context, desired map[string]bool
 		if err := r.cluster.DeleteService(ctx, w.Namespace, w.Name); err != nil {
 			r.log.Warn("config reconcile: delete service failed", "name", w.Name, "error", err)
 		}
+		if err := r.cluster.DeleteAutoscaler(ctx, w.Namespace, w.Name); err != nil {
+			r.log.Warn("config reconcile: delete autoscaler failed", "name", w.Name, "error", err)
+		}
 	}
 }
 

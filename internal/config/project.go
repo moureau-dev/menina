@@ -1,5 +1,45 @@
 package config
 
+import (
+	"fmt"
+
+	"gopkg.in/yaml.v3"
+)
+
+// ReplicasSpec accepts either a fixed count (`replicas: 3`) or a min/max range
+// with an optional CPU-utilization target (`replicas: {min: 2, max: 10, targetCPU: 70}`),
+// which Menina realizes as a HorizontalPodAutoscaler.
+type ReplicasSpec struct {
+	Min       int `yaml:"min"`
+	Max       int `yaml:"max"`
+	TargetCPU int `yaml:"targetCPU,omitempty"`
+}
+
+func (r *ReplicasSpec) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		var n int
+		if err := value.Decode(&n); err != nil {
+			return err
+		}
+		r.Min, r.Max = n, n
+		return nil
+	case yaml.MappingNode:
+		type raw ReplicasSpec
+		var v raw
+		if err := value.Decode(&v); err != nil {
+			return err
+		}
+		*r = ReplicasSpec(v)
+		return nil
+	default:
+		return fmt.Errorf("replicas must be an integer or a mapping with min/max")
+	}
+}
+
+// Autoscaling reports whether the spec requests a range (max above min).
+func (r ReplicasSpec) Autoscaling() bool { return r.Max > r.Min }
+
 type ProjectFile struct {
 	Name        string          `yaml:"name"`
 	Namespace   string          `yaml:"namespace"`
@@ -67,7 +107,7 @@ type AppFile struct {
 	Resources ResourceSpec      `yaml:"resources"`
 	Exposure  ExposureSpec      `yaml:"exposure"`
 	Storage   *StorageSpec      `yaml:"storage"`
-	Replicas  *int              `yaml:"replicas"`
+	Replicas  *ReplicasSpec     `yaml:"replicas"`
 	Health    *HealthSpec       `yaml:"health"`
 	Env       map[string]string `yaml:"env"`
 }
@@ -79,7 +119,7 @@ type AppOverride struct {
 	Resources *ResourceSpec     `yaml:"resources"`
 	Exposure  *ExposureSpec     `yaml:"exposure"`
 	Storage   *StorageSpec      `yaml:"storage"`
-	Replicas  *int              `yaml:"replicas"`
+	Replicas  *ReplicasSpec     `yaml:"replicas"`
 	Health    *HealthSpec       `yaml:"health"`
 	Env       map[string]string `yaml:"env"`
 }
@@ -128,7 +168,7 @@ type ResolvedApp struct {
 	Resources     ResourceSpec
 	Exposure      ExposureSpec
 	Storage       *StorageSpec
-	Replicas      int
+	Replicas      ReplicasSpec
 	Health        *HealthSpec
 	Env           map[string]string
 	Webhook       *DeployWebhook
