@@ -40,6 +40,16 @@ func (r *ReplicasSpec) UnmarshalYAML(value *yaml.Node) error {
 // Autoscaling reports whether the spec requests a range (max above min).
 func (r ReplicasSpec) Autoscaling() bool { return r.Max > r.Min }
 
+// MarshalYAML emits a scalar for a fixed, non-autoscaling count so the file
+// stays terse (`replicas: 3`).
+func (r ReplicasSpec) MarshalYAML() (any, error) {
+	if !r.Autoscaling() && r.TargetCPU == 0 {
+		return r.Min, nil
+	}
+	type raw ReplicasSpec
+	return raw(r), nil
+}
+
 type ProjectFile struct {
 	Name        string          `yaml:"name"`
 	Namespace   string          `yaml:"namespace"`

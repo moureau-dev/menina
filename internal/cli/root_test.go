@@ -127,6 +127,44 @@ func TestBackupCommandCreatesDatabaseCopy(t *testing.T) {
 	}
 }
 
+func TestAppCreateAndScaleReplicas(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "project", "create", "p", "--namespace", "p"); err != nil {
+		t.Fatal(err)
+	}
+	if err := execute("--config-dir", dir, "app", "create", "api", "--project", "p", "--repository", "r/api", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	apps, _ := config.LoadApps(config.ProjectsDir(dir), "p")
+	if apps["api"].Replicas != nil {
+		t.Fatalf("creating without a replica flag must inherit the default, got %+v", apps["api"].Replicas)
+	}
+
+	if err := execute("--config-dir", dir, "app", "scale", "api", "--project", "p", "--replicas", "5"); err != nil {
+		t.Fatal(err)
+	}
+	apps, _ = config.LoadApps(config.ProjectsDir(dir), "p")
+	if r := apps["api"].Replicas; r == nil || r.Min != 5 || r.Max != 5 || r.Autoscaling() {
+		t.Fatalf("fixed scale = %+v", r)
+	}
+
+	if err := execute("--config-dir", dir, "app", "scale", "api", "--project", "p", "--min", "2", "--max", "8"); err != nil {
+		t.Fatal(err)
+	}
+	apps, _ = config.LoadApps(config.ProjectsDir(dir), "p")
+	if r := apps["api"].Replicas; r == nil || r.Min != 2 || r.Max != 8 || !r.Autoscaling() {
+		t.Fatalf("range scale = %+v", r)
+	}
+
+	if err := execute("--config-dir", dir, "app", "scale", "api", "--project", "p", "--reset"); err != nil {
+		t.Fatal(err)
+	}
+	apps, _ = config.LoadApps(config.ProjectsDir(dir), "p")
+	if apps["api"].Replicas != nil {
+		t.Fatalf("reset must remove the replica override, got %+v", apps["api"].Replicas)
+	}
+}
+
 func TestCompletionGenerate(t *testing.T) {
 	for _, shell := range []string{"bash", "zsh", "fish"} {
 		if err := execute("completion", shell); err != nil {

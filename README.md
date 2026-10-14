@@ -195,6 +195,19 @@ A range creates (and keeps in sync) a `HorizontalPodAutoscaler` targeting the
 app's Deployment with a CPU-utilization metric; a fixed count removes any stale
 HPA. HPA requires the metrics API (k3s ships metrics-server by default).
 
+Change it without touching YAML:
+
+```bash
+menina app scale api --project my-app --replicas 4      # fixed
+menina app scale api --project my-app --min 2 --max 12  # autoscaling
+menina app scale api --project my-app --reset           # inherit the default
+```
+
+`menina app create` is interactive when run from a terminal (prompting for
+project, repository, port and scaling); pass `--yes` plus flags for scripts. The
+platform defaults asked during `menina setup` (namespace, replicas, CPU, memory)
+fill in for any app that does not set them.
+
 The resolved configuration is validated as a whole before any cluster change.
 If a config file is invalid, the last valid resolved snapshot is retained and
 the error is reported rather than deploying a partial update.

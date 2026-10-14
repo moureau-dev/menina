@@ -27,7 +27,7 @@ func requireProdConfirmation(cfg *config.Config, environment string, yes bool) e
 
 func newAppCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{Use: "app", Short: "Manage app definitions"}
-	cmd.AddCommand(appCreate(app), appEdit(app), appList(app), appDeploy(app), appLogs(app), appRollback(app), appDelete(app))
+	cmd.AddCommand(appCreate(app), appEdit(app), appList(app), appDeploy(app), appLogs(app), appRollback(app), appDelete(app), appScale(app))
 	return cmd
 }
 
@@ -62,61 +62,6 @@ func appDelete(app *App) *cobra.Command {
 
 func appPath(app *App, project, name string) string {
 	return filepath.Join(config.ProjectDir(app.Opts.ConfigDir, project), "apps", name+".yml")
-}
-
-func appCreate(app *App) *cobra.Command {
-	var project, repository, workload, runAs, cpu, memory, storageSize, mountPath string
-	var port, replicas, minReplicas, maxReplicas, targetCPU int
-	cmd := &cobra.Command{
-		Use:   "create <name>",
-		Short: "Create an app definition",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
-			if err := config.EnsureProjectDirs(app.Opts.ConfigDir, project); err != nil {
-				return err
-			}
-			af := config.AppFile{
-				Name:      name,
-				Image:     config.ImageSpec{Repository: repository},
-				Workload:  config.WorkloadSpec{Type: workload, Port: port},
-				Resources: config.ResourceSpec{CPU: cpu, Memory: memory},
-				Env:       map[string]string{},
-			}
-			if runAs != "" {
-				af.Workload.Command = []string{runAs}
-			}
-			if minReplicas > 0 || maxReplicas > 0 {
-				af.Replicas = &config.ReplicasSpec{Min: minReplicas, Max: maxReplicas, TargetCPU: targetCPU}
-			} else if replicas > 0 {
-				af.Replicas = &config.ReplicasSpec{Min: replicas, Max: replicas}
-			}
-			if storageSize != "" {
-				af.Storage = &config.StorageSpec{Enabled: true, Size: storageSize, MountPath: mountPath}
-			}
-			if err := writeYAML(appPath(app, project, name), af); err != nil {
-				return err
-			}
-			app.Infof("Created app %q in project %q", name, project)
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&project, "project", "", "project name")
-	cmd.Flags().StringVar(&repository, "repository", "", "image repository")
-	cmd.Flags().StringVar(&workload, "type", "service", "workload type (service|worker)")
-	cmd.Flags().IntVar(&port, "port", 8080, "service port")
-	cmd.Flags().StringVar(&cpu, "cpu", "250m", "CPU request/limit")
-	cmd.Flags().StringVar(&memory, "memory", "256Mi", "memory request/limit")
-	cmd.Flags().IntVar(&replicas, "replicas", 1, "fixed replica count")
-	cmd.Flags().IntVar(&minReplicas, "min-replicas", 0, "minimum replicas (enables autoscaling)")
-	cmd.Flags().IntVar(&maxReplicas, "max-replicas", 0, "maximum replicas (enables autoscaling)")
-	cmd.Flags().IntVar(&targetCPU, "target-cpu", 70, "target CPU utilization for autoscaling")
-	cmd.Flags().StringVar(&storageSize, "storage", "", "persistent volume size (e.g. 1Gi)")
-	cmd.Flags().StringVar(&mountPath, "mount", "/data", "storage mount path")
-	cmd.Flags().StringVar(&runAs, "command", "", "container command override")
-	_ = cmd.MarkFlagRequired("project")
-	_ = cmd.MarkFlagRequired("repository")
-	return cmd
 }
 
 func appEdit(app *App) *cobra.Command {

@@ -5,10 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+func atoiOr(s string, fallback int) int {
+	if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+		return n
+	}
+	return fallback
+}
 
 func writeYAML(path string, v any) error {
 	dir := filepath.Dir(path)

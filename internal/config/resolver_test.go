@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -164,6 +165,17 @@ func TestResolveAutoscalingReplicas(t *testing.T) {
 	app, _ = rc.FindApp("my-platform", "production", "api")
 	if app.Replicas.Autoscaling() || app.Replicas.Min != 3 {
 		t.Fatalf("fixed replicas = %+v", app.Replicas)
+	}
+}
+
+func TestReplicasSpecMarshal(t *testing.T) {
+	fixed, _ := yaml.Marshal(AppFile{Replicas: &ReplicasSpec{Min: 3, Max: 3}})
+	if !strings.Contains(string(fixed), "replicas: 3") {
+		t.Fatalf("fixed should marshal as a scalar:\n%s", fixed)
+	}
+	rng, _ := yaml.Marshal(AppFile{Replicas: &ReplicasSpec{Min: 2, Max: 10, TargetCPU: 70}})
+	if !strings.Contains(string(rng), "min: 2") || !strings.Contains(string(rng), "max: 10") {
+		t.Fatalf("range should marshal as a mapping:\n%s", rng)
 	}
 }
 

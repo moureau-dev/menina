@@ -240,6 +240,12 @@ func newSetupCommand(app *App) *cobra.Command {
 				}
 			}
 
+			app.Infof("\nDefaults")
+			cfg.Defaults.Namespace = p.Ask("  Default namespace for apps", cfg.Defaults.Namespace)
+			cfg.Defaults.Replicas = atoiOr(p.Ask("  Default replicas", strconv.Itoa(cfg.Defaults.Replicas)), cfg.Defaults.Replicas)
+			cfg.Defaults.CPU = p.Ask("  Default CPU request/limit", cfg.Defaults.CPU)
+			cfg.Defaults.Memory = p.Ask("  Default memory request/limit", cfg.Defaults.Memory)
+
 			if p.Confirm("\nReview configuration?", true) {
 				data, _ := yaml.Marshal(cfg)
 				app.Infof("\n%s", string(data))
