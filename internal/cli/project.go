@@ -37,7 +37,7 @@ func newProjectCommand(app *App) *cobra.Command {
 			return appMenu(cmd.Context(), app, p, project, name, "")
 		},
 	}
-	cmd.AddCommand(projectCreate(app), projectList(app), projectDelete(app))
+	cmd.AddCommand(projectCreate(app), projectList(app), projectDelete(app), projectRestore(app))
 	return cmd
 }
 
@@ -87,28 +87,86 @@ func projectList(app *App) *cobra.Command {
 }
 
 func projectDelete(app *App) *cobra.Command {
-	var yes bool
+	var yes, hard bool
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
-		Short: "Delete a project (config only; workloads are pruned, data is retained)",
+		Short: "Soft-delete a project (--hard to remove it)",
+		Long: "Delete a project.\n\n" +
+			"By default this is a soft delete: its workloads stop (scaled to zero) and\n" +
+			"its config is kept so it can be restored with `menina project restore`.\n" +
+			"With --hard the config is removed and its Deployments/Services and routes\n" +
+			"are pruned. Either way, PersistentVolumeClaims and release history are\n" +
+			"retained.",
+		Example: "  menina project delete my-app\n" +
+			"  menina project delete my-app --hard --yes\n" +
+			"  menina project restore my-app",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			dir := config.ProjectDir(app.Opts.ConfigDir, name)
+			softDir := config.SoftDeleteProjectPath(app.Opts.ConfigDir, name)
+			live, trashed := fileExists(dir), fileExists(softDir)
+			if !live && !trashed {
+				return fmt.Errorf("project %q not found", name)
+			}
+			prompt := fmt.Sprintf("Soft-delete project %q?\n  - its workloads stop (scaled to zero)\n  - its config files are kept for restore\n  - PersistentVolumeClaims and release history are RETAINED", name)
+			if hard {
+				prompt = fmt.Sprintf("Delete project %q?\n  - its config files are removed\n  - Menina will prune its Kubernetes Deployments/Services and routes\n  - PersistentVolumeClaims and release history are RETAINED", name)
+			}
+			if !confirmDestructive(app, prompt, yes) {
+				return fmt.Errorf("aborted")
+			}
+			if hard {
+				if live {
+					if err := os.RemoveAll(dir); err != nil {
+						return err
+					}
+				}
+				if trashed {
+					if err := os.RemoveAll(softDir); err != nil {
+						return err
+					}
+				}
+				app.Infof("Deleted project %q. Workloads/routes will be pruned by reconciliation; PVCs and release history are retained.", name)
+				return nil
+			}
+			if trashed {
+				app.Infof("Project %q is already soft-deleted.", name)
+				return nil
+			}
+			if err := moveToTrash(dir, softDir); err != nil {
+				return err
+			}
+			app.Infof("Soft-deleted project %q (workloads stopped; config kept). Restore with `menina project restore %s`.", name, name)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&hard, "hard", false, "remove the config and prune workloads instead of soft-deleting")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion without prompting")
+	return cmd
+}
+
+func projectRestore(app *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "restore <name>",
+		Short: "Restore a soft-deleted project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			dir := config.ProjectDir(app.Opts.ConfigDir, name)
-			if _, err := os.Stat(dir); err != nil {
-				return fmt.Errorf("project %q not found", name)
+			softDir := config.SoftDeleteProjectPath(app.Opts.ConfigDir, name)
+			if fileExists(dir) {
+				return fmt.Errorf("project %q is not soft-deleted", name)
 			}
-			prompt := fmt.Sprintf("Delete project %q?\n  - its config files are removed\n  - Menina will prune its Kubernetes Deployments/Services and routes\n  - PersistentVolumeClaims and release history are RETAINED", name)
-			if !confirmDestructive(app, prompt, yes) {
-				return fmt.Errorf("aborted")
+			if !fileExists(softDir) {
+				return fmt.Errorf("no soft-deleted project %q", name)
 			}
-			if err := os.RemoveAll(dir); err != nil {
+			if err := restoreFromTrash(softDir, dir); err != nil {
 				return err
 			}
-			app.Infof("Deleted project %q. Workloads/routes will be pruned by reconciliation; PVCs and release history are retained.", name)
+			app.Infof("Restored project %q; reconciliation will bring its workloads back.", name)
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion without prompting")
 	return cmd
 }

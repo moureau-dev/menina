@@ -62,8 +62,11 @@ type ServiceRef struct {
 }
 
 type WorkloadRef struct {
-	Namespace string
-	Name      string
+	Namespace   string
+	Name        string
+	Project     string
+	Environment string
+	App         string
 }
 
 type Cluster interface {
@@ -74,6 +77,7 @@ type Cluster interface {
 	DeleteService(ctx context.Context, namespace, name string) error
 	DeleteAutoscaler(ctx context.Context, namespace, name string) error
 	RestartWorkload(ctx context.Context, namespace, name string) error
+	ScaleWorkload(ctx context.Context, namespace, name string, replicas int) error
 	ListWorkloads(ctx context.Context) ([]WorkloadRef, error)
 	WorkloadStatus(ctx context.Context, namespace, name string) (*WorkloadStatus, error)
 	ServiceClusterIP(ctx context.Context, namespace, name string) (string, error)

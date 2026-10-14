@@ -37,6 +37,7 @@ type fakeCluster struct {
 	workloads  []deployment.WorkloadRef
 	deleted    []string
 	deletedSvc []string
+	scaled     map[string]int
 }
 
 func (f *fakeCluster) EnsureNamespace(context.Context, string) error { return nil }
@@ -58,6 +59,13 @@ func (f *fakeCluster) DeleteService(_ context.Context, namespace, name string) e
 }
 func (f *fakeCluster) DeleteAutoscaler(context.Context, string, string) error { return nil }
 func (f *fakeCluster) RestartWorkload(context.Context, string, string) error  { return nil }
+func (f *fakeCluster) ScaleWorkload(_ context.Context, namespace, name string, replicas int) error {
+	if f.scaled == nil {
+		f.scaled = map[string]int{}
+	}
+	f.scaled[namespace+"/"+name] = replicas
+	return nil
+}
 func (f *fakeCluster) ListWorkloads(context.Context) ([]deployment.WorkloadRef, error) {
 	return f.workloads, nil
 }

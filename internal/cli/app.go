@@ -74,35 +74,96 @@ func newAppCommand(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment for the action menu")
-	cmd.AddCommand(appCreate(app), appEdit(app), appList(app), appDeploy(app), appLogs(app), appRollback(app), appDelete(app), appScale(app))
+	cmd.AddCommand(appCreate(app), appEdit(app), appList(app), appDeploy(app), appLogs(app), appRollback(app), appDelete(app), appRestore(app), appScale(app))
 	return cmd
 }
 
 func appDelete(app *App) *cobra.Command {
 	var project string
-	var yes bool
+	var yes, hard bool
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
-		Short: "Delete an app definition (workload pruned; data retained)",
-		Args:  cobra.ExactArgs(1),
+		Short: "Soft-delete an app definition (--hard to remove it)",
+		Long: "Delete an app definition.\n\n" +
+			"By default this is a soft delete: the app stops (its workload is scaled to\n" +
+			"zero) and its config is kept so it can be restored with `menina app\n" +
+			"restore`. With --hard the config is removed and the Deployment/Service and\n" +
+			"routes are pruned. Either way, PVCs and release history are retained.",
+		Example: "  menina app delete api --project my-app\n" +
+			"  menina app delete api --project my-app --hard --yes\n" +
+			"  menina app restore api --project my-app",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := appPath(app, project, args[0])
-			if _, err := os.Stat(path); err != nil {
-				return fmt.Errorf("app %q not found in project %q", args[0], project)
+			name := args[0]
+			path := appPath(app, project, name)
+			softPath := config.SoftDeleteAppPath(app.Opts.ConfigDir, project, name)
+			live, trashed := fileExists(path), fileExists(softPath)
+			if !live && !trashed {
+				return fmt.Errorf("app %q not found in project %q", name, project)
 			}
-			prompt := fmt.Sprintf("Delete app %q? Its Deployment/Service and routes are pruned; PersistentVolumeClaims and release history are RETAINED.", args[0])
+			prompt := fmt.Sprintf("Soft-delete app %q? It is stopped (scaled to zero) and its config kept for restore; PVCs and release history are RETAINED.", name)
+			if hard {
+				prompt = fmt.Sprintf("Delete app %q? Its config is removed and its Deployment/Service and routes are pruned; PVCs and release history are RETAINED.", name)
+			}
 			if !confirmDestructive(app, prompt, yes) {
 				return fmt.Errorf("aborted")
 			}
-			if err := os.Remove(path); err != nil {
+			if hard {
+				if live {
+					if err := os.Remove(path); err != nil {
+						return err
+					}
+				}
+				if trashed {
+					if err := os.Remove(softPath); err != nil {
+						return err
+					}
+				}
+				app.Infof("Deleted app %q. Its workload will be pruned; PVCs and release history are retained.", name)
+				return nil
+			}
+			if trashed {
+				app.Infof("App %q is already soft-deleted.", name)
+				return nil
+			}
+			if err := moveToTrash(path, softPath); err != nil {
 				return err
 			}
-			app.Infof("Deleted app %q. Its workload will be pruned; PVCs and release history are retained.", args[0])
+			app.Infof("Soft-deleted app %q (stopped; config kept). Restore with `menina app restore %s --project %s`.", name, name, project)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
+	cmd.Flags().BoolVar(&hard, "hard", false, "remove the config and prune the workload instead of soft-deleting")
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion without prompting")
+	_ = cmd.MarkFlagRequired("project")
+	return cmd
+}
+
+func appRestore(app *App) *cobra.Command {
+	var project string
+	cmd := &cobra.Command{
+		Use:   "restore <name>",
+		Short: "Restore a soft-deleted app definition",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			path := appPath(app, project, name)
+			softPath := config.SoftDeleteAppPath(app.Opts.ConfigDir, project, name)
+			if fileExists(path) {
+				return fmt.Errorf("app %q is not soft-deleted", name)
+			}
+			if !fileExists(softPath) {
+				return fmt.Errorf("no soft-deleted app %q in project %q", name, project)
+			}
+			if err := restoreFromTrash(softPath, path); err != nil {
+				return err
+			}
+			app.Infof("Restored app %q; reconciliation will bring its workload back.", name)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project name")
 	_ = cmd.MarkFlagRequired("project")
 	return cmd
 }

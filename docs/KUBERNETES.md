@@ -121,6 +121,9 @@ fields (e.g. `clusterIP`, `ipFamilies`). "Restart" bumps a
 3. **Prunes** Menina-managed workloads, Services and HPAs that are no longer in
    the desired state (identified by the `managed-by: menina` label) — deletes
    are config-driven, so removing an app/environment cleans up its resources.
+   A **soft-deleted** target (its config in a `.trash` dir, its `observed` row
+   carrying `deleted_at`) is instead **scaled to zero** and kept, so it can be
+   restored.
 4. Builds the **routing snapshot** from exposed apps' Service ClusterIPs and
    publishes it to the proxy (see [PROXY.md](PROXY.md)).
 

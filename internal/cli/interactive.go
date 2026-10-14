@@ -288,7 +288,7 @@ func appMenu(ctx context.Context, app *App, p *prompter, project, name, defaultE
 				err = runChild(ctx, appRollback(app), map[string]string{"project": project, "environment": env}, name)
 			}
 		case 5:
-			if p.Confirm(fmt.Sprintf("Delete app %q?", name), false) {
+			if p.Confirm(fmt.Sprintf("Soft-delete app %q? (stops it; config kept for restore)", name), false) {
 				err = runChild(ctx, appDelete(app), map[string]string{"project": project, "yes": "true"}, name)
 			}
 		default:

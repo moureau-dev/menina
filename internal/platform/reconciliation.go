@@ -225,7 +225,27 @@ func (r *Reconciler) ReconcileWorkloads(ctx context.Context, rc *config.Resolved
 			}
 		}
 	}
+	r.syncSoftDeletes(ctx)
 	r.pruneWorkloads(ctx, desired)
+}
+
+// syncSoftDeletes records the current soft-deleted definitions (derived from the
+// config tree's trash directories) as soft-deleted observed rows. The control
+// plane is the single SQLite writer, so this is where filesystem state becomes
+// rows; the reconciler then stops (scales to zero) rather than deletes them.
+func (r *Reconciler) syncSoftDeletes(ctx context.Context) {
+	found, err := config.ScanSoftDeletes(r.cfg.Host.ConfigDir)
+	if err != nil {
+		r.log.Warn("config reconcile: could not scan soft deletes", "error", err)
+		return
+	}
+	targets := make([]database.SoftDeleteTarget, 0, len(found))
+	for _, s := range found {
+		targets = append(targets, database.SoftDeleteTarget{Project: s.Project, Environment: s.Environment, App: s.App})
+	}
+	if err := r.db.SyncObservedSoftDeletes(ctx, targets); err != nil {
+		r.log.Warn("config reconcile: could not record soft deletes", "error", err)
+	}
 }
 
 func (r *Reconciler) desiredImage(ctx context.Context, app *config.ResolvedApp) string {
@@ -250,6 +270,10 @@ func (r *Reconciler) pruneWorkloads(ctx context.Context, desired map[string]bool
 		r.log.Warn("config reconcile: could not list workloads for pruning", "error", err)
 		return
 	}
+	soft, err := r.db.SoftDeletedTargets(ctx)
+	if err != nil {
+		r.log.Warn("config reconcile: could not read soft deletes", "error", err)
+	}
 	registryNS := r.cfg.Registry.Namespace
 	if registryNS == "" {
 		registryNS = "menina-registry"
@@ -259,6 +283,15 @@ func (r *Reconciler) pruneWorkloads(ctx context.Context, desired map[string]bool
 			continue
 		}
 		if desired[w.Namespace+"/"+w.Name] {
+			continue
+		}
+		if w.App != "" && softDeleted(soft, w.Project, w.Environment, w.App) {
+			// Soft-deleted: stop (scale to zero) and keep the objects, PVC and
+			// history so it can be restored.
+			r.log.Info("config reconcile: stopping soft-deleted workload", "namespace", w.Namespace, "name", w.Name)
+			if err := r.cluster.ScaleWorkload(ctx, w.Namespace, w.Name, 0); err != nil {
+				r.log.Warn("config reconcile: scale to zero failed", "name", w.Name, "error", err)
+			}
 			continue
 		}
 		r.log.Info("config reconcile: removing workload no longer in desired state", "namespace", w.Namespace, "name", w.Name)
@@ -272,6 +305,15 @@ func (r *Reconciler) pruneWorkloads(ctx context.Context, desired map[string]bool
 			r.log.Warn("config reconcile: delete autoscaler failed", "name", w.Name, "error", err)
 		}
 	}
+}
+
+func softDeleted(list []database.SoftDeleteTarget, project, environment, app string) bool {
+	for _, t := range list {
+		if t.Project == project && t.Environment == environment && t.App == app {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Reconciler) Run(ctx context.Context, interval time.Duration) {

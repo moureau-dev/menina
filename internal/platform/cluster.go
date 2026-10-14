@@ -103,6 +103,14 @@ func (d *deferredCluster) RestartWorkload(ctx context.Context, namespace, name s
 	return c.RestartWorkload(ctx, namespace, name)
 }
 
+func (d *deferredCluster) ScaleWorkload(ctx context.Context, namespace, name string, replicas int) error {
+	c, err := d.get()
+	if err != nil {
+		return err
+	}
+	return c.ScaleWorkload(ctx, namespace, name, replicas)
+}
+
 func (d *deferredCluster) ListWorkloads(ctx context.Context) ([]deployment.WorkloadRef, error) {
 	c, err := d.get()
 	if err != nil {

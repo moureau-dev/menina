@@ -22,7 +22,7 @@ type DB struct {
 	path string
 }
 
-const activeWhere = "deleted_at = created_at"
+const activeWhere = "deleted_at IS NULL"
 
 func Open(path string) (*DB, error) {
 	if path != "" && !strings.HasPrefix(path, ":memory:") {

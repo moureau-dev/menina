@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 )
@@ -37,7 +38,8 @@ func TestSchemaUsesTextIDsAndTimestamps(t *testing.T) {
 		t.Fatalf("meta = %q ok=%v err=%v", value, ok, err)
 	}
 	var id string
-	var createdAt, updatedAt, deletedAt int64
+	var createdAt, updatedAt int64
+	var deletedAt sql.NullInt64
 	row := db.QueryRowContext(ctx, `SELECT id, created_at, updated_at, deleted_at FROM meta WHERE key = ?`, "hello")
 	if err := row.Scan(&id, &createdAt, &updatedAt, &deletedAt); err != nil {
 		t.Fatalf("scan meta: %v", err)
@@ -45,11 +47,11 @@ func TestSchemaUsesTextIDsAndTimestamps(t *testing.T) {
 	if len(id) != 24 {
 		t.Fatalf("id = %q, want 24-char hex", id)
 	}
-	if createdAt == 0 || updatedAt == 0 || deletedAt == 0 {
-		t.Fatalf("timestamps not defaulted: %d %d %d", createdAt, updatedAt, deletedAt)
+	if createdAt == 0 || updatedAt == 0 {
+		t.Fatalf("timestamps not defaulted: %d %d", createdAt, updatedAt)
 	}
-	if createdAt != deletedAt {
-		t.Fatalf("fresh row should be active (deleted_at == created_at)")
+	if deletedAt.Valid {
+		t.Fatalf("a fresh row must be active (deleted_at IS NULL), got %d", deletedAt.Int64)
 	}
 }
 
@@ -221,6 +223,52 @@ func TestObservedUpsert(t *testing.T) {
 	}
 	if observed[0].DesiredDigest != "sha256:2" || observed[0].Status != "ready" {
 		t.Fatalf("observed not updated: %+v", observed[0])
+	}
+}
+
+func TestObservedSoftDelete(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	for _, o := range []Observed{
+		{Project: "p", Environment: "prod", App: "api"},
+		{Project: "p", Environment: "prod", App: "web"},
+		{Project: "p", Environment: "staging", App: "api"},
+	} {
+		if err := db.UpsertObserved(ctx, o); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Soft-delete the app across all environments.
+	if err := db.SyncObservedSoftDeletes(ctx, []SoftDeleteTarget{{Project: "p", App: "api"}}); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := db.SoftDeletedTargets(ctx)
+	if err != nil || len(deleted) != 2 {
+		t.Fatalf("soft-deleted = %+v err=%v, want api in prod and staging", deleted, err)
+	}
+	observed, _ := db.Observed(ctx)
+	if len(observed) != 1 || observed[0].App != "web" {
+		t.Fatalf("active observed = %+v, want only web", observed)
+	}
+	// Clearing reactivates everything.
+	if err := db.SyncObservedSoftDeletes(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if deleted, _ := db.SoftDeletedTargets(ctx); len(deleted) != 0 {
+		t.Fatalf("after clear = %+v, want none", deleted)
+	}
+	if observed, _ := db.Observed(ctx); len(observed) != 3 {
+		t.Fatalf("after clear observed = %d, want 3", len(observed))
+	}
+	// Upserting one target reactivates only that target (app-level delete marks
+	// the app in every environment).
+	_ = db.SyncObservedSoftDeletes(ctx, []SoftDeleteTarget{{Project: "p", App: "api"}})
+	if err := db.UpsertObserved(ctx, Observed{Project: "p", Environment: "prod", App: "api", Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	deleted, _ = db.SoftDeletedTargets(ctx)
+	if len(deleted) != 1 || deleted[0].Environment != "staging" || deleted[0].App != "api" {
+		t.Fatalf("after reactivating prod, deleted = %+v, want staging/api only", deleted)
 	}
 }
 

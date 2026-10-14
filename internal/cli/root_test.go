@@ -371,6 +371,90 @@ func TestHelpIsDescriptive(t *testing.T) {
 	}
 }
 
+func TestAppDeleteSoftAndRestore(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "project", "create", "p", "--environments", "production"); err != nil {
+		t.Fatal(err)
+	}
+	if err := execute("--config-dir", dir, "app", "create", "api", "--project", "p", "--repository", "r", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	live := filepath.Join(dir, "projects", "p", "apps", "api.yml")
+	trash := filepath.Join(dir, "projects", "p", "apps", ".trash", "api.yml")
+
+	if err := execute("--config-dir", dir, "app", "delete", "api", "--project", "p", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(live); err == nil {
+		t.Fatal("soft delete must remove the live app file")
+	}
+	if _, err := os.Stat(trash); err != nil {
+		t.Fatalf("soft delete must keep the config in the trash: %v", err)
+	}
+	if err := execute("--config-dir", dir, "app", "restore", "api", "--project", "p"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(live); err != nil {
+		t.Fatalf("restore must move the config back: %v", err)
+	}
+	if _, err := os.Stat(trash); err == nil {
+		t.Fatal("restore must empty the trash")
+	}
+}
+
+func TestAppDeleteHardRemovesConfig(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "project", "create", "p", "--environments", "production"); err != nil {
+		t.Fatal(err)
+	}
+	if err := execute("--config-dir", dir, "app", "create", "api", "--project", "p", "--repository", "r", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	if err := execute("--config-dir", dir, "app", "delete", "api", "--project", "p", "--hard", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	live := filepath.Join(dir, "projects", "p", "apps", "api.yml")
+	trash := filepath.Join(dir, "projects", "p", "apps", ".trash", "api.yml")
+	if _, err := os.Stat(live); err == nil {
+		t.Fatal("hard delete must remove the config")
+	}
+	if _, err := os.Stat(trash); err == nil {
+		t.Fatal("hard delete must not leave a trash entry")
+	}
+}
+
+func TestProjectDeleteSoftAndRestore(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "project", "create", "p", "--environments", "production"); err != nil {
+		t.Fatal(err)
+	}
+	if err := execute("--config-dir", dir, "project", "delete", "p", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	live := filepath.Join(dir, "projects", "p", "project.yml")
+	trash := filepath.Join(dir, "projects", ".trash", "p")
+	if _, err := os.Stat(live); err == nil {
+		t.Fatal("soft delete must remove the live project")
+	}
+	if _, err := os.Stat(filepath.Join(trash, "project.yml")); err != nil {
+		t.Fatalf("soft delete must keep the project in the trash: %v", err)
+	}
+	// The trashed project must not be listed.
+	out, err := executeCapture("--config-dir", dir, "project", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Fatalf("soft-deleted project must not be listed: %q", out)
+	}
+	if err := execute("--config-dir", dir, "project", "restore", "p"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(live); err != nil {
+		t.Fatalf("restore must move the project back: %v", err)
+	}
+}
+
 func TestCompletionGenerate(t *testing.T) {
 	for _, shell := range []string{"bash", "zsh", "fish"} {
 		if err := execute("completion", shell); err != nil {

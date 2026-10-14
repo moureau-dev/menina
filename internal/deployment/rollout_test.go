@@ -46,8 +46,9 @@ func (s *stubCluster) DeleteService(context.Context, string, string) error { ret
 func (s *stubCluster) DeleteAutoscaler(context.Context, string, string) error {
 	return nil
 }
-func (s *stubCluster) RestartWorkload(context.Context, string, string) error { return nil }
-func (s *stubCluster) ListWorkloads(context.Context) ([]WorkloadRef, error)  { return nil, nil }
+func (s *stubCluster) RestartWorkload(context.Context, string, string) error    { return nil }
+func (s *stubCluster) ScaleWorkload(context.Context, string, string, int) error { return nil }
+func (s *stubCluster) ListWorkloads(context.Context) ([]WorkloadRef, error)     { return nil, nil }
 func (s *stubCluster) WorkloadStatus(context.Context, string, string) (*WorkloadStatus, error) {
 	return s.statusNow()
 }

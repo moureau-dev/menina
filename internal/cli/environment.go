@@ -56,7 +56,7 @@ func newEnvironmentCommand(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
-	cmd.AddCommand(environmentCreate(app), environmentList(app), environmentDelete(app))
+	cmd.AddCommand(environmentCreate(app), environmentList(app), environmentDelete(app), environmentRestore(app))
 	return cmd
 }
 
@@ -103,29 +103,90 @@ func showEnvironment(app *App, project, name string) error {
 
 func environmentDelete(app *App) *cobra.Command {
 	var project string
-	var yes bool
+	var yes, hard bool
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
-		Short: "Delete an environment (its workloads are pruned; data retained)",
-		Args:  cobra.ExactArgs(1),
+		Short: "Soft-delete an environment (--hard to remove it)",
+		Long: "Delete an environment.\n\n" +
+			"By default this is a soft delete: its workloads stop (scaled to zero) and\n" +
+			"its config is kept so it can be restored with `menina environment\n" +
+			"restore`. With --hard the config is removed and the workloads/Services and\n" +
+			"routes are pruned. Either way, PVCs and release history are retained.",
+		Example: "  menina environment delete staging --project my-app\n" +
+			"  menina environment delete staging --project my-app --hard --yes\n" +
+			"  menina environment restore staging --project my-app",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := filepath.Join(config.ProjectDir(app.Opts.ConfigDir, project), "environments", args[0]+".yml")
-			if _, err := os.Stat(path); err != nil {
-				return fmt.Errorf("environment %q not found in project %q", args[0], project)
+			name := args[0]
+			path := filepath.Join(config.ProjectDir(app.Opts.ConfigDir, project), "environments", name+".yml")
+			softPath := config.SoftDeleteEnvironmentPath(app.Opts.ConfigDir, project, name)
+			live, trashed := fileExists(path), fileExists(softPath)
+			if !live && !trashed {
+				return fmt.Errorf("environment %q not found in project %q", name, project)
 			}
-			prompt := fmt.Sprintf("Delete environment %q (namespace %s)? Its workloads, Services and routes are pruned; PersistentVolumeClaims and release history are RETAINED.", args[0], project+"-"+args[0])
+			prompt := fmt.Sprintf("Soft-delete environment %q (namespace %s)? Its workloads stop (scaled to zero) and its config is kept for restore; PVCs and release history are RETAINED.", name, project+"-"+name)
+			if hard {
+				prompt = fmt.Sprintf("Delete environment %q (namespace %s)? Its workloads, Services and routes are pruned; PersistentVolumeClaims and release history are RETAINED.", name, project+"-"+name)
+			}
 			if !confirmDestructive(app, prompt, yes) {
 				return fmt.Errorf("aborted")
 			}
-			if err := os.Remove(path); err != nil {
+			if hard {
+				if live {
+					if err := os.Remove(path); err != nil {
+						return err
+					}
+				}
+				if trashed {
+					if err := os.Remove(softPath); err != nil {
+						return err
+					}
+				}
+				app.Infof("Deleted environment %q. Its workloads/routes will be pruned; PVCs and release history are retained.", name)
+				return nil
+			}
+			if trashed {
+				app.Infof("Environment %q is already soft-deleted.", name)
+				return nil
+			}
+			if err := moveToTrash(path, softPath); err != nil {
 				return err
 			}
-			app.Infof("Deleted environment %q. Its workloads/routes will be pruned; PVCs and release history are retained.", args[0])
+			app.Infof("Soft-deleted environment %q (workloads stopped; config kept). Restore with `menina environment restore %s --project %s`.", name, name, project)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
+	cmd.Flags().BoolVar(&hard, "hard", false, "remove the config and prune workloads instead of soft-deleting")
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion without prompting")
+	_ = cmd.MarkFlagRequired("project")
+	return cmd
+}
+
+func environmentRestore(app *App) *cobra.Command {
+	var project string
+	cmd := &cobra.Command{
+		Use:   "restore <name>",
+		Short: "Restore a soft-deleted environment",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			path := filepath.Join(config.ProjectDir(app.Opts.ConfigDir, project), "environments", name+".yml")
+			softPath := config.SoftDeleteEnvironmentPath(app.Opts.ConfigDir, project, name)
+			if fileExists(path) {
+				return fmt.Errorf("environment %q is not soft-deleted", name)
+			}
+			if !fileExists(softPath) {
+				return fmt.Errorf("no soft-deleted environment %q in project %q", name, project)
+			}
+			if err := restoreFromTrash(softPath, path); err != nil {
+				return err
+			}
+			app.Infof("Restored environment %q; reconciliation will bring its workloads back.", name)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project name")
 	_ = cmd.MarkFlagRequired("project")
 	return cmd
 }

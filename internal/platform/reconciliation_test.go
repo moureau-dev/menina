@@ -2,9 +2,12 @@ package platform
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/deployment"
 	"github.com/moureau-dev/menina/internal/proxy"
 )
@@ -101,6 +104,49 @@ func TestReconcileWorkloadsRemovesDisabledApp(t *testing.T) {
 	}
 	if !containsStr(cluster.deleted, "my-platform/api") {
 		t.Fatalf("disabled app workload should be pruned, deleted=%v", cluster.deleted)
+	}
+}
+
+func TestReconcileWorkloadsStopsSoftDeleted(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Host.ConfigDir = dir
+
+	// A previously-running app has an observed row.
+	if err := db.UpsertObserved(ctx, database.Observed{Project: "my-platform", Environment: "production", App: "api"}); err != nil {
+		t.Fatal(err)
+	}
+	// It is now soft-deleted: its config is in the trash directory of a live project.
+	projDir := filepath.Join(dir, "projects", "my-platform")
+	trash := filepath.Join(projDir, "apps", ".trash")
+	if err := os.MkdirAll(trash, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projDir, "project.yml"), []byte("name: my-platform\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(trash, "api.yml"), []byte("name: api\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cluster := &fakeCluster{
+		clusterIP: "10.43.0.5",
+		workloads: []deployment.WorkloadRef{{Namespace: "my-platform", Name: "api", Project: "my-platform", Environment: "production", App: "api"}},
+	}
+	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
+	rec := NewReconciler(db, cluster, engine, resolvedFunc(), &cfg, testLogger())
+
+	rc := testResolved()
+	delete(rc.Projects["my-platform"].Environments["production"].Apps, "api")
+	rec.ReconcileWorkloads(ctx, rc)
+
+	if cluster.scaled["my-platform/api"] != 0 {
+		t.Fatalf("soft-deleted workload should be scaled to zero, scaled=%v", cluster.scaled)
+	}
+	if containsStr(cluster.deleted, "my-platform/api") {
+		t.Fatalf("soft-deleted workload must not be deleted, deleted=%v", cluster.deleted)
 	}
 }
 

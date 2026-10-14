@@ -20,6 +20,11 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
 - **Selectors** are numbered menus; **option 1 is always `+ create a new …`**
   (project / app / environment), followed by the existing items.
 - Aborting a confirmation exits non-zero; success exits 0.
+- **`delete` is a soft delete by default.** The target stops (its workload is
+  scaled to zero) and its config is kept for `restore`; `--hard` removes the
+  config and prunes the workload. PersistentVolumeClaims and release history are
+  retained either way. Soft deletion is recorded on the target's `observed` row
+  (`deleted_at`); `deleted_at IS NULL` means active.
 
 ## Platform
 
@@ -53,7 +58,8 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
 | `menina project` | Interactive: pick a project → run the app menu |
 | `menina project create <name> [--namespace] [--description] [--environments a,b,c]` | Create a project and its environments (`production` by default; `--environments none` for none) |
 | `menina project list [--json]` | List projects |
-| `menina project delete <name> [--yes]` | Delete config (workloads pruned; PVCs/history retained) |
+| `menina project delete <name> [--hard] [--yes]` | Soft-delete (default): workloads stop (scaled to zero), config kept for restore. `--hard`: remove config and prune workloads. PVCs/history retained either way |
+| `menina project restore <name>` | Restore a soft-deleted project |
 
 ## Environments
 
@@ -63,7 +69,8 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
 | `menina environment <name> --project P` | Show an environment |
 | `menina environment create <name> --project P` | Create an environment |
 | `menina environment list --project P [--json]` | List environments |
-| `menina environment delete <name> --project P [--yes]` | Delete an environment (workloads pruned; PVCs/history retained) |
+| `menina environment delete <name> --project P [--hard] [--yes]` | Soft-delete (default): workloads stop (scaled to zero), config kept. `--hard`: remove config and prune workloads. PVCs/history retained |
+| `menina environment restore <name> --project P` | Restore a soft-deleted environment |
 
 ## Apps
 
@@ -79,7 +86,8 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
 | `menina app rollback <name> --project P --environment E [--digest D] [--yes]` | Restore a recorded digest |
 | `menina app scale <name> --project P [--environment/-e E \| --baseline] (--replicas N \| --min M --max X [--target-cpu C] \| --reset)` | Change scaling. `-e E` writes that environment's override; `--baseline` writes the shared baseline; on a terminal with more than one environment and neither given, it prompts. Non-interactive with neither ⇒ baseline |
 | `menina app edit <name> --project P` | Edit the app YAML in `$EDITOR` |
-| `menina app delete <name> --project P [--yes]` | Delete config (workload pruned; PVCs/history retained) |
+| `menina app delete <name> --project P [--hard] [--yes]` | Soft-delete (default): stop the workload (scale to zero), keep config for restore. `--hard`: remove config and prune the Deployment/Service/routes. PVCs/history retained |
+| `menina app restore <name> --project P` | Restore a soft-deleted app |
 
 `menina app create` flags: `--project`, `--repository`, `--type service|worker`,
 `--port`, `--cpu`, `--memory`, `--replicas N`, `--min-replicas`/`--max-replicas`/

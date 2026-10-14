@@ -231,6 +231,21 @@ func (k *KubernetesCluster) RestartWorkload(ctx context.Context, namespace, name
 	return k.client.Update(ctx, item, existing, nil)
 }
 
+func (k *KubernetesCluster) ScaleWorkload(ctx context.Context, namespace, name string, replicas int) error {
+	item := nsResource(appsV1, namespace, "deployments") + "/" + name
+	existing := map[string]any{}
+	if err := k.client.Get(ctx, item, &existing); err != nil {
+		return err
+	}
+	spec, _ := existing["spec"].(map[string]any)
+	if spec == nil {
+		spec = map[string]any{}
+		existing["spec"] = spec
+	}
+	spec["replicas"] = replicas
+	return k.client.Update(ctx, item, existing, nil)
+}
+
 func (k *KubernetesCluster) ListWorkloads(ctx context.Context) ([]WorkloadRef, error) {
 	var list kube.List[kube.Deployment]
 	if err := k.client.List(ctx, appsV1+"/deployments", labelManagedBy+"="+managedByValue, &list); err != nil {
@@ -238,7 +253,13 @@ func (k *KubernetesCluster) ListWorkloads(ctx context.Context) ([]WorkloadRef, e
 	}
 	var out []WorkloadRef
 	for _, d := range list.Items {
-		out = append(out, WorkloadRef{Namespace: d.Metadata.Namespace, Name: d.Metadata.Name})
+		ref := WorkloadRef{Namespace: d.Metadata.Namespace, Name: d.Metadata.Name}
+		if d.Metadata.Labels != nil {
+			ref.Project = d.Metadata.Labels[labelProject]
+			ref.Environment = d.Metadata.Labels[labelEnv]
+			ref.App = d.Metadata.Labels[labelApp]
+		}
+		out = append(out, ref)
 	}
 	return out, nil
 }
