@@ -300,23 +300,37 @@ func appMenu(ctx context.Context, app *App, p *prompter, project, name, defaultE
 	}
 }
 
+// resolveScaleTarget picks where a scaling change lands: an explicit
+// environment, the shared baseline (""), or — when run on a terminal with no
+// explicit choice and more than one environment — a prompt.
+func resolveScaleTarget(p *prompter, configDir, project, environment string, baseline bool) (string, error) {
+	if environment != "" || baseline || !p.enabled {
+		return environment, nil
+	}
+	_, order, err := config.LoadEnvironments(config.ProjectsDir(configDir), project)
+	if err != nil {
+		return "", err
+	}
+	if len(order) <= 1 {
+		return "", nil
+	}
+	options := append([]string{"All environments (baseline)"}, order...)
+	if idx := p.Choose("Apply scaling to", options, 0); idx > 0 {
+		return order[idx-1], nil
+	}
+	return "", nil
+}
+
 func scaleInline(ctx context.Context, app *App, p *prompter, project, name, defaultEnv string) error {
-	target := defaultEnv
-	if target == "" {
-		_, order, err := config.LoadEnvironments(config.ProjectsDir(app.Opts.ConfigDir), project)
-		if err != nil {
-			return err
-		}
-		if len(order) > 1 {
-			options := append([]string{"All environments (baseline)"}, order...)
-			if idx := p.Choose("Apply scaling to", options, 0); idx > 0 {
-				target = order[idx-1]
-			}
-		}
+	target, err := resolveScaleTarget(p, app.Opts.ConfigDir, project, defaultEnv, false)
+	if err != nil {
+		return err
 	}
 	flags := map[string]string{"project": project}
 	if target != "" {
 		flags["environment"] = target
+	} else {
+		flags["baseline"] = "true"
 	}
 	switch p.Choose("Scaling", []string{"Fixed replicas", "Autoscaling range", "Reset (inherit default)"}, 0) {
 	case 0:

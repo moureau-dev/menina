@@ -73,7 +73,7 @@ services.
 | `menina app deploy <name> --project P --environment E [--yes]` | Deploy and wait for the rollout |
 | `menina app logs <name> --project P --environment E [--follow] [--tail N]` | Stream workload logs |
 | `menina app rollback <name> --project P --environment E [--digest D] [--yes]` | Restore a recorded digest |
-| `menina app scale <name> --project P [--environment/-e E] (--replicas N \| --min M --max X [--target-cpu C] \| --reset)` | Change scaling. Without `-e` writes the baseline (all environments inherit it); with `-e` writes that environment's override |
+| `menina app scale <name> --project P [--environment/-e E \| --baseline] (--replicas N \| --min M --max X [--target-cpu C] \| --reset)` | Change scaling. `-e E` writes that environment's override; `--baseline` writes the shared baseline; on a terminal with more than one environment and neither given, it prompts. Non-interactive with neither ⇒ baseline |
 | `menina app edit <name> --project P` | Edit the app YAML in `$EDITOR` |
 | `menina app delete <name> --project P [--yes]` | Delete config (workload pruned; PVCs/history retained) |
 
@@ -105,18 +105,27 @@ projects/my-app/environments/prod.yml   # override: replicas: {min: 2, max: 10}
 ```
 
 `menina app scale` targets the **baseline** by default; pass `--environment/-e`
-to write a **per-environment override** instead:
+for a specific environment, or `--baseline` to be explicit. **On a terminal**,
+if the project has more than one environment and you give neither, it prompts:
 
-```bash
-menina app scale api --project my-app --min 2 --max 10                  # all environments
-menina app scale api --project my-app -e production --min 2 --max 10    # production only
-menina app scale api --project my-app -e production --reset             # drop the override
+```
+Apply scaling to
+  1. All environments (baseline)
+  2. production
+  3. staging
+Select [1]:
 ```
 
-In the app action menu, Scale asks **“Apply scaling to: All environments
-(baseline) / <env>”** when the project has more than one environment. The
-effective value for an environment is the override if present, else the
-baseline, else the platform default.
+```bash
+menina app scale api --project my-app --min 2 --max 10                # baseline (prompts on a TTY)
+menina app scale api --project my-app --baseline --min 2 --max 10     # baseline, no prompt
+menina app scale api --project my-app -e production --min 2 --max 10  # production only
+menina app scale api --project my-app -e production --reset           # drop the override
+```
+
+The app action menu (Scale) uses the same prompt. The effective value for an
+environment is the override if present, else the baseline, else the platform
+default.
 
 ## Version & help
 

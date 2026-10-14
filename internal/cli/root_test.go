@@ -304,6 +304,56 @@ func TestAppScaleUnknownEnvironment(t *testing.T) {
 	}
 }
 
+func TestResolveScaleTarget(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "project", "create", "p", "--environments", "production,staging"); err != nil {
+		t.Fatal(err)
+	}
+	// Options are [baseline, production, staging]; pick staging.
+	p := &prompter{reader: bufio.NewReader(strings.NewReader("3\n")), enabled: true}
+	got, err := resolveScaleTarget(p, dir, "p", "", false)
+	if err != nil || got != "staging" {
+		t.Fatalf("target = %q, %v; want staging", got, err)
+	}
+	// Pick the baseline.
+	p = &prompter{reader: bufio.NewReader(strings.NewReader("1\n")), enabled: true}
+	if got, err := resolveScaleTarget(p, dir, "p", "", false); err != nil || got != "" {
+		t.Fatalf("baseline target = %q, %v; want empty", got, err)
+	}
+	// Explicit environment and --baseline never prompt.
+	if got, _ := resolveScaleTarget(&prompter{enabled: true}, dir, "p", "production", false); got != "production" {
+		t.Fatalf("explicit target = %q", got)
+	}
+	if got, _ := resolveScaleTarget(&prompter{enabled: true}, dir, "p", "", true); got != "" {
+		t.Fatalf("--baseline target = %q", got)
+	}
+}
+
+func TestAppScaleBaselineFlag(t *testing.T) {
+	dir := t.TempDir()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(execute("--config-dir", dir, "project", "create", "p", "--environments", "production,staging"))
+	must(execute("--config-dir", dir, "app", "create", "api", "--project", "p", "--repository", "r", "--yes"))
+	must(execute("--config-dir", dir, "app", "scale", "api", "--project", "p", "--baseline", "--replicas", "3"))
+	apps, err := config.LoadApps(config.ProjectsDir(dir), "p")
+	must(err)
+	if r := apps["api"].Replicas; r == nil || r.Min != 3 {
+		t.Fatalf("baseline = %+v", r)
+	}
+	for _, env := range []string{"production", "staging"} {
+		e, err := config.LoadEnvironment(dir, "p", env)
+		must(err)
+		if e.Apps["api"] != nil {
+			t.Fatalf("%s should be untouched, got %+v", env, e.Apps["api"])
+		}
+	}
+}
+
 func TestCompletionGenerate(t *testing.T) {
 	for _, shell := range []string{"bash", "zsh", "fish"} {
 		if err := execute("completion", shell); err != nil {

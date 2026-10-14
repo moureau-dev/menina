@@ -103,7 +103,7 @@ func appCreate(app *App) *cobra.Command {
 func appScale(app *App) *cobra.Command {
 	var project, environment string
 	var replicas, minReplicas, maxReplicas, targetCPU int
-	var reset bool
+	var reset, baseline bool
 	cmd := &cobra.Command{
 		Use:   "scale <name>",
 		Short: "Change an app's replica count or autoscaling range",
@@ -126,8 +126,12 @@ func appScale(app *App) *cobra.Command {
 				return err
 			}
 
-			if environment != "" {
-				return applyEnvironmentScale(app, project, environment, name, spec)
+			target, err := resolveScaleTarget(newPrompter(), app.Opts.ConfigDir, project, environment, baseline)
+			if err != nil {
+				return err
+			}
+			if target != "" {
+				return applyEnvironmentScale(app, project, target, name, spec)
 			}
 
 			af := apps[name]
@@ -142,6 +146,7 @@ func appScale(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVarP(&environment, "environment", "e", "", "write a per-environment override instead of the baseline")
+	cmd.Flags().BoolVar(&baseline, "baseline", false, "apply to the shared baseline without prompting")
 	cmd.Flags().IntVar(&replicas, "replicas", 0, "fixed replica count")
 	cmd.Flags().IntVar(&minReplicas, "min", 0, "minimum replicas (enables autoscaling)")
 	cmd.Flags().IntVar(&maxReplicas, "max", 0, "maximum replicas (enables autoscaling)")
