@@ -14,7 +14,7 @@
 # Secrets / env
 .env
 .env.*
-secrets/
+/secrets/
 *.pem
 *.key
 *.crt
