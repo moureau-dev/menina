@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-10-14
+
 ### Added
 - `menina backup` now produces a portable `tar.gz` bundle (SQLite `VACUUM INTO`
   snapshot, `config.yml` + `projects/`, TLS material, `manifest.json`) with
@@ -174,7 +176,8 @@ reverse proxy.
 - Umask-independent permissions on secrets, config and control files.
 - `status` degrades gracefully when the control plane is unavailable.
 
-[Unreleased]: https://github.com/moureau-dev/menina/compare/v0.0.4...HEAD
+[Unreleased]: https://github.com/moureau-dev/menina/compare/v0.0.5...HEAD
+[0.0.5]: https://github.com/moureau-dev/menina/releases/tag/v0.0.5
 [0.0.4]: https://github.com/moureau-dev/menina/releases/tag/v0.0.4
 [0.0.3]: https://github.com/moureau-dev/menina/releases/tag/v0.0.3
 [0.0.2]: https://github.com/moureau-dev/menina/releases/tag/v0.0.2
