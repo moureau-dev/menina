@@ -143,7 +143,7 @@ func newSetupCommand(app *App) *cobra.Command {
 			mode := p.Choose("  Networking mode", []string{"Public VPS ingress", "Cloudflare Tunnel"}, 0)
 			if mode == 0 {
 				cfg.Networking.Mode = config.NetworkingPublic
-				if p.Confirm("  Automate public DNS via Cloudflare?", false) {
+				if p.Confirm("  Automate public DNS via Cloudflare? (requires an API token; \"n\" = you manage DNS yourself)", false) {
 					cloudflareToken = p.Ask("  Cloudflare API token", "")
 					cfg.Networking.Cloudflare.Zone = p.Ask("  Cloudflare zone", cfg.Networking.Cloudflare.Zone)
 					cfg.Networking.Cloudflare.DNSProxied = p.Confirm("  Proxy through Cloudflare (orange cloud)?", false)

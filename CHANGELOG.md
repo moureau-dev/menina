@@ -6,12 +6,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-10-14
+
+A bug-fix release focused on the interactive CLI and release builds, plus
+clearer Cloudflare guidance for running behind a proxy without giving Menina an
+API token.
+
 ### Fixed
 - Release builds now record the Go toolchain, so `menina version` reports it
   instead of `unknown`.
 - The interactive CLI can now be exited: selectors and the menus offer an
-  explicit `Exit`/`Back`, and Ctrl+C works mid-prompt (previously SIGINT was
-  captured and a blocked prompt read could not be interrupted).
+  explicit `Exit`/`Back`, and Ctrl+C works mid-prompt. Previously
+  `signal.NotifyContext` consumed SIGINT while a prompt blocked on `ReadString`,
+  so interactive commands could not be interrupted.
+
+### Changed
+- `menina setup`: the Cloudflare DNS prompt now states that an API token is only
+  needed for automation ("n" = you manage DNS yourself), avoiding a confusing
+  token request for manual/orange-cloud setups.
+
+### Documentation
+- `docs/PROXY.md`: new "Cloudflare in front, Menina serves HTTP only (no token
+  needed)" section — minimal config for orange-cloud + HTTP origin, the Flexible
+  SSL caveat, `trustedProxies`, and the warning to keep the registry DNS-only
+  (Cloudflare's proxy caps uploads/timeouts and breaks `docker push`).
 
 ## [0.0.1] - 2026-10-14
 
@@ -120,5 +138,6 @@ reverse proxy.
 - Umask-independent permissions on secrets, config and control files.
 - `status` degrades gracefully when the control plane is unavailable.
 
-[Unreleased]: https://github.com/moureau-dev/menina/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/moureau-dev/menina/compare/v0.0.2...HEAD
+[0.0.2]: https://github.com/moureau-dev/menina/releases/tag/v0.0.2
 [0.0.1]: https://github.com/moureau-dev/menina/releases/tag/v0.0.1

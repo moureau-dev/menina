@@ -97,6 +97,32 @@ Termination is controlled by `tls.terminate` (default true) and `tls.mode`:
 
 In both cases routing, headers, and streaming behave identically.
 
+### Cloudflare in front, Menina serves HTTP only (no token needed)
+
+You can let Cloudflare terminate public TLS (orange cloud) and have Menina serve
+plain HTTP on `:80` — no ACME and no Cloudflare API token are required:
+
+```yaml
+networking:
+  mode: public
+  baseDomains: [example.com]
+  # no cloudflare.apiTokenSecretRef => menina deploy skips DNS automation
+tls:
+  terminate: false          # proxy binds :80 only; HTTPS listener is not started
+  mode: none
+```
+
+Point the A record (orange cloud) at the VPS IP yourself, and set Cloudflare's
+SSL mode to **Flexible** (edge HTTPS → origin HTTP). Notes:
+
+- Cloudflare also sets `X-Forwarded-Proto: https`; add Cloudflare's IP ranges to
+  `security.trustedProxies` if you want Menina to trust it.
+- **Do not orange-cloud the registry domain** (`registry.<domain>`): Cloudflare's
+  proxy caps uploads at 100 MB with ~100 s timeouts, which breaks `docker push`.
+  Keep the registry record **DNS-only (grey cloud)**.
+- `tls.terminate: false` also disables HTTP→HTTPS redirects; Cloudflare's "Always
+  Use HTTPS" should provide them instead.
+
 ## Caching
 
 Be clear about what is and isn't cached:
