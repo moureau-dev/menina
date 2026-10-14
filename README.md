@@ -289,12 +289,27 @@ structured) and the legacy OCI `events` array.
 
 ## Reverse proxy
 
-The proxy behaves like a proper reverse proxy out of the box: WebSockets,
-HTTP/2 and gRPC (h2c optional), SSE/chunked streaming with immediate flush,
-large streamed uploads, per-route timeouts, compression, custom headers,
-HTTP→HTTPS redirect when Menina owns TLS, and correct forwarded headers from
-trusted upstreams only. The protocol matrix is covered by end-to-end tests in
-`internal/proxy`.
+The proxy forwards to Kubernetes Services over plain HTTP. Capability status:
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| WebSockets (Upgrade, full-duplex) | implemented, e2e tested | `httputil.ReverseProxy` hijack path; client→proxy over HTTP/1.1 |
+| SSE / chunked streaming | implemented, e2e tested | `FlushInterval = -1` (immediate flush) on every route by default |
+| Large uploads / downloads | implemented, e2e tested | streamed, not buffered; per-route `exposure.maxBodyBytes` limit |
+| HTTP/2 (client→proxy) | implemented | negotiated via ALPN on the TLS listener |
+| gRPC / h2c (plaintext HTTP/2 upstream) | implemented, e2e tested | set `exposure.h2c: true`; trailers preserved via the h2c transport |
+| gRPC over TLS upstream | not supported | backends are plaintext ClusterIPs; use `exposure.h2c` for gRPC |
+| Per-route timeouts | implemented | `exposure.timeouts.read` (response-header), `.idle` (conn), `.write` (request deadline) |
+| Compression (gzip) | implemented, tested | per-route `exposure.compression`; skipped for 1xx/204/304 |
+| Forwarded headers | implemented, tested | `X-Forwarded-For/Proto/Host`, `X-Real-IP`; trusted proxies only |
+| HTTP→HTTPS redirect | implemented, tested | honors `tls.httpRedirect` and `exposure.redirectHttp` |
+| Connection reuse | implemented | cached transports keyed by H2C + timeouts |
+
+The client-facing server sets `ReadHeaderTimeout`/`IdleTimeout` but **no**
+`ReadTimeout`/`WriteTimeout`, so long-lived streams are not cut off; timeouts are
+per-route. h2c is an upstream (backend) mode only — the listener itself serves
+HTTP/1.1 and HTTP/2-over-TLS, not cleartext h2. The protocol matrix is covered by
+end-to-end tests in `internal/proxy`.
 
 ## TLS
 

@@ -143,6 +143,11 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	for k, v := range route.Headers {
 		r.Header.Set(k, v)
 	}
+	if d, err := parseDuration(route.Timeouts.Write); err == nil && d > 0 {
+		ctx, cancel := context.WithTimeout(r.Context(), d)
+		defer cancel()
+		r = r.WithContext(ctx)
+	}
 	if route.MaxBodyBytes > 0 {
 		if r.ContentLength > route.MaxBodyBytes {
 			http.Error(w, "request entity too large", http.StatusRequestEntityTooLarge)
@@ -313,5 +318,3 @@ func (s *Server) reloadLoop(ctx context.Context) {
 		}
 	}
 }
-
-func TLSConfigInsecureForTest() *tls.Config { return &tls.Config{InsecureSkipVerify: true} }

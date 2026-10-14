@@ -73,6 +73,8 @@ func (r *Reconciler) BuildSnapshot(rc *config.ResolvedConfig) (*proxy.Snapshot, 
 						TLS:          r.cfg.TLS.Terminate,
 						RedirectHTTP: app.Exposure.RedirectHTTP || r.cfg.TLS.HTTPRedirect,
 						Compression:  app.Exposure.Compression,
+						H2C:          app.Exposure.H2C,
+						Streaming:    app.Exposure.Streaming,
 						MaxBodyBytes: app.Exposure.MaxBodyBytes,
 						Headers:      app.Exposure.Headers,
 						Timeouts: proxy.RouteTimeouts{

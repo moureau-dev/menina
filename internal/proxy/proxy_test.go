@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -461,5 +462,85 @@ func TestProxyBadGatewayOnDeadBackend(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502", resp.StatusCode)
+	}
+}
+
+func TestProxySSEFlushesByDefaultWithoutStreamingFlag(t *testing.T) {
+	release := make(chan struct{})
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fl := w.(http.Flusher)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: one\n\n")
+		fl.Flush()
+		<-release
+		fmt.Fprint(w, "data: two\n\n")
+		fl.Flush()
+	}))
+	defer backend.Close()
+	defer close(release)
+
+	// Note: no Streaming flag on the route; flushing must still be immediate.
+	_, proxySrv := startProxy(t, Options{}, Route{Host: "example.com", PathPrefix: "/", Backend: backendHost(t, backend)})
+	req, _ := http.NewRequest(http.MethodGet, proxySrv.URL+"/", nil)
+	req.Host = "example.com"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	reader := bufio.NewReader(resp.Body)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("first SSE event was not flushed before the backend finished: %v", err)
+	}
+	if !strings.Contains(line, "one") {
+		t.Fatalf("first event = %q", line)
+	}
+}
+
+func TestProxyPerRouteResponseHeaderTimeout(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(600 * time.Millisecond)
+		_, _ = io.WriteString(w, "late")
+	}))
+	defer backend.Close()
+
+	_, proxySrv := startProxy(t, Options{}, Route{
+		Host: "example.com", PathPrefix: "/", Backend: backendHost(t, backend),
+		Timeouts: RouteTimeouts{Read: "100ms"},
+	})
+	req, _ := http.NewRequest(http.MethodGet, proxySrv.URL+"/", nil)
+	req.Host = "example.com"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 from the response-header timeout", resp.StatusCode)
+	}
+}
+
+func TestProxyCompressionSkippedForNoContent(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer backend.Close()
+
+	_, proxySrv := startProxy(t, Options{}, Route{Host: "example.com", PathPrefix: "/", Backend: backendHost(t, backend), Compression: true})
+	req, _ := http.NewRequest(http.MethodGet, proxySrv.URL+"/", nil)
+	req.Host = "example.com"
+	req.Header.Set("Accept-Encoding", "gzip")
+	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		t.Fatal("204 responses must not be gzip-encoded")
 	}
 }

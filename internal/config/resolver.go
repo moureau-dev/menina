@@ -190,6 +190,8 @@ func mergeExposure(base, override ExposureSpec) ExposureSpec {
 	}
 	base.RedirectHTTP = override.RedirectHTTP
 	base.Compression = override.Compression
+	base.H2C = override.H2C
+	base.Streaming = override.Streaming
 	if override.MaxBodyBytes > 0 {
 		base.MaxBodyBytes = override.MaxBodyBytes
 	}

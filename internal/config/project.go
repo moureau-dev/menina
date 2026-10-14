@@ -37,6 +37,8 @@ type ExposureSpec struct {
 	RedirectHTTP bool              `yaml:"redirectHttp"`
 	Headers      map[string]string `yaml:"headers"`
 	Compression  bool              `yaml:"compression"`
+	H2C          bool              `yaml:"h2c"`
+	Streaming    bool              `yaml:"streaming"`
 	MaxBodyBytes int64             `yaml:"maxBodyBytes"`
 	Timeouts     RouteTimeouts     `yaml:"timeouts"`
 }

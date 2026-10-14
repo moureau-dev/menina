@@ -4,20 +4,24 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/http2"
 )
 
 type transportPair struct {
-	http1 *http.Transport
-	h2c   *http2.Transport
+	dialTimeout time.Duration
+	idleTimeout time.Duration
+	mu          sync.Mutex
+	cache       map[string]http.RoundTripper
 }
 
 func newTransportPair(dialTimeout, idleTimeout time.Duration) *transportPair {
@@ -27,39 +31,69 @@ func newTransportPair(dialTimeout, idleTimeout time.Duration) *transportPair {
 	if idleTimeout <= 0 {
 		idleTimeout = 120 * time.Second
 	}
-	dialer := &net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}
-	http1 := &http.Transport{
-		Proxy:                 nil,
-		DialContext:           dialer.DialContext,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          256,
-		MaxIdleConnsPerHost:   64,
-		IdleConnTimeout:       idleTimeout,
-		TLSHandshakeTimeout:   dialTimeout,
-		ExpectContinueTimeout: time.Second,
-		ResponseHeaderTimeout: 0,
-		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+	return &transportPair{
+		dialTimeout: dialTimeout,
+		idleTimeout: idleTimeout,
+		cache:       map[string]http.RoundTripper{},
 	}
-	h2c := &http2.Transport{
-		AllowHTTP: true,
-		DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
-			return dialer.DialContext(ctx, network, addr)
-		},
-	}
-	return &transportPair{http1: http1, h2c: h2c}
 }
 
+// pick returns a transport for the route, honoring per-route read (response
+// header) and idle timeouts. Transports are cached by their configuration so
+// connections are reused.
 func (t *transportPair) pick(r Route) http.RoundTripper {
-	if r.H2C {
-		return t.h2c
+	read, _ := parseDuration(r.Timeouts.Read)
+	idle, _ := parseDuration(r.Timeouts.Idle)
+	if idle <= 0 {
+		idle = t.idleTimeout
 	}
-	return t.http1
+	key := fmt.Sprintf("h2c=%v;read=%s;idle=%s", r.H2C, read, idle)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if rt, ok := t.cache[key]; ok {
+		return rt
+	}
+	dialer := &net.Dialer{Timeout: t.dialTimeout, KeepAlive: 30 * time.Second}
+	var rt http.RoundTripper
+	if r.H2C {
+		rt = &http2.Transport{
+			AllowHTTP: true,
+			DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return dialer.DialContext(ctx, network, addr)
+			},
+			ReadIdleTimeout: idle,
+		}
+	} else {
+		rt = &http.Transport{
+			Proxy:                 nil,
+			DialContext:           dialer.DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          256,
+			MaxIdleConnsPerHost:   64,
+			IdleConnTimeout:       idle,
+			TLSHandshakeTimeout:   t.dialTimeout,
+			ExpectContinueTimeout: time.Second,
+			ResponseHeaderTimeout: read,
+			TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+		}
+	}
+	t.cache[key] = rt
+	return rt
+}
+
+func parseDuration(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	return time.ParseDuration(s)
 }
 
 type gzipResponseWriter struct {
 	http.ResponseWriter
 	gz          *gzip.Writer
 	wroteHeader bool
+	compress    bool
 }
 
 func (g *gzipResponseWriter) WriteHeader(code int) {
@@ -67,8 +101,14 @@ func (g *gzipResponseWriter) WriteHeader(code int) {
 		return
 	}
 	g.wroteHeader = true
-	g.Header().Del("Content-Length")
-	g.Header().Set("Content-Encoding", "gzip")
+	switch {
+	case code == http.StatusNoContent, code == http.StatusNotModified, code < 200:
+		g.compress = false
+	default:
+		g.compress = true
+		g.Header().Del("Content-Length")
+		g.Header().Set("Content-Encoding", "gzip")
+	}
 	g.ResponseWriter.WriteHeader(code)
 }
 
@@ -76,11 +116,16 @@ func (g *gzipResponseWriter) Write(b []byte) (int, error) {
 	if !g.wroteHeader {
 		g.WriteHeader(http.StatusOK)
 	}
+	if !g.compress {
+		return g.ResponseWriter.Write(b)
+	}
 	return g.gz.Write(b)
 }
 
 func (g *gzipResponseWriter) Flush() {
-	_ = g.gz.Flush()
+	if g.compress {
+		_ = g.gz.Flush()
+	}
 	if f, ok := g.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
@@ -93,11 +138,9 @@ func gzipNewWriter(w io.Writer) *gzip.Writer {
 func buildProxy(route Route, transports *transportPair, trusted bool, log Logger) *httputil.ReverseProxy {
 	target := &url.URL{Scheme: "http", Host: route.Backend}
 	proxy := &httputil.ReverseProxy{}
-	flush := time.Duration(0)
-	if route.Streaming {
-		flush = -1
-	}
-	proxy.FlushInterval = flush
+	// Flush immediately so SSE, chunked and streaming responses are forwarded
+	// as they are produced (the architecture promises no response buffering).
+	proxy.FlushInterval = -1
 	proxy.Transport = transports.pick(route)
 	proxy.ErrorLog = nil
 	proxy.Rewrite = func(pr *httputil.ProxyRequest) {
