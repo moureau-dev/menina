@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-10-14
+
 ### Added
 - L4 exposure for non-HTTP protocols: `exposure.ports` (TCP/UDP) binds raw ports
   on the node (`hostPort`) so game servers, TURN/STUN for WebRTC, and other
@@ -183,7 +185,8 @@ reverse proxy.
 - Umask-independent permissions on secrets, config and control files.
 - `status` degrades gracefully when the control plane is unavailable.
 
-[Unreleased]: https://github.com/moureau-dev/menina/compare/v0.0.5...HEAD
+[Unreleased]: https://github.com/moureau-dev/menina/compare/v0.0.6...HEAD
+[0.0.6]: https://github.com/moureau-dev/menina/releases/tag/v0.0.6
 [0.0.5]: https://github.com/moureau-dev/menina/releases/tag/v0.0.5
 [0.0.4]: https://github.com/moureau-dev/menina/releases/tag/v0.0.4
 [0.0.3]: https://github.com/moureau-dev/menina/releases/tag/v0.0.3
