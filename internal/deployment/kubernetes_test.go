@@ -137,6 +137,28 @@ func TestBuildDeploymentMountsStorageConfigAndSecret(t *testing.T) {
 	}
 }
 
+func TestBuildDeploymentHostPortsL4(t *testing.T) {
+	c := newFakeAPI(t).cluster(t)
+	w := Workload{
+		App: "game", Name: "game", Namespace: "ns", Image: "game:1",
+		Ports: []PortMapping{{Port: 25565, Protocol: "TCP"}, {Port: 19132, Protocol: "UDP"}},
+	}
+	d := c.buildDeployment(w)
+	ports := d.Spec.Template.Spec.Containers[0].Ports
+	byProto := map[string]kube.ContainerPort{}
+	for _, p := range ports {
+		byProto[p.Protocol] = p
+	}
+	tcp, ok := byProto["TCP"]
+	if !ok || tcp.ContainerPort != 25565 || tcp.HostPort != 25565 {
+		t.Fatalf("tcp port mapping = %+v", byProto)
+	}
+	udp, ok := byProto["UDP"]
+	if !ok || udp.ContainerPort != 19132 || udp.HostPort != 19132 {
+		t.Fatalf("udp port mapping = %+v", byProto)
+	}
+}
+
 func TestApplyWorkloadManagesAutoscaler(t *testing.T) {
 	f := newFakeAPI(t)
 	c := f.cluster(t)

@@ -97,6 +97,7 @@ type ExposureSpec struct {
 	Streaming    bool              `yaml:"streaming"`
 	MaxBodyBytes int64             `yaml:"maxBodyBytes"`
 	Timeouts     RouteTimeouts     `yaml:"timeouts"`
+	Ports        PortsSpec         `yaml:"ports,omitempty"`
 }
 
 type StorageSpec struct {

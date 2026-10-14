@@ -477,6 +477,20 @@ func (k *KubernetesCluster) buildDeployment(w Workload) *kube.Deployment {
 	if containerPort > 0 {
 		container.Ports = []kube.ContainerPort{{Name: "http", ContainerPort: containerPort, Protocol: "TCP"}}
 	}
+	// Raw L4 exposure: bind the requested TCP/UDP ports on the node via hostPort.
+	for _, p := range w.Ports {
+		proto := strings.ToUpper(p.Protocol)
+		if proto == "" {
+			proto = "TCP"
+		}
+		name := fmt.Sprintf("%s-%d", strings.ToLower(proto), p.Port)
+		container.Ports = append(container.Ports, kube.ContainerPort{
+			Name:          name,
+			ContainerPort: p.Port,
+			HostPort:      p.Port,
+			Protocol:      proto,
+		})
+	}
 	if w.PullPolicy != "" {
 		container.ImagePullPolicy = w.PullPolicy
 	} else {

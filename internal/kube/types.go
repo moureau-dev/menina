@@ -34,6 +34,7 @@ type EnvVar struct {
 type ContainerPort struct {
 	Name          string `json:"name,omitempty"`
 	ContainerPort int    `json:"containerPort"`
+	HostPort      int    `json:"hostPort,omitempty"`
 	Protocol      string `json:"protocol,omitempty"`
 }
 

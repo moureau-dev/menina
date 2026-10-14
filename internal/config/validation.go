@@ -67,6 +67,7 @@ func ValidatePlatform(cfg *Config) error {
 
 func ValidateResolved(rc *ResolvedConfig) error {
 	seenHosts := map[string]string{}
+	seenPorts := map[string]string{}
 	for _, rp := range rc.Projects {
 		for _, re := range rp.Environments {
 			for _, ra := range re.Apps {
@@ -81,6 +82,9 @@ func ValidateResolved(rc *ResolvedConfig) error {
 				}
 				if ra.Workload.Type == WorkloadService && ra.Workload.Port == 0 {
 					return fmt.Errorf("service app %s/%s/%s must declare workload.port", ra.Project, ra.Environment, ra.Name)
+				}
+				if err := validateExposedPorts(ra, seenPorts); err != nil {
+					return err
 				}
 				for _, h := range ra.Exposure.Hosts {
 					if strings.Contains(h, "*") {
@@ -99,6 +103,32 @@ func ValidateResolved(rc *ResolvedConfig) error {
 		}
 	}
 	return nil
+}
+
+// validateExposedPorts checks the app's raw TCP/UDP exposure and records each
+// port so two apps cannot claim the same host port.
+func validateExposedPorts(ra *ResolvedApp, seen map[string]string) error {
+	owner := fmt.Sprintf("%s/%s/%s", ra.Project, ra.Environment, ra.Name)
+	check := func(proto string, ports []int) error {
+		for _, p := range ports {
+			if p < 1 || p > 65535 {
+				return fmt.Errorf("app %s exposes invalid %s port %d", owner, proto, p)
+			}
+			if proto == "tcp" && (p == 80 || p == 443) {
+				return fmt.Errorf("app %s cannot expose tcp port %d: it is the Menina proxy's public port", owner, p)
+			}
+			key := proto + "/" + fmt.Sprintf("%d", p)
+			if other, ok := seen[key]; ok {
+				return fmt.Errorf("%s port %d is exposed by both %s and %s", proto, p, other, owner)
+			}
+			seen[key] = owner
+		}
+		return nil
+	}
+	if err := check("tcp", ra.Exposure.Ports.TCP); err != nil {
+		return err
+	}
+	return check("udp", ra.Exposure.Ports.UDP)
 }
 
 func ValidateHostPort(host string) error {

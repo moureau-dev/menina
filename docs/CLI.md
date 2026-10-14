@@ -47,7 +47,7 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
 | Command | Purpose |
 | --- | --- |
 | `menina status [--json]` | Overall health (degrades gracefully when `serve` is down) |
-| `menina routes [--json]` | Public hostname → Service mappings |
+| `menina routes [--json]` | Public hostname → Service mappings (and raw L4 TCP/UDP exposures) |
 | `menina doctor` | Diagnose config, Kubernetes, registry, webhook and TLS |
 | `menina registry status` | Zot health |
 | `menina registry credential [--regenerate]` | Show or rotate the registry push credential |

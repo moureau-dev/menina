@@ -42,6 +42,14 @@ type Workload struct {
 	ContainerPort int
 	SecretName    string
 	SecretMount   string
+	Ports         []PortMapping
+}
+
+// PortMapping is a raw TCP/UDP port exposed on the node (hostPort), bypassing
+// the HTTP proxy for L4 protocols (game servers, TURN, ...).
+type PortMapping struct {
+	Port     int
+	Protocol string // "TCP" or "UDP"
 }
 
 type WorkloadStatus struct {

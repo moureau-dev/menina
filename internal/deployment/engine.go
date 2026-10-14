@@ -144,6 +144,12 @@ func (e *Engine) buildWorkloadImage(app *config.ResolvedApp, image string) Workl
 		w.StorageSize = app.Storage.Size
 		w.MountPath = app.Storage.MountPath
 	}
+	for _, p := range app.Exposure.Ports.TCP {
+		w.Ports = append(w.Ports, PortMapping{Port: p, Protocol: "TCP"})
+	}
+	for _, p := range app.Exposure.Ports.UDP {
+		w.Ports = append(w.Ports, PortMapping{Port: p, Protocol: "UDP"})
+	}
 	return w
 }
 

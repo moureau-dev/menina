@@ -418,8 +418,56 @@ func deployPlatform(ctx context.Context, app *App, cfg *config.Config) error {
 			app.Log.Warn("DNS configuration skipped", "error", err)
 		}
 	}
+	infrastructure.OpenHostPorts(ctx, infrastructure.ExecRunner{}, app.Log, exposedPorts(cfg))
 	app.Infof("Platform deployment complete. Run `menina status` to verify.")
 	return nil
+}
+
+// exposedPorts returns every raw TCP/UDP port exposed by the resolved
+// configuration, so deploy can open the host firewall for L4-exposed apps.
+func exposedPorts(cfg *config.Config) []infrastructure.PortRule {
+	var rules []infrastructure.PortRule
+	for _, p := range l4Exposures(cfg) {
+		rules = append(rules, infrastructure.PortRule{Port: p.Port, Protocol: p.Proto})
+	}
+	return rules
+}
+
+// l4Exposure is a raw TCP/UDP port exposed by an app on the node (hostPort).
+type l4Exposure struct {
+	Proto       string
+	Port        int
+	Project     string
+	Environment string
+	App         string
+}
+
+func l4Exposures(cfg *config.Config) []l4Exposure {
+	projects, err := config.LoadAllProjects(config.ProjectsDir(cfg.Host.ConfigDir))
+	if err != nil {
+		return nil
+	}
+	resolved, err := config.NewResolver(cfg).Resolve(projects, 0)
+	if err != nil {
+		return nil
+	}
+	var out []l4Exposure
+	for _, rp := range resolved.Projects {
+		for _, re := range rp.Environments {
+			for _, app := range re.Apps {
+				if !app.Enabled {
+					continue
+				}
+				for _, p := range app.Exposure.Ports.TCP {
+					out = append(out, l4Exposure{Proto: "TCP", Port: p, Project: app.Project, Environment: app.Environment, App: app.Name})
+				}
+				for _, p := range app.Exposure.Ports.UDP {
+					out = append(out, l4Exposure{Proto: "UDP", Port: p, Project: app.Project, Environment: app.Environment, App: app.Name})
+				}
+			}
+		}
+	}
+	return out
 }
 
 func configurePublicDNS(ctx context.Context, app *App, cfg *config.Config) error {

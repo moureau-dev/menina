@@ -277,10 +277,40 @@ exposure:
   h2c: false               # clear-text HTTP/2 to the backend
   maxBodyBytes: 0          # 0 = unlimited
   timeouts: { read: 30s, write: 60s, idle: 120s }
+  ports: { tcp: [25565], udp: [19132] }   # raw L4 ports (see below)
 ```
 
 Environments can override any of these per app, so `staging.example.com` and
 `app.example.com` can expose the same app differently.
+
+## L4 (TCP/UDP) exposure
+
+For protocols the HTTP proxy can't carry — game servers, TURN/STUN for WebRTC,
+raw TCP — declare raw ports. They bind on the node via `hostPort` and reach the
+pod directly, **bypassing the proxy**:
+
+```yaml
+exposure:
+  ports: 25565                       # one TCP port
+  # ports: [25565, 25566]            # TCP ports
+  # ports: {tcp: 25565, udp: 19132}  # explicit
+  # ports: {udp: [19132, 19133]}
+```
+
+- A bare number/list defaults to **TCP**.
+- `exposure.enabled`/`hosts` are **not** required for ports — it's L4, not HTTP.
+- Ports bind on the VPS itself (`hostPort`), so on a single-node k3s they're
+  reachable at `<public-ip>:<port>` once the firewall allows them. `menina
+  deploy` opens them with `ufw` when an active ufw is present, otherwise it
+  prints the list to open (cloud-provider firewalls can't be managed here).
+- Port 80/443 (TCP) are reserved for the proxy; duplicate host ports across apps
+  are rejected at config validation.
+- `menina routes` lists the HTTP routes and the L4 ports.
+- `hostPort` is per pod, so keep L4-exposed apps at a single replica (no HPA).
+
+This is how you'd host something like a Minecraft/Bedrock/Source server or a
+TURN server with Menina. WebRTC **signaling** can stay on the normal HTTP/WS
+route; the media path uses the UDP port you expose.
 
 ## Failure modes
 

@@ -229,6 +229,9 @@ func mergeExposure(base, override ExposureSpec) ExposureSpec {
 			base.Headers[k] = v
 		}
 	}
+	if !override.Ports.IsZero() {
+		base.Ports = override.Ports
+	}
 	return base
 }
 
@@ -242,6 +245,12 @@ func cloneExposure(in ExposureSpec) ExposureSpec {
 		for k, v := range in.Headers {
 			out.Headers[k] = v
 		}
+	}
+	if in.Ports.TCP != nil {
+		out.Ports.TCP = append([]int(nil), in.Ports.TCP...)
+	}
+	if in.Ports.UDP != nil {
+		out.Ports.UDP = append([]int(nil), in.Ports.UDP...)
 	}
 	return out
 }

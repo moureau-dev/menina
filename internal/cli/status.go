@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/spf13/cobra"
 
 	"github.com/moureau-dev/menina/internal/config"
@@ -86,6 +89,7 @@ func newRoutesCommand(app *App) *cobra.Command {
 				for _, r := range routes {
 					app.Infof("%-30v %-10v %-30v %v/%v/%v", r["host"], r["port"], r["service"], r["project"], r["environment"], r["app"])
 				}
+				printL4Routes(app, cfg)
 				return nil
 			}
 			db, err := app.OpenDB(cfg)
@@ -102,7 +106,22 @@ func newRoutesCommand(app *App) *cobra.Command {
 			for _, r := range routes {
 				app.Infof("%s -> %s/%s:%d (%s/%s/%s)", r.Host, r.Namespace, r.Service, r.Port, r.Project, r.Environment, r.App)
 			}
+			printL4Routes(app, cfg)
 			return nil
 		},
+	}
+}
+
+// printL4Routes lists raw TCP/UDP exposures (hostPort), which are not part of
+// the HTTP routing snapshot.
+func printL4Routes(app *App, cfg *config.Config) {
+	ports := l4Exposures(cfg)
+	if len(ports) == 0 {
+		return
+	}
+	app.Infof("")
+	app.Infof("%-12s %s", "L4 PORT", "PROJECT/ENV/APP")
+	for _, p := range ports {
+		app.Infof("%-12s %s/%s/%s", fmt.Sprintf("%d/%s", p.Port, strings.ToLower(p.Proto)), p.Project, p.Environment, p.App)
 	}
 }

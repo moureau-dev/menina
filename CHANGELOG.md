@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- L4 exposure for non-HTTP protocols: `exposure.ports` (TCP/UDP) binds raw ports
+  on the node (`hostPort`) so game servers, TURN/STUN for WebRTC, and other
+  non-HTTP services can run on Menina without going through the HTTP proxy.
+  Accepts a number, a list, or `{tcp, udp}` (each number or list); `menina
+  deploy` opens the ports with ufw when present; `menina routes` lists them.
+
 ## [0.0.5] - 2026-10-14
 
 ### Added
