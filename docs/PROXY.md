@@ -123,6 +123,36 @@ SSL mode to **Flexible** (edge HTTPS → origin HTTP). Notes:
 - `tls.terminate: false` also disables HTTP→HTTPS redirects; Cloudflare's "Always
   Use HTTPS" should provide them instead.
 
+### Recommended: Cloudflare Full (strict) with origin TLS (ACME)
+
+If your Cloudflare zone is (or must be) **Full (strict)** — e.g. it also fronts
+HTTPS-only origins like API Gateways — don't special-case Menina hosts with a
+per-hostname Flexible rule. Instead let Menina terminate TLS so the origin
+matches the zone default:
+
+```yaml
+tls:
+  terminate: true
+  mode: acme
+  httpRedirect: false        # optional: keep serving :80 too (no forced redirect)
+  acme:
+    email: ops@example.com
+```
+
+- ACME (HTTP-01) issues a certificate **per routed hostname** and renews it
+  automatically; Cloudflare trusts Let's Encrypt, so Full (strict) validates it
+  and every exposed host works with no per-host SSL rules — now and future.
+- `httpRedirect: false` means Menina serves both `:80` and `:443` and never
+  redirects or sets HSTS — nothing is enforced on clients.
+- The HTTP-01 challenge still works through Cloudflare (plain HTTP to the origin
+  `:80`), so issuance succeeds while orange-clouded.
+- Only hosts with a **route** get a certificate. A proxied hostname pointing at
+  the origin but not exposed in Menina has no cert and will get Cloudflare's
+  `526`; expose it (or remove the record) to fix that.
+- This is also what lets you **grey-cloud the registry** (`registry.<domain>`,
+  DNS-only): with origin TLS it is served directly over HTTPS, so pushes are not
+  subject to Cloudflare's 100 MB / timeout proxy limits.
+
 ## Caching
 
 Be clear about what is and isn't cached:

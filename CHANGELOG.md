@@ -12,6 +12,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `...: permission denied`. It is now staged in the install directory with mode
   `0755` (also avoiding `noexec /tmp`).
 
+### Docs
+- `docs/PROXY.md`: document Cloudflare **Full (strict) with origin TLS (ACME)**
+  as the alternative to per-hostname Flexible rules, including the
+  `httpRedirect: false` (no forced redirect/HSTS) option and grey-clouding the
+  registry.
+
 ## [0.0.3] - 2026-10-14
 
 A setup UX polish release.
