@@ -59,6 +59,7 @@ func NewRootCommand() *cobra.Command {
 		newRegistryCommand(app),
 		newDoctorCommand(app),
 		newBackupCommand(app),
+		newNotifyCommand(app),
 		newServeCommand(app),
 		newProxyCommand(app),
 		newUpgradeCommand(app),

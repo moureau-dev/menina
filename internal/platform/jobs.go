@@ -10,7 +10,9 @@ import (
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/deployment"
+	"github.com/moureau-dev/menina/internal/notify"
 	"github.com/moureau-dev/menina/internal/registry"
+	"github.com/moureau-dev/menina/internal/secrets"
 )
 
 type Jobs struct {
@@ -20,10 +22,60 @@ type Jobs struct {
 	snapshot func() *config.ResolvedConfig
 	domain   string
 	log      *slog.Logger
+	sender   *notify.Sender
 }
 
 func NewJobs(db *database.DB, engine *deployment.Engine, cluster deployment.Cluster, snapshot func() *config.ResolvedConfig, domain string, log *slog.Logger) *Jobs {
 	return &Jobs{db: db, engine: engine, cluster: cluster, snapshot: snapshot, domain: domain, log: log}
+}
+
+func (j *Jobs) SetSender(sender *notify.Sender) { j.sender = sender }
+
+// emitDeploy sends a best-effort outbound deploy webhook for the app, if the
+// project has one configured and subscribed to this event.
+func (j *Jobs) EmitDeploy(app *config.ResolvedApp, ev notify.Event) {
+	if j.sender == nil || app.Webhook == nil || !app.Webhook.Enabled || app.Webhook.URLRef == "" {
+		return
+	}
+	resolver := secrets.NewResolver()
+	url, err := resolver.Resolve(app.Webhook.URLRef)
+	if err != nil {
+		j.log.Warn("deploy webhook url could not be resolved", "app", app.Name, "error", err)
+		return
+	}
+	secret := ""
+	if app.Webhook.SecretRef != "" {
+		if secret, err = resolver.Resolve(app.Webhook.SecretRef); err != nil {
+			j.log.Warn("deploy webhook secret could not be resolved", "app", app.Name, "error", err)
+		}
+	}
+	ev.Project = app.Project
+	ev.Environment = app.Environment
+	ev.App = app.Name
+	ev.Repository = app.Repository
+	ev.Tag = app.Tag
+	sender := j.sender
+	webhook := notify.Webhook{URL: url, Secret: secret, Events: app.Webhook.Events}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := sender.Send(ctx, webhook, ev); err != nil {
+			j.log.Warn("deploy webhook delivery failed", "app", app.Name, "event", ev.Event, "error", err)
+		}
+	}()
+}
+
+func actorFor(kind string) string {
+	switch kind {
+	case "manual":
+		return "manual"
+	case "rollback":
+		return "rollback"
+	case "reconcile":
+		return "reconcile"
+	default:
+		return "registry"
+	}
 }
 
 func (j *Jobs) MatchJobs(event registry.PushEvent) []database.Job {
@@ -144,7 +196,9 @@ func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
 	if digest == "" {
 		digest, err = j.engine.ResolveDigest(ctx, app)
 		if err != nil {
-			_ = j.db.FailJob(ctx, job.ID, err.Error())
+			if dead, _ := j.db.FailJob(ctx, job.ID, err.Error()); dead {
+				j.EmitDeploy(app, notify.Event{Event: "deploy.failed", Action: "deploy", Status: "failed", Actor: actorFor(job.Kind), Digest: digest, Message: fmt.Sprintf("%s/%s/%s deploy failed: %v", app.Project, app.Environment, app.Name, err)})
+			}
 			return fmt.Errorf("resolve digest: %w", err)
 		}
 	}
@@ -171,12 +225,16 @@ func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
 	}
 	result, err := j.engine.DeployResolved(ctx, app, digest)
 	if err != nil {
-		_ = j.db.FailJob(ctx, job.ID, err.Error())
+		if dead, _ := j.db.FailJob(ctx, job.ID, err.Error()); dead {
+			j.EmitDeploy(app, notify.Event{Event: "deploy.failed", Action: "deploy", Status: "failed", Actor: actorFor(job.Kind), Digest: digest, Message: fmt.Sprintf("%s/%s/%s deploy failed: %v", app.Project, app.Environment, app.Name, err)})
+		}
 		return fmt.Errorf("deploy: %w", err)
 	}
 	st, err := deployment.WaitForRollout(ctx, j.cluster, app.Namespace, app.Name, deployment.RolloutOptions{Timeout: 5 * time.Minute})
 	if err != nil {
-		_ = j.db.FailJob(ctx, job.ID, err.Error())
+		if dead, _ := j.db.FailJob(ctx, job.ID, err.Error()); dead {
+			j.EmitDeploy(app, notify.Event{Event: "deploy.failed", Action: "deploy", Status: "failed", Actor: actorFor(job.Kind), Digest: digest, Message: fmt.Sprintf("%s/%s/%s rollout failed: %v", app.Project, app.Environment, app.Name, err)})
+		}
 		return fmt.Errorf("rollout: %w", err)
 	}
 	// Record the release only after the rollout succeeds, so history never
@@ -202,6 +260,19 @@ func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
 		Status:         "ready",
 	})
 	j.log.Info("deployment complete", "project", app.Project, "environment", app.Environment, "app", app.Name, "digest", digest)
+	eventType, status := "deploy.succeeded", "succeeded"
+	if job.Kind == "rollback" {
+		eventType, status = "deploy.rolled_back", "rolled_back"
+	}
+	j.EmitDeploy(app, notify.Event{
+		Event:   eventType,
+		Action:  "deploy",
+		Status:  status,
+		Actor:   actorFor(job.Kind),
+		Digest:  digest,
+		Image:   result.Image,
+		Message: fmt.Sprintf("%s/%s/%s %s (%s)", app.Project, app.Environment, app.Name, status, digest),
+	})
 	return j.db.CompleteJob(ctx, job.ID, digest)
 }
 

@@ -303,6 +303,57 @@ against that schema. Menina's listener accepts both CloudEvents (binary and
 structured) and the legacy OCI `events` array.
 
 
+## Deploy notifications
+
+Menina can POST a generic, provider-agnostic JSON event to an operator-supplied
+receiver whenever something deploys. Menina does **not** speak Slack/Discord/
+Sentry directly; point it at your own relay, which fans out to whatever you use.
+
+```yaml
+# config.yml (platform default)
+webhooks:
+  deploy:
+    enabled: true
+    urlRef: "env:MENINA_DEPLOY_WEBHOOK"          # or file:/etc/menina/secrets/deploy-webhook
+    secretRef: "file:/etc/menina/secrets/deploy-webhook-signing"   # optional HMAC
+    events: [deploy.succeeded, deploy.failed, deploy.rolled_back]
+
+# project.yml (per-project override)
+webhooks:
+  deploy:
+    urlRef: "file:/etc/menina/secrets/my-platform-hook"
+```
+
+The POST body is stable and self-describing:
+
+```json
+{
+  "event": "deploy.succeeded",
+  "action": "deploy",
+  "project": "my-platform",
+  "environment": "production",
+  "app": "api",
+  "repository": "registry.example.com/my-platform/api",
+  "tag": "production",
+  "digest": "sha256:…",
+  "image": "registry.example.com/my-platform/api@sha256:…",
+  "status": "succeeded",
+  "actor": "registry",
+  "message": "my-platform/production/api succeeded (sha256:…)",
+  "timestamp": "2026-10-14T12:00:00Z"
+}
+```
+
+Headers: `X-Menina-Event`, `X-Menina-Delivery` (unique per delivery), and, when a
+signing secret is set, `X-Menina-Signature: sha256=<HMAC-SHA256(body)>`. URLs and
+secrets are secret references (`file:`/`env:`), never plaintext in `config.yml`.
+
+Delivery is best-effort (a short timeout with a few retries, never blocking the
+deployment). `menina notify list` shows configured webhooks and `menina notify
+test [--project p]` sends a synthetic event. By default only definitive outcomes
+(`deploy.succeeded`, `deploy.failed` after retries are exhausted, and
+`deploy.rolled_back`) are sent; `deploy.queued` is available via the `events` list.
+
 ## Reverse proxy
 
 The proxy forwards to Kubernetes Services over plain HTTP. Capability status:

@@ -27,7 +27,26 @@ type Config struct {
 	Platform   Platform   `yaml:"platform"`
 	Security   Security   `yaml:"security"`
 	Defaults   Defaults   `yaml:"defaults"`
+	Webhooks   Webhooks   `yaml:"webhooks"`
 }
+
+// Webhooks configures outbound notifications. Deploy webhooks POST a generic
+// JSON event to an operator-supplied receiver (which may itself fan out to
+// Slack, Discord, Sentry, ...). Menina speaks one provider-agnostic format.
+type Webhooks struct {
+	Deploy DeployWebhook `yaml:"deploy"`
+}
+
+type DeployWebhook struct {
+	Enabled   bool     `yaml:"enabled"`
+	URLRef    string   `yaml:"urlRef"`
+	SecretRef string   `yaml:"secretRef"`
+	Events    []string `yaml:"events"`
+}
+
+// DefaultDeployEvents are emitted when a deploy webhook is enabled but does not
+// specify an event list.
+var DefaultDeployEvents = []string{"deploy.succeeded", "deploy.failed", "deploy.rolled_back"}
 
 type Host struct {
 	Hostname  string `yaml:"hostname"`

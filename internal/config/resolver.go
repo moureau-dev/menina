@@ -41,6 +41,7 @@ func (r *Resolver) resolveProject(p *Project) (*ResolvedProject, error) {
 		Description:  p.Description,
 		Environments: map[string]*ResolvedEnvironment{},
 	}
+	rp.DeployWebhook = r.effectiveDeployWebhook(p)
 	for _, envName := range p.EnvOrder {
 		envFile := p.Envs[envName]
 		envNS := envFile.Namespace
@@ -60,7 +61,7 @@ func (r *Resolver) resolveProject(p *Project) (*ResolvedProject, error) {
 		for _, name := range names {
 			app := p.Apps[name]
 			override := envFile.Apps[name]
-			ra, err := r.resolveApp(p, envFile, app, override, envNS)
+			ra, err := r.resolveApp(p, envFile, app, override, envNS, rp.DeployWebhook)
 			if err != nil {
 				return nil, err
 			}
@@ -76,7 +77,7 @@ func (r *Resolver) resolveProject(p *Project) (*ResolvedProject, error) {
 	return rp, nil
 }
 
-func (r *Resolver) resolveApp(p *Project, env *EnvironmentFile, app *AppFile, override *AppOverride, namespace string) (*ResolvedApp, error) {
+func (r *Resolver) resolveApp(p *Project, env *EnvironmentFile, app *AppFile, override *AppOverride, namespace string, webhook *DeployWebhook) (*ResolvedApp, error) {
 	ra := &ResolvedApp{
 		Project:     p.Name,
 		Environment: env.Name,
@@ -92,6 +93,7 @@ func (r *Resolver) resolveApp(p *Project, env *EnvironmentFile, app *AppFile, ov
 		Storage:     cloneStorage(app.Storage),
 		Health:      cloneHealth(app.Health),
 		Env:         cloneEnv(app.Env),
+		Webhook:     webhook,
 	}
 	if ra.Workload.Type == "" {
 		ra.Workload.Type = WorkloadService
@@ -253,6 +255,33 @@ func cloneEnv(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func (r *Resolver) effectiveDeployWebhook(p *Project) *DeployWebhook {
+	wh := r.cfg.Webhooks.Deploy
+	if p.Webhooks.Deploy != nil {
+		pw := *p.Webhooks.Deploy
+		if pw.URLRef != "" {
+			wh.URLRef = pw.URLRef
+			wh.Enabled = true
+		}
+		if pw.SecretRef != "" {
+			wh.SecretRef = pw.SecretRef
+		}
+		if len(pw.Events) > 0 {
+			wh.Events = pw.Events
+		}
+		if pw.Enabled {
+			wh.Enabled = true
+		}
+	}
+	if wh.Enabled && len(wh.Events) == 0 {
+		wh.Events = DefaultDeployEvents
+	}
+	if wh.URLRef == "" {
+		wh.Enabled = false
+	}
+	return &wh
 }
 
 func (rc *ResolvedConfig) FindApp(project, environment, app string) (*ResolvedApp, error) {

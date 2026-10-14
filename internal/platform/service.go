@@ -16,6 +16,7 @@ import (
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/deployment"
+	"github.com/moureau-dev/menina/internal/notify"
 	"github.com/moureau-dev/menina/internal/proxy"
 	"github.com/moureau-dev/menina/internal/registry"
 	"github.com/moureau-dev/menina/internal/secrets"
@@ -84,6 +85,7 @@ type Service struct {
 	bus         *broadcaster
 	token       string
 	notifyToken string
+	sender      *notify.Sender
 }
 
 func (s *Service) DB() *database.DB { return s.db }
@@ -109,6 +111,7 @@ func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Servic
 		engine:    engine,
 		watcher:   watcher,
 		bus:       newBroadcaster(),
+		sender:    notify.NewSender(log),
 	}
 	snapFn := func() *config.ResolvedConfig {
 		if s := watcher.Snapshot(); s != nil {
@@ -117,6 +120,7 @@ func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Servic
 		return nil
 	}
 	svc.jobs = NewJobs(db, engine, cluster, snapFn, cfg.Registry.Domain, log)
+	svc.jobs.SetSender(svc.sender)
 	svc.reconciler = NewReconciler(db, cluster, engine, snapFn, cfg, log)
 	svc.reconciler.OnPublish(svc.bus.publish)
 	if cfg.Registry.Enabled {
@@ -143,6 +147,7 @@ func (s *Service) SetDigestResolver(r deployment.DigestResolver) {
 		}
 		return nil
 	}, s.cfg.Registry.Domain, s.log)
+	s.jobs.SetSender(s.sender)
 	s.reconciler = NewReconciler(s.db, s.cluster, s.engine, func() *config.ResolvedConfig {
 		if snap := s.watcher.Snapshot(); snap != nil {
 			return snap.Resolved
@@ -427,6 +432,7 @@ func (s *Service) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, _, _ := s.db.JobIDByDedupKey(r.Context(), dedup)
+	s.jobs.EmitDeploy(app, notify.Event{Event: "deploy.queued", Action: "deploy", Status: "queued", Actor: "manual", Message: fmt.Sprintf("%s/%s/%s deploy queued", req.Project, req.Environment, req.App)})
 	writeJSON(w, http.StatusAccepted, map[string]any{"queued": true, "jobId": id})
 }
 
@@ -487,6 +493,7 @@ func (s *Service) handleRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, _, _ := s.db.JobIDByDedupKey(r.Context(), dedup)
+	s.jobs.EmitDeploy(app, notify.Event{Event: "deploy.queued", Action: "rollback", Status: "queued", Actor: "rollback", Digest: req.Digest, Message: fmt.Sprintf("%s/%s/%s rollback to %s queued", req.Project, req.Environment, req.App, req.Digest)})
 	writeJSON(w, http.StatusAccepted, map[string]any{"queued": true, "digest": req.Digest, "jobId": id})
 }
 

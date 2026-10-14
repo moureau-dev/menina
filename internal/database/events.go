@@ -187,22 +187,22 @@ func (db *DB) CompleteJob(ctx context.Context, id string, digest string) error {
 	return err
 }
 
-// FailJob requeues a failed job with exponential backoff, and dead-letters it
-// after maxJobAttempts so a permanently broken deployment cannot hot-loop.
-func (db *DB) FailJob(ctx context.Context, id string, errmsg string) error {
+// FailJob requeues a failed job with exponential backoff. It returns true when
+// the job has been dead-lettered (no more retries).
+func (db *DB) FailJob(ctx context.Context, id string, errmsg string) (bool, error) {
 	var attempts int
 	if err := db.QueryRowContext(ctx, `SELECT attempts FROM jobs WHERE id = ?`, id).Scan(&attempts); err != nil {
-		return err
+		return false, err
 	}
 	next := attempts + 1
 	if next >= maxJobAttempts {
 		_, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, attempts = ?, last_error = ?, updated_at = unixepoch() WHERE id = ?`,
 			JobStatusFailed, next, errmsg, id)
-		return err
+		return true, err
 	}
 	_, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, attempts = ?, last_error = ?, next_attempt_at = unixepoch() + ?, updated_at = unixepoch() WHERE id = ?`,
 		JobStatusPending, next, errmsg, jobBackoffSeconds(next), id)
-	return err
+	return false, err
 }
 
 func jobBackoffSeconds(attempt int) int {

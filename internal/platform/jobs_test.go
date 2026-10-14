@@ -3,13 +3,49 @@ package platform
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/deployment"
+	"github.com/moureau-dev/menina/internal/notify"
 	"github.com/moureau-dev/menina/internal/registry"
 )
+
+func TestEmitDeployPostsWebhook(t *testing.T) {
+	got := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		got <- string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	db := testDB(t)
+	cluster := &fakeCluster{}
+	jobs := NewJobs(db, deployment.NewEngine(cluster, db, nil, testLogger()), cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
+	jobs.SetSender(notify.NewSender(testLogger()))
+	app := &config.ResolvedApp{
+		Project: "my-platform", Environment: "production", Name: "api",
+		Repository: "registry.moureau.dev/my-platform/api", Tag: "production",
+		Webhook: &config.DeployWebhook{Enabled: true, URLRef: "literal:" + srv.URL, Events: []string{"deploy.succeeded"}},
+	}
+	jobs.EmitDeploy(app, notify.Event{Event: "deploy.succeeded", Status: "succeeded", Digest: "sha256:x"})
+
+	select {
+	case body := <-got:
+		if !strings.Contains(body, `"event":"deploy.succeeded"`) || !strings.Contains(body, `"app":"api"`) {
+			t.Fatalf("unexpected payload: %s", body)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("webhook was not delivered")
+	}
+}
 
 func resolvedFunc() func() *config.ResolvedConfig {
 	return func() *config.ResolvedConfig { return testResolved() }

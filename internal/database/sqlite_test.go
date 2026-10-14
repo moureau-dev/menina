@@ -118,7 +118,7 @@ func TestFailJobRequeues(t *testing.T) {
 	_, _ = db.IngestRegistryEvent(ctx, &Event{DedupKey: "d3"}, []Job{{DedupKey: "j3", Kind: "deploy", App: "api"}})
 	pending, _ := db.PendingJobs(ctx, 10)
 	_, _ = db.ClaimJob(ctx, pending[0].ID)
-	if err := db.FailJob(ctx, pending[0].ID, "boom"); err != nil {
+	if _, err := db.FailJob(ctx, pending[0].ID, "boom"); err != nil {
 		t.Fatal(err)
 	}
 	requeued, _ := db.JobsByStatus(ctx, JobStatusPending)
@@ -139,7 +139,7 @@ func TestFailJobDeadLettersAfterMaxAttempts(t *testing.T) {
 	id := pending[0].ID
 	for i := 0; i < maxJobAttempts; i++ {
 		_, _ = db.ClaimJob(ctx, id)
-		_ = db.FailJob(ctx, id, "boom")
+		_, _ = db.FailJob(ctx, id, "boom")
 	}
 	failed, _ := db.JobsByStatus(ctx, JobStatusFailed)
 	if len(failed) != 1 {

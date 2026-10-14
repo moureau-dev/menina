@@ -77,6 +77,51 @@ func TestResolveEnvironmentNamespaceOverride(t *testing.T) {
 	}
 }
 
+func TestResolveDeployWebhookInheritanceAndOverride(t *testing.T) {
+	cfg := testConfig()
+	cfg.Webhooks.Deploy = DeployWebhook{Enabled: true, URLRef: "env:GLOBAL", Events: []string{"deploy.succeeded"}}
+	p := testProject()
+	rc, err := NewResolver(cfg).Resolve([]*Project{p}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wh := rc.Projects["my-platform"].DeployWebhook; wh == nil || wh.URLRef != "env:GLOBAL" {
+		t.Fatalf("expected the platform webhook to apply: %+v", wh)
+	}
+
+	p.Webhooks.Deploy = &DeployWebhook{URLRef: "file:/x", SecretRef: "file:/s"}
+	rc, err = NewResolver(cfg).Resolve([]*Project{p}, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wh := rc.Projects["my-platform"].DeployWebhook
+	if wh == nil || wh.URLRef != "file:/x" || !wh.Enabled || wh.SecretRef != "file:/s" {
+		t.Fatalf("project override not applied: %+v", wh)
+	}
+	if len(wh.Events) == 0 {
+		t.Fatalf("expected events to be populated: %+v", wh)
+	}
+	app, err := rc.FindApp("my-platform", "production", "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.Webhook == nil || app.Webhook.URLRef != "file:/x" {
+		t.Fatalf("app did not inherit the project webhook: %+v", app.Webhook)
+	}
+}
+
+func TestResolveDeployWebhookDisabledWithoutURL(t *testing.T) {
+	cfg := testConfig()
+	cfg.Webhooks.Deploy = DeployWebhook{Enabled: true}
+	rc, err := NewResolver(cfg).Resolve([]*Project{testProject()}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wh := rc.Projects["my-platform"].DeployWebhook; wh == nil || wh.Enabled {
+		t.Fatalf("webhook without a URL must be disabled: %+v", wh)
+	}
+}
+
 func TestResolveMergesEnvironmentOverrides(t *testing.T) {
 	r := NewResolver(testConfig())
 	rc, err := r.Resolve([]*Project{testProject()}, 7)

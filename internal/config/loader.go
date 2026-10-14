@@ -56,6 +56,7 @@ func LoadProject(projectsDir, name string) (*Project, error) {
 		Name:        pf.Name,
 		Namespace:   pf.Namespace,
 		Description: pf.Description,
+		Webhooks:    pf.Webhooks,
 		Apps:        map[string]*AppFile{},
 		Envs:        map[string]*EnvironmentFile{},
 	}

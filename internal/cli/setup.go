@@ -221,6 +221,27 @@ func newSetupCommand(app *App) *cobra.Command {
 				app.Infof("  Cloudflare API token stored at %s", path)
 			}
 
+			app.Infof("\nDeploy notifications")
+			if p.Confirm("  Configure an outbound deploy webhook?", false) {
+				if url := p.Ask("  Webhook URL", ""); url != "" {
+					path := filepath.Join(cfg.Host.ConfigDir, "secrets", "deploy-webhook")
+					if err := secrets.WriteSecretFile(path, url); err != nil {
+						return err
+					}
+					cfg.Webhooks.Deploy = config.DeployWebhook{Enabled: true, URLRef: "file:" + path}
+					if p.Confirm("  Sign payloads with an HMAC secret?", false) {
+						if s := p.Ask("  Signing secret", ""); s != "" {
+							sp := filepath.Join(cfg.Host.ConfigDir, "secrets", "deploy-webhook-signing")
+							if err := secrets.WriteSecretFile(sp, s); err != nil {
+								return err
+							}
+							cfg.Webhooks.Deploy.SecretRef = "file:" + sp
+						}
+					}
+					app.Infof("  Deploy webhook configured")
+				}
+			}
+
 			if p.Confirm("\nReview configuration?", true) {
 				data, _ := yaml.Marshal(cfg)
 				app.Infof("\n%s", string(data))

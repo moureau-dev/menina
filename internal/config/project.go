@@ -1,9 +1,15 @@
 package config
 
 type ProjectFile struct {
-	Name        string `yaml:"name"`
-	Namespace   string `yaml:"namespace"`
-	Description string `yaml:"description"`
+	Name        string          `yaml:"name"`
+	Namespace   string          `yaml:"namespace"`
+	Description string          `yaml:"description"`
+	Webhooks    ProjectWebhooks `yaml:"webhooks"`
+}
+
+// ProjectWebhooks lets a project override the platform-level deploy webhook.
+type ProjectWebhooks struct {
+	Deploy *DeployWebhook `yaml:"deploy"`
 }
 
 type ImageSpec struct {
@@ -88,16 +94,18 @@ type Project struct {
 	Name        string
 	Namespace   string
 	Description string
+	Webhooks    ProjectWebhooks
 	Apps        map[string]*AppFile
 	EnvOrder    []string
 	Envs        map[string]*EnvironmentFile
 }
 
 type ResolvedProject struct {
-	Name         string
-	Namespace    string
-	Description  string
-	Environments map[string]*ResolvedEnvironment
+	Name          string
+	Namespace     string
+	Description   string
+	DeployWebhook *DeployWebhook
+	Environments  map[string]*ResolvedEnvironment
 }
 
 type ResolvedEnvironment struct {
@@ -123,6 +131,7 @@ type ResolvedApp struct {
 	Replicas      int
 	Health        *HealthSpec
 	Env           map[string]string
+	Webhook       *DeployWebhook
 }
 
 func (a *ResolvedApp) Image() string {
