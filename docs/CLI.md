@@ -45,9 +45,9 @@ services.
 
 | Command | Purpose |
 | --- | --- |
-| `menina create [project-name] [--namespace] [--description] [--yes]` | Create a project (prompts for the name; optionally offers to create an app) |
+| `menina create [project-name] [--namespace] [--description] [--environments a,b,c] [--yes]` | Create a project. Prompts the name, then asks **“Do you account for multiple environments?”** — *No* creates only `production`; *Yes* opens an editable list where you add names (shown on each step) and rename them. Then optionally offers to create an app. |
 | `menina project` | Interactive: pick a project → run the app menu |
-| `menina project create <name> [--namespace] [--description]` | Create a project |
+| `menina project create <name> [--namespace] [--description] [--environments a,b,c]` | Create a project and its environments (`production` by default; `--environments none` for none) |
 | `menina project list [--json]` | List projects |
 | `menina project delete <name> [--yes]` | Delete config (workloads pruned; PVCs/history retained) |
 
@@ -73,7 +73,7 @@ services.
 | `menina app deploy <name> --project P --environment E [--yes]` | Deploy and wait for the rollout |
 | `menina app logs <name> --project P --environment E [--follow] [--tail N]` | Stream workload logs |
 | `menina app rollback <name> --project P --environment E [--digest D] [--yes]` | Restore a recorded digest |
-| `menina app scale <name> --project P (--replicas N \| --min M --max X [--target-cpu C] \| --reset)` | Change scaling |
+| `menina app scale <name> --project P [--environment/-e E] (--replicas N \| --min M --max X [--target-cpu C] \| --reset)` | Change scaling. Without `-e` writes the baseline (all environments inherit it); with `-e` writes that environment's override |
 | `menina app edit <name> --project P` | Edit the app YAML in `$EDITOR` |
 | `menina app delete <name> --project P [--yes]` | Delete config (workload pruned; PVCs/history retained) |
 
@@ -86,6 +86,38 @@ services.
 `Deploy · Scale · Edit · Logs · Rollback · Delete · Back`. Deploy/Logs/Rollback
 prompt for the environment (auto-selected when the project has exactly one).
 
+## Environments & scaling
+
+An **environment** is a deployment target (`production`, `staging`, …). It starts
+empty and holds **per-app overrides** (`enabled`, `image`, `resources`,
+`replicas`, `exposure`, `env`, …). You deploy an app *into* an environment:
+
+```bash
+menina app deploy api --project my-app --environment production
+```
+
+**Scaling is environmental.** The app file holds the baseline (`replicas`), and
+each environment may override it:
+
+```
+projects/my-app/apps/api.yml            # baseline: replicas: 1
+projects/my-app/environments/prod.yml   # override: replicas: {min: 2, max: 10}
+```
+
+`menina app scale` targets the **baseline** by default; pass `--environment/-e`
+to write a **per-environment override** instead:
+
+```bash
+menina app scale api --project my-app --min 2 --max 10                  # all environments
+menina app scale api --project my-app -e production --min 2 --max 10    # production only
+menina app scale api --project my-app -e production --reset             # drop the override
+```
+
+In the app action menu, Scale asks **“Apply scaling to: All environments
+(baseline) / <env>”** when the project has more than one environment. The
+effective value for an environment is the override if present, else the
+baseline, else the platform default.
+
 ## Version & help
 
 - `menina version`, `menina --version`, `menina -v`
@@ -95,11 +127,11 @@ prompt for the environment (auto-selected when the project has exactly one).
 
 ```bash
 # New here: create a project, then deploy an app to it
-menina create my-app                 # prompts; then optionally create an app
+menina create my-app                 # asks: multiple environments? (No = just production)
 menina app --project my-app          # pick an app → Deploy
 
 # Non-interactive / CI
-menina create my-app --yes
+menina create my-app --yes --environments development,staging,production
 menina app create api --project my-app --repository registry.example.com/my-app/api --port 8080 --yes
 menina app deploy api --project my-app --environment production --yes
 

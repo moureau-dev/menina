@@ -101,7 +101,7 @@ func appCreate(app *App) *cobra.Command {
 }
 
 func appScale(app *App) *cobra.Command {
-	var project string
+	var project, environment string
 	var replicas, minReplicas, maxReplicas, targetCPU int
 	var reset bool
 	cmd := &cobra.Command{
@@ -117,41 +117,82 @@ func appScale(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			af, ok := apps[name]
-			if !ok {
+			if _, ok := apps[name]; !ok {
 				return fmt.Errorf("app %q not found in project %q", name, project)
 			}
-			switch {
-			case reset:
-				af.Replicas = nil
-			case cmd.Flags().Changed("replicas"):
-				af.Replicas = &config.ReplicasSpec{Min: replicas, Max: replicas}
-			case cmd.Flags().Changed("min") || cmd.Flags().Changed("max"):
-				af.Replicas = &config.ReplicasSpec{Min: minReplicas, Max: maxReplicas, TargetCPU: targetCPU}
-			default:
-				return fmt.Errorf("specify --replicas N, --min/--max, or --reset")
+
+			spec, err := scaleSpec(cmd, reset, replicas, minReplicas, maxReplicas, targetCPU)
+			if err != nil {
+				return err
 			}
+
+			if environment != "" {
+				return applyEnvironmentScale(app, project, environment, name, spec)
+			}
+
+			af := apps[name]
+			af.Replicas = spec
 			if err := writeYAML(appPath(app, project, name), af); err != nil {
 				return err
 			}
-			switch {
-			case af.Replicas == nil:
-				app.Infof("Scaled %q to inherit the platform default", name)
-			case af.Replicas.Autoscaling():
-				app.Infof("Scaled %q to %d–%d replicas (target CPU %d%%)", name, af.Replicas.Min, af.Replicas.Max, af.Replicas.TargetCPU)
-			default:
-				app.Infof("Scaled %q to %d replica(s)", name, af.Replicas.Min)
-			}
+			app.Infof("Scaled %q baseline: %s", name, describeReplicas(spec))
 			app.Infof("Apply with `menina app deploy %s --project %s --environment <env>`, or let reconciliation pick it up.", name, project)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
+	cmd.Flags().StringVarP(&environment, "environment", "e", "", "write a per-environment override instead of the baseline")
 	cmd.Flags().IntVar(&replicas, "replicas", 0, "fixed replica count")
 	cmd.Flags().IntVar(&minReplicas, "min", 0, "minimum replicas (enables autoscaling)")
 	cmd.Flags().IntVar(&maxReplicas, "max", 0, "maximum replicas (enables autoscaling)")
 	cmd.Flags().IntVar(&targetCPU, "target-cpu", 70, "target CPU utilization for autoscaling")
-	cmd.Flags().BoolVar(&reset, "reset", false, "remove the override and inherit the platform default")
+	cmd.Flags().BoolVar(&reset, "reset", false, "remove the override and inherit the baseline/default")
 	_ = cmd.MarkFlagRequired("project")
 	return cmd
+}
+
+// scaleSpec turns the scale flags into a replica spec, or nil to reset.
+func scaleSpec(cmd *cobra.Command, reset bool, replicas, minReplicas, maxReplicas, targetCPU int) (*config.ReplicasSpec, error) {
+	switch {
+	case reset:
+		return nil, nil
+	case cmd.Flags().Changed("replicas"):
+		return &config.ReplicasSpec{Min: replicas, Max: replicas}, nil
+	case cmd.Flags().Changed("min") || cmd.Flags().Changed("max"):
+		return &config.ReplicasSpec{Min: minReplicas, Max: maxReplicas, TargetCPU: targetCPU}, nil
+	default:
+		return nil, fmt.Errorf("specify --replicas N, --min/--max, or --reset")
+	}
+}
+
+func describeReplicas(spec *config.ReplicasSpec) string {
+	switch {
+	case spec == nil:
+		return "inherit the baseline/platform default"
+	case spec.Autoscaling():
+		return fmt.Sprintf("%d–%d replicas (target CPU %d%%)", spec.Min, spec.Max, spec.TargetCPU)
+	default:
+		return fmt.Sprintf("%d replica(s)", spec.Min)
+	}
+}
+
+// applyEnvironmentScale writes a per-environment replica override, leaving the
+// app baseline untouched.
+func applyEnvironmentScale(app *App, project, environment, name string, spec *config.ReplicasSpec) error {
+	env, err := config.LoadEnvironment(app.Opts.ConfigDir, project, environment)
+	if err != nil {
+		return err
+	}
+	ov := env.Apps[name]
+	if ov == nil {
+		ov = &config.AppOverride{}
+		env.Apps[name] = ov
+	}
+	ov.Replicas = spec
+	if err := config.SaveEnvironment(app.Opts.ConfigDir, project, env); err != nil {
+		return err
+	}
+	app.Infof("Scaled %q in environment %q: %s", name, environment, describeReplicas(spec))
+	app.Infof("Apply with `menina app deploy %s --project %s --environment %s`, or let reconciliation pick it up.", name, project, environment)
+	return nil
 }

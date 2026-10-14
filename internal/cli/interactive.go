@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -51,6 +52,9 @@ func createProjectInline(app *App, p *prompter) (string, error) {
 	if err := createProject(app, name, ns, ""); err != nil {
 		return "", err
 	}
+	if err := createEnvironments(app, name, chooseEnvironments(p)); err != nil {
+		return "", err
+	}
 	return name, nil
 }
 
@@ -82,17 +86,113 @@ func createAppInline(app *App, p *prompter, project string) (string, error) {
 	return name, nil
 }
 
+func writeEnvironment(app *App, project, name string) error {
+	env := config.EnvironmentFile{Name: name, Apps: map[string]*config.AppOverride{}}
+	return writeYAML(filepath.Join(config.ProjectDir(app.Opts.ConfigDir, project), "environments", name+".yml"), env)
+}
+
+func createEnvironments(app *App, project string, names []string) error {
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		if err := writeEnvironment(app, project, n); err != nil {
+			return err
+		}
+		app.Infof("Created environment %q in project %q", n, project)
+	}
+	return nil
+}
+
 func createEnvironmentInline(app *App, p *prompter, project string) (string, error) {
 	name := p.Ask("New environment name", "")
 	if name == "" {
 		return "", fmt.Errorf("environment name is required")
 	}
-	env := config.EnvironmentFile{Name: name, Apps: map[string]*config.AppOverride{}}
-	if err := writeYAML(filepath.Join(config.ProjectDir(app.Opts.ConfigDir, project), "environments", name+".yml"), env); err != nil {
+	if err := writeEnvironment(app, project, name); err != nil {
 		return "", err
 	}
 	app.Infof("Created environment %q in project %q", name, project)
 	return name, nil
+}
+
+func containsString(items []string, want string) bool {
+	for _, it := range items {
+		if it == want {
+			return true
+		}
+	}
+	return false
+}
+
+func suggestEnvironmentName(envs []string) string {
+	for _, c := range []string{"development", "staging", "production"} {
+		if !containsString(envs, c) {
+			return c
+		}
+	}
+	return ""
+}
+
+// chooseEnvironments builds the environment list interactively. It first asks
+// whether the project has more than one environment; if not, only "production"
+// is created. Otherwise it runs an editable list, showing the current
+// environments on every step, from which names can be added or renamed.
+func chooseEnvironments(p *prompter) []string {
+	if !p.Confirm("Do you account for multiple environments?", false) {
+		return []string{"production"}
+	}
+	var envs []string
+	for {
+		if len(envs) > 0 {
+			fmt.Printf("  Current environments: %s\n", strings.Join(envs, ", "))
+		}
+		actions := []string{"+ add an environment", "done"}
+		if len(envs) > 0 {
+			actions = []string{"+ add an environment", "rename an environment", "done"}
+		}
+		switch actions[p.Choose("Environments", actions, len(actions)-1)] {
+		case "+ add an environment":
+			name := p.Ask("  Environment name", suggestEnvironmentName(envs))
+			if name == "" {
+				continue
+			}
+			if containsString(envs, name) {
+				fmt.Printf("  %q is already in the list\n", name)
+				continue
+			}
+			envs = append(envs, name)
+		case "rename an environment":
+			i := p.Choose("  Rename which?", envs, 0)
+			name := p.Ask("  New name", envs[i])
+			if name == "" || (name != envs[i] && containsString(envs, name)) {
+				continue
+			}
+			envs[i] = name
+		default:
+			if len(envs) == 0 {
+				return []string{"production"}
+			}
+			return envs
+		}
+	}
+}
+
+// resolveEnvironmentNames decides which environments to create: an explicit
+// flag (or "none" for none), the interactive chooser, or — non-interactively —
+// just "production".
+func resolveEnvironmentNames(p *prompter, flag string, interactive bool) []string {
+	if flag != "" {
+		if strings.EqualFold(strings.TrimSpace(flag), "none") {
+			return nil
+		}
+		return splitCSV(flag)
+	}
+	if interactive && p.enabled {
+		return chooseEnvironments(p)
+	}
+	return []string{"production"}
 }
 
 func selectProject(app *App, p *prompter) (string, error) {
@@ -172,7 +272,7 @@ func appMenu(ctx context.Context, app *App, p *prompter, project, name, defaultE
 				err = runChild(ctx, appDeploy(app), map[string]string{"project": project, "environment": env}, name)
 			}
 		case 1:
-			err = scaleInline(ctx, app, p, project, name)
+			err = scaleInline(ctx, app, p, project, name, defaultEnv)
 		case 2:
 			err = runChild(ctx, appEdit(app), map[string]string{"project": project}, name)
 		case 3:
@@ -200,17 +300,33 @@ func appMenu(ctx context.Context, app *App, p *prompter, project, name, defaultE
 	}
 }
 
-func scaleInline(ctx context.Context, app *App, p *prompter, project, name string) error {
+func scaleInline(ctx context.Context, app *App, p *prompter, project, name, defaultEnv string) error {
+	target := defaultEnv
+	if target == "" {
+		_, order, err := config.LoadEnvironments(config.ProjectsDir(app.Opts.ConfigDir), project)
+		if err != nil {
+			return err
+		}
+		if len(order) > 1 {
+			options := append([]string{"All environments (baseline)"}, order...)
+			if idx := p.Choose("Apply scaling to", options, 0); idx > 0 {
+				target = order[idx-1]
+			}
+		}
+	}
+	flags := map[string]string{"project": project}
+	if target != "" {
+		flags["environment"] = target
+	}
 	switch p.Choose("Scaling", []string{"Fixed replicas", "Autoscaling range", "Reset (inherit default)"}, 0) {
 	case 0:
-		n := atoiOr(p.Ask("Replicas", "1"), 1)
-		return runChild(ctx, appScale(app), map[string]string{"project": project, "replicas": fmt.Sprintf("%d", n)}, name)
+		flags["replicas"] = fmt.Sprintf("%d", atoiOr(p.Ask("Replicas", "1"), 1))
 	case 1:
-		mn := atoiOr(p.Ask("Min replicas", "2"), 2)
-		mx := atoiOr(p.Ask("Max replicas", "10"), 10)
-		tc := atoiOr(p.Ask("Target CPU %", "70"), 70)
-		return runChild(ctx, appScale(app), map[string]string{"project": project, "min": fmt.Sprintf("%d", mn), "max": fmt.Sprintf("%d", mx), "target-cpu": fmt.Sprintf("%d", tc)}, name)
+		flags["min"] = fmt.Sprintf("%d", atoiOr(p.Ask("Min replicas", "2"), 2))
+		flags["max"] = fmt.Sprintf("%d", atoiOr(p.Ask("Max replicas", "10"), 10))
+		flags["target-cpu"] = fmt.Sprintf("%d", atoiOr(p.Ask("Target CPU %", "70"), 70))
 	default:
-		return runChild(ctx, appScale(app), map[string]string{"project": project, "reset": "true"}, name)
+		flags["reset"] = "true"
 	}
+	return runChild(ctx, appScale(app), flags, name)
 }

@@ -7,7 +7,7 @@ import (
 )
 
 func newCreateCommand(app *App) *cobra.Command {
-	var namespace, description string
+	var namespace, description, environments string
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "create [project-name]",
@@ -37,6 +37,9 @@ func newCreateCommand(app *App) *cobra.Command {
 			if err := createProject(app, name, namespace, description); err != nil {
 				return err
 			}
+			if err := createEnvironments(app, name, resolveEnvironmentNames(p, environments, p.enabled && !yes)); err != nil {
+				return err
+			}
 			if p.enabled && !yes && p.Confirm(fmt.Sprintf("Create an app in %q now?", name), false) {
 				if _, err := createAppInline(app, p, name); err != nil {
 					return err
@@ -47,6 +50,7 @@ func newCreateCommand(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&namespace, "namespace", "", "Kubernetes namespace for workloads")
 	cmd.Flags().StringVar(&description, "description", "", "project description")
+	cmd.Flags().StringVar(&environments, "environments", "", "comma-separated environments to create (default: none)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "non-interactive; use flags only")
 	return cmd
 }

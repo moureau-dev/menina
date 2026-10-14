@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"path/filepath"
@@ -180,11 +181,50 @@ func TestVersionFlags(t *testing.T) {
 
 func TestCreateCommandCreatesProject(t *testing.T) {
 	dir := t.TempDir()
-	if err := execute("--config-dir", dir, "create", "demo"); err != nil {
+	if err := execute("--config-dir", dir, "create", "demo", "--environments", "development,staging"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "projects", "demo", "project.yml")); err != nil {
 		t.Fatalf("project.yml not written: %v", err)
+	}
+	for _, env := range []string{"development", "staging"} {
+		if _, err := os.Stat(filepath.Join(dir, "projects", "demo", "environments", env+".yml")); err != nil {
+			t.Fatalf("environment %s not written: %v", env, err)
+		}
+	}
+}
+
+func TestProjectCreateWithEnvironments(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "project", "create", "p", "--environments", "production"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "projects", "p", "environments", "production.yml")); err != nil {
+		t.Fatalf("production environment not written: %v", err)
+	}
+}
+
+func TestProjectCreateDefaultsToProduction(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "project", "create", "p"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "projects", "p", "environments", "production.yml")); err != nil {
+		t.Fatalf("default production environment not written: %v", err)
+	}
+}
+
+func TestProjectCreateNoneSkipsEnvironments(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "project", "create", "p", "--environments", "none"); err != nil {
+		t.Fatal(err)
+	}
+	ents, err := os.ReadDir(filepath.Join(dir, "projects", "p", "environments"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ents) != 0 {
+		t.Fatalf("expected no environments, found %d", len(ents))
 	}
 }
 
@@ -198,6 +238,69 @@ func TestBareCommandsAreNonInteractiveWithoutTTY(t *testing.T) {
 		if err := execute(full...); err != nil {
 			t.Fatalf("%v should fall back to help without a TTY: %v", args, err)
 		}
+	}
+}
+
+func TestChooseEnvironmentsSingle(t *testing.T) {
+	p := &prompter{reader: bufio.NewReader(strings.NewReader("\n")), enabled: true}
+	got := chooseEnvironments(p)
+	if len(got) != 1 || got[0] != "production" {
+		t.Fatalf("single-environment answer = %v, want [production]", got)
+	}
+}
+
+func TestChooseEnvironmentsAddAndRename(t *testing.T) {
+	// multi=y; add (default development); add (default staging);
+	// rename #2 -> prod; done
+	in := "y\n1\n\n1\n\n2\n2\nprod\n3\n"
+	p := &prompter{reader: bufio.NewReader(strings.NewReader(in)), enabled: true}
+	got := chooseEnvironments(p)
+	want := []string{"development", "prod"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("environments = %v, want %v", got, want)
+	}
+}
+
+func TestAppScalePerEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(execute("--config-dir", dir, "project", "create", "p", "--environments", "production,staging"))
+	must(execute("--config-dir", dir, "app", "create", "api", "--project", "p", "--repository", "r", "--yes"))
+	must(execute("--config-dir", dir, "app", "scale", "api", "--project", "p", "--environment", "production", "--min", "2", "--max", "10"))
+	must(execute("--config-dir", dir, "app", "scale", "api", "--project", "p", "--replicas", "4"))
+
+	env, err := config.LoadEnvironment(dir, "p", "production")
+	must(err)
+	if r := env.Apps["api"].Replicas; r == nil || r.Min != 2 || r.Max != 10 {
+		t.Fatalf("production override = %+v", r)
+	}
+	apps, err := config.LoadApps(config.ProjectsDir(dir), "p")
+	must(err)
+	if r := apps["api"].Replicas; r == nil || r.Min != 4 {
+		t.Fatalf("baseline = %+v", r)
+	}
+	staging, err := config.LoadEnvironment(dir, "p", "staging")
+	must(err)
+	if staging.Apps["api"] != nil {
+		t.Fatalf("staging should be untouched, got %+v", staging.Apps["api"])
+	}
+}
+
+func TestAppScaleUnknownEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "project", "create", "p", "--environments", "production"); err != nil {
+		t.Fatal(err)
+	}
+	if err := execute("--config-dir", dir, "app", "create", "api", "--project", "p", "--repository", "r", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	if err := execute("--config-dir", dir, "app", "scale", "api", "--project", "p", "--environment", "nope", "--replicas", "2"); err == nil {
+		t.Fatal("expected error for unknown environment")
 	}
 }
 

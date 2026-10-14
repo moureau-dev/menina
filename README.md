@@ -149,9 +149,10 @@ bare `menina app` / `project` / `environment`) — is documented in
 [docs/CLI.md](docs/CLI.md). Quick start:
 
 ```bash
-menina create my-app          # create a project (prompts for details)
+menina create my-app          # create a project; asks if you use multiple environments
 menina app --project my-app   # pick an app → Deploy / Scale / Logs / ...
-menina app scale api --project my-app --min 2 --max 10
+menina app scale api --project my-app --min 2 --max 10              # baseline (all envs)
+menina app scale api --project my-app -e production --replicas 4    # production only
 ```
 
 ## Configuration
