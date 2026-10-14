@@ -40,7 +40,10 @@ func SavePlatform(configDir string, cfg *Config) error {
 		return err
 	}
 	path := filepath.Join(configDir, configFileName)
-	return os.WriteFile(path, data, defaultConfigFileMode)
+	if err := os.WriteFile(path, data, defaultConfigFileMode); err != nil {
+		return err
+	}
+	return os.Chmod(path, defaultConfigFileMode)
 }
 
 func LoadProject(projectsDir, name string) (*Project, error) {

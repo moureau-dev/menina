@@ -39,6 +39,10 @@ func EnsureProjectDirs(configDir, project string) error {
 		if err := os.MkdirAll(d, 0o770|os.ModeSetgid); err != nil {
 			return err
 		}
+		// chmod explicitly; MkdirAll modes are masked by umask.
+		if err := os.Chmod(d, 0o770|os.ModeSetgid); err != nil {
+			return err
+		}
 	}
 	return nil
 }

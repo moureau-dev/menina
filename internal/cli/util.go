@@ -11,14 +11,21 @@ import (
 )
 
 func writeYAML(path string, v any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o770|os.ModeSetgid); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o770|os.ModeSetgid); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0o770|os.ModeSetgid); err != nil {
 		return err
 	}
 	data, err := yaml.Marshal(v)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o640)
+	if err := os.WriteFile(path, data, 0o640); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o640)
 }
 
 // confirmDestructive gates destructive operations. Non-interactive callers must

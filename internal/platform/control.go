@@ -41,6 +41,9 @@ func EnsureToken(path string) (string, error) {
 	if err := os.WriteFile(path, []byte(token), 0o640); err != nil {
 		return "", err
 	}
+	if err := os.Chmod(path, 0o640); err != nil {
+		return "", err
+	}
 	return token, nil
 }
 

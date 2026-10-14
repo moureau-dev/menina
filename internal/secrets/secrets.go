@@ -85,10 +85,19 @@ func Redact(value string) string {
 }
 
 func WriteSecretFile(path, value string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o770|os.ModeSetgid); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o770|os.ModeSetgid); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(value), 0o660)
+	// Explicit chmod so the mode is not masked by the process umask, which
+	// would otherwise break group access (e.g. umask 022 -> 0640/0750).
+	if err := os.Chmod(dir, 0o770|os.ModeSetgid); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(value), 0o660); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o660)
 }
 
 func ReadSecretFile(path string) (string, error) {
