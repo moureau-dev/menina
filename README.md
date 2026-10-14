@@ -283,6 +283,9 @@ filtering and balancing. `menina serve` resolves each exposed app to its
 Service ClusterIP:port and publishes it in the routing snapshot. The registry
 domain is routed the same way to Zot's Service.
 
+For the full proxy reference — routing, TLS, caching, security, supported
+protocols — see [docs/PROXY.md](docs/PROXY.md).
+
 On the supported single-node k3s setup, kube-proxy programs DNAT rules in the
 host/node network namespace, so a host process (the proxy) can reach a
 `ClusterIP:port` directly. Important: **reachability must be tested with TCP,
