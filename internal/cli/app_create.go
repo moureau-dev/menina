@@ -16,7 +16,11 @@ func appCreate(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create an app definition",
-		Args:  cobra.ExactArgs(1),
+		Long: "Create an app definition. Interactive on a terminal (prompts for project,\n" +
+			"repository, port and scaling); pass --yes with flags for scripts.",
+		Example: "  menina app create api --project my-app --repository registry.example.com/my-app/api --port 8080\n" +
+			"  menina app create worker --project my-app --repository registry.example.com/my-app/worker --type worker --yes",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			p := newPrompter()
@@ -107,7 +111,16 @@ func appScale(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scale <name>",
 		Short: "Change an app's replica count or autoscaling range",
-		Args:  cobra.ExactArgs(1),
+		Long: "Change an app's scaling.\n\n" +
+			"Without -e/--baseline it writes the shared baseline; on a terminal with\n" +
+			"more than one environment it asks which target to apply to. Use\n" +
+			"-e/--environment to write a single environment's override, or --baseline\n" +
+			"to be explicit. --reset removes the override (inherit the baseline/default).",
+		Example: "  menina app scale api --project my-app --replicas 4\n" +
+			"  menina app scale api --project my-app --min 2 --max 10\n" +
+			"  menina app scale api --project my-app -e production --min 3 --max 20\n" +
+			"  menina app scale api --project my-app --reset",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if project == "" {

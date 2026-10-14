@@ -14,6 +14,7 @@ func newProxyCommand(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "proxy",
 		Short: "Run the reverse proxy",
+		Long:  "Run the reverse proxy: terminates TLS per config and forwards public hostnames to Kubernetes ClusterIPs using the routing snapshot from the control plane. Runs as a systemd service in production.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := app.LoadConfig()
 			if err != nil {

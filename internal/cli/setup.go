@@ -86,6 +86,11 @@ func newSetupCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Configure the host and platform",
+		Long: "Interactively write config.yml: host, Kubernetes/ingress, registry (Zot),\n" +
+			"networking, TLS (ACME/manual/none) and defaults (namespace, replicas, CPU,\n" +
+			"memory). It also generates the registry push credential and the webhook\n" +
+			"token. Must run as root. Follow with `menina deploy`.",
+		Example: "  sudo menina setup\n  sudo menina setup --non-interactive   # accept all defaults",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if os.Geteuid() != 0 && strings.HasPrefix(app.Opts.ConfigDir, "/etc") {
 				return fmt.Errorf("menina setup writes to %s and must run as root (try: sudo menina setup, or pass --config-dir)", app.Opts.ConfigDir)

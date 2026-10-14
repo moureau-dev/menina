@@ -30,7 +30,18 @@ func newAppCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "app [name]",
 		Short: "Manage app definitions (interactive when run without a subcommand)",
-		Args:  cobra.MaximumNArgs(1),
+		Long: "Manage app definitions (create/edit/delete), deploy them, stream logs, roll\n" +
+			"back and scale.\n\n" +
+			"Run without a subcommand on a terminal to open the interactive flow: pick a\n" +
+			"project (or create one), pick or create an app, then a menu of\n" +
+			"Deploy / Scale / Edit / Logs / Rollback / Delete. Use --project (and\n" +
+			"--environment) to skip the prompts. Without a terminal it prints this help.",
+		Example: "  menina app --project my-app                 # choose an app, then act on it\n" +
+			"  menina app api --project my-app             # action menu for api\n" +
+			"  menina app deploy api --project my-app --environment production --yes\n" +
+			"  menina app scale api --project my-app --min 2 --max 10\n" +
+			"  menina app logs api --project my-app --environment production --follow",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p := newPrompter()
 			proj := project
@@ -152,7 +163,11 @@ func appDeploy(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy <name>",
 		Short: "Deploy an app into an environment",
-		Args:  cobra.ExactArgs(1),
+		Long: "Queue a deployment and wait for the rollout. The control plane must be\n" +
+			"running (`menina serve`). Deploying to \"production\" requires --yes\n" +
+			"(security.enforceProdPolicy).",
+		Example: "  menina app deploy api --project my-app --environment production --yes",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := app.LoadConfig()
 			if err != nil {

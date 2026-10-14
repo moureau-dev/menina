@@ -29,6 +29,7 @@ func newStatusCommand(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show overall platform health",
+		Long:  "Show overall platform health. Degrades gracefully when the control plane is unavailable. Use --json for machine-readable output.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := app.LoadConfig()
 			if err != nil {
@@ -63,6 +64,7 @@ func newRoutesCommand(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "routes",
 		Short: "Inspect public hostname mappings",
+		Long:  "List the public hostname → Service mappings published by the control plane. Use --json for machine-readable output.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := app.LoadConfig()
 			if err != nil {

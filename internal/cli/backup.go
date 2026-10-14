@@ -13,6 +13,7 @@ func newBackupCommand(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "backup",
 		Short: "Back up the Menina SQLite database",
+		Long:  "Write a consistent VACUUM INTO copy of the SQLite database to <data-dir>/backups/. Image blobs are not included.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := app.LoadConfig()
 			if err != nil {

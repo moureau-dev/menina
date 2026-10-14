@@ -13,7 +13,14 @@ func newProjectCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "project",
 		Short: "Manage projects (interactive when run without a subcommand)",
-		Args:  cobra.NoArgs,
+		Long: "Manage projects (create/list/delete).\n\n" +
+			"Run without a subcommand on a terminal to pick a project (or create one),\n" +
+			"then pick or create an app and open its action menu. Without a terminal it\n" +
+			"prints this help. See also `menina create` for the guided setup.",
+		Example: "  menina project                   # pick a project → app menu\n" +
+			"  menina project create my-app --environments production,staging\n" +
+			"  menina project list --json",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p := newPrompter()
 			if !p.enabled {
@@ -39,7 +46,12 @@ func projectCreate(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create a project",
-		Args:  cobra.ExactArgs(1),
+		Long: "Create a project and its environments. Environments default to\n" +
+			"\"production\"; use --environments to list them or \"none\" to create none.",
+		Example: "  menina project create my-app --namespace my-app\n" +
+			"  menina project create my-app --environments development,staging,production\n" +
+			"  menina project create my-app --environments none",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if err := createProject(app, name, namespace, description); err != nil {

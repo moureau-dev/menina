@@ -31,9 +31,15 @@ type App struct {
 func NewRootCommand() *cobra.Command {
 	app := &App{}
 	root := &cobra.Command{
-		Use:           "menina",
-		Short:         "Menina is a self-hosted application platform",
-		Long:          "Menina deploys applications from pushed container images to k3s, routing public hostnames through its own reverse proxy.",
+		Use:   "menina",
+		Short: "Menina is a self-hosted application platform",
+		Long:  "Menina deploys applications from pushed container images to k3s, routing public hostnames through its own reverse proxy.",
+		Example: "  menina setup                     # configure the host (root)\n" +
+			"  menina deploy                    # provision k3s, registry, services\n" +
+			"  menina create my-app             # create a project (interactive)\n" +
+			"  menina app --project my-app      # pick an app, then Deploy/Scale/Logs\n" +
+			"  menina serve                     # run the control plane\n" +
+			"  menina proxy                     # run the reverse proxy",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {

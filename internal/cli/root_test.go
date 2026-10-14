@@ -354,6 +354,23 @@ func TestAppScaleBaselineFlag(t *testing.T) {
 	}
 }
 
+func TestHelpIsDescriptive(t *testing.T) {
+	root, err := executeCapture("--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(root, "Examples:") || !strings.Contains(root, "menina setup") {
+		t.Fatalf("root help lacks examples:\n%s", root)
+	}
+	app, err := executeCapture("app", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(app, "Deploy / Scale / Edit / Logs / Rollback / Delete") {
+		t.Fatalf("app help does not describe the interactive menu:\n%s", app)
+	}
+}
+
 func TestCompletionGenerate(t *testing.T) {
 	for _, shell := range []string{"bash", "zsh", "fish"} {
 		if err := execute("completion", shell); err != nil {

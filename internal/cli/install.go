@@ -13,6 +13,7 @@ func newInstallCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Install shell completion for bash, zsh and fish",
+		Long:  "Install shell completion for bash, zsh and fish (per-user, or system-wide with --system).",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := cmd.Root()
 			home, err := os.UserHomeDir()

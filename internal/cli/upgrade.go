@@ -37,6 +37,7 @@ func newUpgradeCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "upgrade",
 		Short: "Download and install a new verified Menina binary",
+		Long:  "Download the latest release, verify its checksum, execute the staged binary before replacing the current one (atomic rename with a .bak), and report that services must be restarted.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 3*time.Minute)
 			defer cancel()

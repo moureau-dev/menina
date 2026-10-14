@@ -11,6 +11,7 @@ func newServeCommand(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "serve",
 		Short: "Run the persistent control-plane service",
+		Long:  "Run the control plane: config watcher, registry event listener, deployment workers and reconciliation, publishing routing snapshots to the proxy. Runs as a systemd service in production.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := app.LoadConfig()
 			if err != nil {

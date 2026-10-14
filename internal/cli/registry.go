@@ -12,11 +12,15 @@ import (
 )
 
 func newRegistryCommand(app *App) *cobra.Command {
-	cmd := &cobra.Command{Use: "registry", Short: "Inspect and manage the image registry"}
+	cmd := &cobra.Command{
+		Use:   "registry",
+		Short: "Inspect and manage the image registry",
+		Long:  "Inspect and manage the bundled Zot image registry: check health and show or regenerate the push credential.",
+	}
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "status",
-			Short: "Check Zot health and storage",
+			Short: "Check Zot health",
 			RunE: func(cmd *cobra.Command, args []string) error {
 				cfg, err := app.LoadConfig()
 				if err != nil {

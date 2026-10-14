@@ -22,6 +22,7 @@ func newDoctorCommand(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Diagnose configuration and infrastructure problems",
+		Long:  "Check configuration, Kubernetes connectivity, the registry, per-route TCP reachability, the webhook listener and served certificates, reporting problems with context.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			cfg, err := app.LoadConfig()

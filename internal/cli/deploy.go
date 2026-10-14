@@ -76,7 +76,15 @@ func newDeployCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy [infra|platform]",
 		Short: "Reconcile infrastructure and platform services",
-		Args:  cobra.MaximumNArgs(1),
+		Long: "Provision/reconcile the platform. Idempotent. With no argument it runs\n" +
+			"infra (k3s, storage, registries.yaml, Zot) then platform (systemd services,\n" +
+			"DNS/tunnel wiring). `menina deploy platform` requires the Zot Service to\n" +
+			"exist already. Must run as root.",
+		Example: "  menina deploy            # infra then platform\n" +
+			"  menina deploy infra      # k3s, storage, registry\n" +
+			"  menina deploy platform   # systemd services, DNS/tunnel\n" +
+			"  menina deploy --dry-run  # print the plan",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := app.LoadConfig()
 			if err != nil {

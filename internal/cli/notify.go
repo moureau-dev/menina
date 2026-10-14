@@ -14,7 +14,11 @@ import (
 )
 
 func newNotifyCommand(app *App) *cobra.Command {
-	cmd := &cobra.Command{Use: "notify", Short: "Manage outbound deploy notifications"}
+	cmd := &cobra.Command{
+		Use:   "notify",
+		Short: "Manage outbound deploy notifications",
+		Long:  "Inspect and test the outbound deploy webhooks (webhooks.deploy): list configured hooks and send a synthetic event to verify a receiver.",
+	}
 	cmd.AddCommand(notifyList(app), notifyTest(app))
 	return cmd
 }

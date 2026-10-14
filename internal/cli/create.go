@@ -12,7 +12,16 @@ func newCreateCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create [project-name]",
 		Short: "Create a project (prompts when no name is given)",
-		Args:  cobra.MaximumNArgs(1),
+		Long: "Create a project. On a terminal it prompts for the name (if omitted),\n" +
+			"namespace and description, then asks whether you use multiple\n" +
+			"environments: \"No\" creates only production, \"Yes\" opens an editable list\n" +
+			"where you add and rename environments. It finally offers to create an app.\n\n" +
+			"With --yes (or without a terminal) it uses flags only; environments default\n" +
+			"to production unless --environments is given (\"none\" for none).",
+		Example: "  menina create my-app                 # guided; asks about environments\n" +
+			"  menina create my-app --yes --environments development,staging,production\n" +
+			"  menina create my-app --environments none",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p := newPrompter()
 			name := ""

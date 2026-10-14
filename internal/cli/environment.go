@@ -17,7 +17,17 @@ func newEnvironmentCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "environment [name]",
 		Short: "Manage project environments (interactive without a subcommand)",
-		Args:  cobra.MaximumNArgs(1),
+		Long: "Manage project environments (create/list/delete, or show one).\n\n" +
+			"An environment is a deployment target that holds per-app overrides\n" +
+			"(enabled, image tag, resources, replicas, exposure, env). Run without a\n" +
+			"subcommand on a terminal to pick a project, then pick or create an\n" +
+			"environment and print its resolved apps. Use --project to skip the\n" +
+			"project prompt.",
+		Example: "  menina environment --project my-app                # pick/create, then show\n" +
+			"  menina environment production --project my-app     # show production\n" +
+			"  menina environment create staging --project my-app\n" +
+			"  menina environment list --project my-app",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p := newPrompter()
 			proj := project
