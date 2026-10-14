@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -81,11 +82,28 @@ func NewRootCommand() *cobra.Command {
 }
 
 func Execute() int {
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// Cancel on the first SIGINT/SIGTERM so long-running services (serve, proxy)
+	// shut down gracefully. Stop handling afterwards so a second signal takes the
+	// default action (immediate termination) if shutdown hangs.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	go func() {
+		if _, ok := <-sigCh; ok {
+			cancel()
+			signal.Stop(sigCh)
+		}
+	}()
+	setPromptContext(ctx)
+
 	root := NewRootCommand()
 	root.SetContext(ctx)
 	if err := root.Execute(); err != nil {
+		if errors.Is(err, errExit) {
+			return 0
+		}
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
 	}

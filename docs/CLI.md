@@ -18,7 +18,10 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
   (piped, CI, `/dev/null`) or `--yes` is set, a missing argument is an error
   that says what is required — never a secret prompt hang.
 - **Selectors** are numbered menus; **option 1 is always `+ create a new …`**
-  (project / app / environment), followed by the existing items.
+  (project / app / environment), followed by the existing items, and a final
+  **`Exit`**. The app action menu ends with **`Back`**.
+- **Ctrl+C always works**, including mid-prompt: it exits immediately (the first
+  SIGINT also triggers graceful shutdown of `serve`/`proxy`).
 - Aborting a confirmation exits non-zero; success exits 0.
 - **`delete` is a soft delete by default.** The target stops (its workload is
   scaled to zero) and its config is kept for `restore`; `--hard` removes the

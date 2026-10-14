@@ -3,6 +3,8 @@ package cli
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -452,6 +454,34 @@ func TestProjectDeleteSoftAndRestore(t *testing.T) {
 	}
 	if _, err := os.Stat(live); err != nil {
 		t.Fatalf("restore must move the project back: %v", err)
+	}
+}
+
+func TestSelectorsOfferExit(t *testing.T) {
+	dir := t.TempDir()
+	app := &App{Opts: RootOptions{ConfigDir: dir}}
+	// With no projects the menu is ["+ create a new project", "Exit"]; pick Exit.
+	p := &prompter{reader: bufio.NewReader(strings.NewReader("2\n")), enabled: true}
+	_, err := selectProject(app, p)
+	if !errors.Is(err, errExit) {
+		t.Fatalf("selecting Exit = %v, want errExit", err)
+	}
+}
+
+func TestPromptInterruptExits(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	setPromptContext(ctx)
+	defer setPromptContext(nil)
+
+	exited := 0
+	promptExit = func(int) { exited++ }
+	defer func() { promptExit = os.Exit }()
+
+	// readLine must not block: the context is already cancelled (Ctrl+C).
+	(&prompter{reader: bufio.NewReader(strings.NewReader("ignored\n")), enabled: true}).readLine()
+	if exited != 1 {
+		t.Fatalf("interrupted prompt exited=%d, want 1", exited)
 	}
 }
 

@@ -9,6 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - Release builds now record the Go toolchain, so `menina version` reports it
   instead of `unknown`.
+- The interactive CLI can now be exited: selectors and the menus offer an
+  explicit `Exit`/`Back`, and Ctrl+C works mid-prompt (previously SIGINT was
+  captured and a blocked prompt read could not be interrupted).
 
 ## [0.0.1] - 2026-10-14
 

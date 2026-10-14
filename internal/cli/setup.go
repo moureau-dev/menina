@@ -26,6 +26,25 @@ func newPrompter() *prompter {
 	return &prompter{reader: bufio.NewReader(os.Stdin), enabled: enabled}
 }
 
+// readLine reads a line, abandoning the read (and exiting) if the process is
+// interrupted (SIGINT/SIGTERM) while waiting, so Ctrl+C always works even mid
+// prompt.
+func (p *prompter) readLine() string {
+	ch := make(chan string, 1)
+	go func() {
+		line, _ := p.reader.ReadString('\n')
+		ch <- strings.TrimSpace(line)
+	}()
+	select {
+	case line := <-ch:
+		return line
+	case <-promptCancelled():
+		fmt.Println()
+		promptExit(130)
+		return ""
+	}
+}
+
 func (p *prompter) Ask(label, def string) string {
 	if !p.enabled {
 		return def
@@ -35,8 +54,7 @@ func (p *prompter) Ask(label, def string) string {
 	} else {
 		fmt.Printf("%s: ", label)
 	}
-	line, _ := p.reader.ReadString('\n')
-	line = strings.TrimSpace(line)
+	line := p.readLine()
 	if line == "" {
 		return def
 	}
@@ -52,8 +70,7 @@ func (p *prompter) Confirm(label string, def bool) bool {
 		hint = "[y/N]"
 	}
 	fmt.Printf("%s %s ", label, hint)
-	line, _ := p.reader.ReadString('\n')
-	line = strings.ToLower(strings.TrimSpace(line))
+	line := strings.ToLower(p.readLine())
 	if line == "" {
 		return def
 	}
@@ -69,8 +86,7 @@ func (p *prompter) Choose(label string, options []string, def int) int {
 		fmt.Printf("  %d. %s\n", i+1, o)
 	}
 	fmt.Printf("Select [%d]: ", def+1)
-	line, _ := p.reader.ReadString('\n')
-	line = strings.TrimSpace(line)
+	line := p.readLine()
 	if line == "" {
 		return def
 	}

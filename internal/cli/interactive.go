@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,6 +13,28 @@ import (
 
 	"github.com/moureau-dev/menina/internal/config"
 )
+
+// errExit signals that the user cancelled an interactive flow; Execute treats it
+// as a clean exit.
+var errExit = errors.New("cancelled")
+
+// promptCtx is cancelled on SIGINT/SIGTERM so a prompt can abandon a blocking
+// read. It is nil outside Execute (e.g. in tests), in which case prompts never
+// self-cancel.
+var promptCtx context.Context
+
+func setPromptContext(ctx context.Context) { promptCtx = ctx }
+
+func promptCancelled() <-chan struct{} {
+	if promptCtx == nil {
+		return nil
+	}
+	return promptCtx.Done()
+}
+
+// promptExit is called when a prompt is interrupted; it is a variable so tests
+// can intercept it.
+var promptExit = os.Exit
 
 func runChild(ctx context.Context, c *cobra.Command, flags map[string]string, args ...string) error {
 	c.SetContext(ctx)
@@ -201,11 +225,16 @@ func selectProject(app *App, p *prompter) (string, error) {
 		return "", err
 	}
 	options := append([]string{"+ create a new project"}, names...)
+	options = append(options, "Exit")
 	idx := p.Choose("Select a project", options, 0)
-	if idx == 0 {
+	switch {
+	case idx == 0:
 		return createProjectInline(app, p)
+	case idx == len(options)-1:
+		return "", errExit
+	default:
+		return names[idx-1], nil
 	}
-	return names[idx-1], nil
 }
 
 func selectApp(app *App, p *prompter, project string) (string, error) {
@@ -219,11 +248,16 @@ func selectApp(app *App, p *prompter, project string) (string, error) {
 	}
 	sort.Strings(names)
 	options := append([]string{"+ create a new app"}, names...)
+	options = append(options, "Exit")
 	idx := p.Choose(fmt.Sprintf("Apps in project %q", project), options, 0)
-	if idx == 0 {
+	switch {
+	case idx == 0:
 		return createAppInline(app, p, project)
+	case idx == len(options)-1:
+		return "", errExit
+	default:
+		return names[idx-1], nil
 	}
-	return names[idx-1], nil
 }
 
 func selectEnvironment(app *App, p *prompter, project string) (string, error) {
@@ -237,7 +271,12 @@ func selectEnvironment(app *App, p *prompter, project string) (string, error) {
 	if len(order) == 1 {
 		return order[0], nil
 	}
-	return order[p.Choose("Select an environment", order, 0)], nil
+	options := append(append([]string{}, order...), "Exit")
+	idx := p.Choose("Select an environment", options, 0)
+	if idx == len(options)-1 {
+		return "", errExit
+	}
+	return order[idx], nil
 }
 
 func selectEnvironmentInteractive(app *App, p *prompter, project string) (string, error) {
@@ -246,11 +285,16 @@ func selectEnvironmentInteractive(app *App, p *prompter, project string) (string
 		return "", err
 	}
 	options := append([]string{"+ create a new environment"}, order...)
+	options = append(options, "Exit")
 	idx := p.Choose(fmt.Sprintf("Environments in project %q", project), options, 0)
-	if idx == 0 {
+	switch {
+	case idx == 0:
 		return createEnvironmentInline(app, p, project)
+	case idx == len(options)-1:
+		return "", errExit
+	default:
+		return order[idx-1], nil
 	}
-	return order[idx-1], nil
 }
 
 func appMenu(ctx context.Context, app *App, p *prompter, project, name, defaultEnv string) error {
@@ -295,6 +339,9 @@ func appMenu(ctx context.Context, app *App, p *prompter, project, name, defaultE
 			return nil
 		}
 		if err != nil {
+			if errors.Is(err, errExit) {
+				return errExit
+			}
 			app.Infof("error: %v", err)
 		}
 	}
