@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Release builds now record the Go toolchain, so `menina version` reports it
+  instead of `unknown`.
+
 ## [0.0.1] - 2026-10-14
 
 The first release: a self-hosted application platform in a single Go binary
