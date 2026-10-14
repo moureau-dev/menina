@@ -296,6 +296,7 @@ func (s *Service) controlMux() http.Handler {
 		writeJSON(w, http.StatusOK, releases)
 	})
 	mux.HandleFunc("/status", s.handleStatus)
+	mux.HandleFunc("/job-status", s.handleJobStatus)
 	mux.HandleFunc("/deploy", s.handleDeploy)
 	mux.HandleFunc("/rollback", s.handleRollback)
 	return mux
@@ -458,6 +459,31 @@ func (s *Service) handleRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"queued": true, "digest": req.Digest})
+}
+
+func (s *Service) handleJobStatus(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	project, environment, app := q.Get("project"), q.Get("environment"), q.Get("app")
+	resp := map[string]any{"found": false}
+	if job, ok, err := s.db.LatestJobByTarget(r.Context(), project, environment, app); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	} else if ok {
+		resp["found"] = true
+		resp["job"] = job
+	}
+	if releases, err := s.db.Releases(r.Context(), project, environment, app); err == nil && len(releases) > 0 {
+		resp["latestRelease"] = releases[0]
+	}
+	if observed, err := s.db.Observed(r.Context()); err == nil {
+		for _, o := range observed {
+			if o.Project == project && o.Environment == environment && o.App == app {
+				resp["observed"] = o
+				break
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Service) watcherLastError() string {

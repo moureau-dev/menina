@@ -1,16 +1,20 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/deployment"
+	"github.com/moureau-dev/menina/internal/platform"
 )
 
 func newAppCommand(app *App) *cobra.Command {
@@ -234,7 +238,11 @@ func appRollback(app *App) *cobra.Command {
 			if err := client.PostJSON(cmd.Context(), "/rollback", []byte(body)); err != nil {
 				return err
 			}
-			app.Infof("Rollback of %s/%s/%s to %s queued", project, environment, args[0], digest)
+			app.Infof("Rollback of %s/%s/%s to %s requested; waiting for the rollout...", project, environment, args[0], digest)
+			if err := waitForDeploy(cmd.Context(), client, project, environment, args[0], digest, 5*time.Minute); err != nil {
+				return err
+			}
+			app.Infof("Rollback complete: %s is running %s", args[0], digest)
 			return nil
 		},
 	}
@@ -244,4 +252,41 @@ func appRollback(app *App) *cobra.Command {
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("environment")
 	return cmd
+}
+
+// waitForDeploy polls the control plane until the job for the target reaches a
+// terminal state, so the CLI reports the actual outcome rather than just
+// "queued".
+func waitForDeploy(ctx context.Context, client *platform.ControlClient, project, environment, app, wantDigest string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	path := fmt.Sprintf("/job-status?project=%s&environment=%s&app=%s",
+		url.QueryEscape(project), url.QueryEscape(environment), url.QueryEscape(app))
+	for {
+		var resp struct {
+			Found bool `json:"found"`
+			Job   struct {
+				Status        string `json:"Status"`
+				LastError     string `json:"LastError"`
+				DesiredDigest string `json:"DesiredDigest"`
+			} `json:"job"`
+		}
+		if err := client.GetJSON(ctx, path, &resp); err == nil && resp.Found {
+			if wantDigest == "" || resp.Job.DesiredDigest == wantDigest {
+				switch resp.Job.Status {
+				case "done":
+					return nil
+				case "failed":
+					return fmt.Errorf("deployment failed: %s (the previously running version, if healthy, remains available)", resp.Job.LastError)
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for the deployment to complete; check `menina doctor` and logs")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
 }

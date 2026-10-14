@@ -54,7 +54,7 @@ func TestBuildWorkloadUsesDigestAndResources(t *testing.T) {
 	}
 }
 
-func TestDeployResolvedAppliesAndRecordsRelease(t *testing.T) {
+func TestDeployResolvedAppliesWorkload(t *testing.T) {
 	cluster := &stubCluster{}
 	db := deployDB(t)
 	engine := NewEngine(cluster, db, nil, deployLogger())
@@ -67,15 +67,17 @@ func TestDeployResolvedAppliesAndRecordsRelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("deploy: %v", err)
 	}
-	if !res.RolledOut || res.Digest != "sha256:dead" {
+	if !res.RolledOut || res.Image != "registry/api@sha256:dead" {
 		t.Fatalf("result = %+v", res)
 	}
 	if len(cluster.applied) != 1 {
 		t.Fatalf("expected service+workload applies, got %d", len(cluster.applied))
 	}
+	// Release history is recorded by the job worker only after the rollout
+	// succeeds, not by the engine itself.
 	releases, err := db.Releases(context.Background(), "p", "prod", "api")
-	if err != nil || len(releases) != 1 || releases[0].Digest != "sha256:dead" {
-		t.Fatalf("releases = %+v err=%v", releases, err)
+	if err != nil || len(releases) != 0 {
+		t.Fatalf("engine must not record a release before the rollout succeeds: %+v err=%v", releases, err)
 	}
 }
 

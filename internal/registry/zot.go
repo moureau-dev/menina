@@ -21,8 +21,9 @@ type ZotRetention struct {
 }
 
 type ZotRetentionPolicy struct {
-	Repositories []string            `json:"repositories,omitempty"`
-	KeepTags     []ZotKeepTagsPolicy `json:"keepTags,omitempty"`
+	Repositories   []string            `json:"repositories,omitempty"`
+	KeepTags       []ZotKeepTagsPolicy `json:"keepTags,omitempty"`
+	DeleteUntagged bool                `json:"deleteUntagged"`
 }
 
 type ZotKeepTagsPolicy struct {
@@ -113,6 +114,10 @@ func BuildZotConfig(p ZotParams) ([]byte, error) {
 					Patterns:                []string{".*"},
 					MostRecentlyPushedCount: p.KeepRecentTags,
 				}},
+				// Never delete untagged manifests: a retained release may be
+				// pinned only by digest (its tag moved or was overwritten), and
+				// garbage collection must keep the image a rollback needs.
+				DeleteUntagged: false,
 			}},
 		}
 	}

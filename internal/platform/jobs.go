@@ -163,6 +163,17 @@ func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
 		_ = j.db.FailJob(ctx, job.ID, err.Error())
 		return fmt.Errorf("rollout: %w", err)
 	}
+	// Record the release only after the rollout succeeds, so history never
+	// claims a deployment that is not actually running in Kubernetes.
+	_ = j.db.RecordRelease(ctx, database.Release{
+		Project:     app.Project,
+		Environment: app.Environment,
+		App:         app.Name,
+		Repository:  app.Repository,
+		Tag:         app.Tag,
+		Digest:      digest,
+		Status:      "deployed",
+	})
 	_ = j.db.UpsertObserved(ctx, database.Observed{
 		Project:        app.Project,
 		Environment:    app.Environment,

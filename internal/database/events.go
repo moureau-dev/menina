@@ -130,6 +130,21 @@ func (db *DB) JobsByStatus(ctx context.Context, status string) ([]Job, error) {
 	return scanJobs(rows)
 }
 
+func (db *DB) LatestJobByTarget(ctx context.Context, project, environment, app string) (Job, bool, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, dedup_key, kind, project, environment, app, repository, tag, desired_digest, status, attempts, last_error, created_at, updated_at
+		FROM jobs WHERE project = ? AND environment = ? AND app = ? AND `+activeWhere+` ORDER BY created_at DESC LIMIT 1`,
+		project, environment, app)
+	if err != nil {
+		return Job{}, false, err
+	}
+	defer rows.Close()
+	jobs, err := scanJobs(rows)
+	if err != nil || len(jobs) == 0 {
+		return Job{}, false, err
+	}
+	return jobs[0], true, nil
+}
+
 func (db *DB) ClaimJob(ctx context.Context, id string) (bool, error) {
 	res, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, updated_at = unixepoch() WHERE id = ? AND status = ?`,
 		JobStatusProcessing, id, JobStatusPending)

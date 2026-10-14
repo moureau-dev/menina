@@ -127,6 +127,9 @@ func TestBuildZotConfigTranslation(t *testing.T) {
 	if got := cfg.Storage.Retention.Policies[0].KeepTags[0].MostRecentlyPushedCount; got != 3 {
 		t.Fatalf("mostRecentlyPushedCount = %d", got)
 	}
+	if cfg.Storage.Retention.Policies[0].DeleteUntagged {
+		t.Fatal("untagged manifests must be retained so digest-pinned rollbacks survive GC")
+	}
 	if cfg.Extensions.Events == nil || !cfg.Extensions.Events.Enable {
 		t.Fatalf("events = %+v", cfg.Extensions.Events)
 	}

@@ -44,14 +44,15 @@ func (e *Engine) ResolveDigest(ctx context.Context, app *config.ResolvedApp) (st
 }
 
 func (e *Engine) DeployResolved(ctx context.Context, app *config.ResolvedApp, desiredDigest string) (*Result, error) {
-	return e.applyResolved(ctx, app, ImageForDigest(app, desiredDigest), desiredDigest, true)
+	return e.applyResolved(ctx, app, ImageForDigest(app, desiredDigest))
 }
 
-// Apply reconciles an app's Kubernetes resources to the given image without
-// recording a release. It is used by the configuration-driven reconciler and is
-// idempotent (an unchanged pod template does not trigger a rollout).
+// Apply reconciles an app's Kubernetes resources to the given image. It is used
+// by the configuration-driven reconciler and is idempotent (an unchanged pod
+// template does not trigger a rollout). Release history is recorded by the
+// caller only after a rollout succeeds.
 func (e *Engine) Apply(ctx context.Context, app *config.ResolvedApp, image string) (*Result, error) {
-	return e.applyResolved(ctx, app, image, "", false)
+	return e.applyResolved(ctx, app, image)
 }
 
 // ImageForDigest returns the image reference for an app: repository@digest when
@@ -66,7 +67,7 @@ func ImageForDigest(app *config.ResolvedApp, digest string) string {
 	return app.Repository
 }
 
-func (e *Engine) applyResolved(ctx context.Context, app *config.ResolvedApp, image, digest string, recordRelease bool) (*Result, error) {
+func (e *Engine) applyResolved(ctx context.Context, app *config.ResolvedApp, image string) (*Result, error) {
 	if !app.Enabled {
 		return nil, fmt.Errorf("app %s/%s/%s is disabled", app.Project, app.Environment, app.Name)
 	}
@@ -91,17 +92,6 @@ func (e *Engine) applyResolved(ctx context.Context, app *config.ResolvedApp, ima
 	if err := e.cluster.ApplyWorkload(ctx, w); err != nil {
 		return nil, fmt.Errorf("apply workload for %s/%s: %w", app.Namespace, app.Name, err)
 	}
-	if recordRelease && e.db != nil {
-		_ = e.db.RecordRelease(ctx, database.Release{
-			Project:     app.Project,
-			Environment: app.Environment,
-			App:         app.Name,
-			Repository:  app.Repository,
-			Tag:         app.Tag,
-			Digest:      digest,
-			Status:      "deployed",
-		})
-	}
 	e.log.Info("workload applied", "project", app.Project, "environment", app.Environment, "app", app.Name, "image", w.Image)
 	return &Result{
 		Project:     app.Project,
@@ -109,17 +99,8 @@ func (e *Engine) applyResolved(ctx context.Context, app *config.ResolvedApp, ima
 		App:         app.Name,
 		Namespace:   app.Namespace,
 		Image:       w.Image,
-		Digest:      digest,
 		RolledOut:   true,
 	}, nil
-}
-
-func (e *Engine) Deploy(ctx context.Context, app *config.ResolvedApp) (*Result, error) {
-	digest, err := e.ResolveDigest(ctx, app)
-	if err != nil {
-		return nil, err
-	}
-	return e.DeployResolved(ctx, app, digest)
 }
 
 func (e *Engine) buildWorkload(app *config.ResolvedApp, digest string) Workload {
