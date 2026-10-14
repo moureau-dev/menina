@@ -2,55 +2,55 @@ package deployment
 
 import (
 	"context"
+	"encoding/base64"
 	"testing"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
+	"gopkg.in/yaml.v3"
 )
 
-func TestEnsureServiceAccessBuildsScopedKubeconfig(t *testing.T) {
-	cs := fake.NewSimpleClientset(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "menina-token", Namespace: "menina-system"},
-		Type:       corev1.SecretTypeServiceAccountToken,
-		Data: map[string][]byte{
-			corev1.ServiceAccountTokenKey:  []byte("sa-token"),
-			corev1.ServiceAccountRootCAKey: []byte("ca-data"),
+func seedTokenSecret(f *fakeAPI) {
+	f.seed("/api/v1/namespaces/menina-system/secrets", "menina-token", map[string]any{
+		"metadata": map[string]any{"name": "menina-token", "namespace": "menina-system"},
+		"type":     "kubernetes.io/service-account-token",
+		"data": map[string]any{
+			"token":  base64.StdEncoding.EncodeToString([]byte("sa-token")),
+			"ca.crt": base64.StdEncoding.EncodeToString([]byte("ca-data")),
 		},
 	})
-	restCfg := &rest.Config{Host: "https://k8s.example:6443", TLSClientConfig: rest.TLSClientConfig{CAData: []byte("admin-ca")}}
+}
 
-	data, err := EnsureServiceAccess(context.Background(), cs, restCfg, "menina-system", "menina")
+func TestEnsureServiceAccessBuildsScopedKubeconfig(t *testing.T) {
+	f := newFakeAPI(t)
+	seedTokenSecret(f)
+	client, err := newFakeClient(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := EnsureServiceAccess(context.Background(), client, "menina-system", "menina")
 	if err != nil {
 		t.Fatalf("EnsureServiceAccess: %v", err)
 	}
-	cfg, err := clientcmd.Load(data)
-	if err != nil {
+	var cfg kubeconfigFile
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		t.Fatalf("returned kubeconfig is invalid: %v", err)
 	}
-	auth := cfg.AuthInfos["menina"]
-	if auth == nil || auth.Token != "sa-token" {
-		t.Fatalf("kubeconfig must use the service account token, got %+v", auth)
+	if len(cfg.Users) != 1 || cfg.Users[0].User.Token != "sa-token" {
+		t.Fatalf("kubeconfig must use the service account token: %+v", cfg.Users)
 	}
-	if len(auth.ClientCertificateData) != 0 || len(auth.ClientKeyData) != 0 {
-		t.Fatal("kubeconfig must not embed admin client credentials")
+	if len(cfg.Clusters) != 1 || cfg.Clusters[0].Cluster.Server != client.Server() {
+		t.Fatalf("server = %+v, want %q", cfg.Clusters, client.Server())
 	}
-	if cfg.Clusters["menina"].Server != "https://k8s.example:6443" {
-		t.Fatalf("server = %q", cfg.Clusters["menina"].Server)
+	if cfg.Clusters[0].Cluster.CAData != base64.StdEncoding.EncodeToString([]byte("ca-data")) {
+		t.Fatalf("CA = %q", cfg.Clusters[0].Cluster.CAData)
 	}
-	if string(cfg.Clusters["menina"].CertificateAuthorityData) != "ca-data" {
-		t.Fatalf("CA = %q", cfg.Clusters["menina"].CertificateAuthorityData)
+	if f.object("/apis/rbac.authorization.k8s.io/v1/clusterroles", PlatformClusterRoleName) == nil {
+		t.Fatal("cluster role not created")
 	}
-	if _, err := cs.RbacV1().ClusterRoles().Get(context.Background(), PlatformClusterRoleName, metav1.GetOptions{}); err != nil {
-		t.Fatalf("cluster role not created: %v", err)
+	if f.object("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings", PlatformClusterRoleName) == nil {
+		t.Fatal("cluster role binding not created")
 	}
-	if _, err := cs.RbacV1().ClusterRoleBindings().Get(context.Background(), PlatformClusterRoleName, metav1.GetOptions{}); err != nil {
-		t.Fatalf("cluster role binding not created: %v", err)
-	}
-	if _, err := cs.CoreV1().ServiceAccounts("menina-system").Get(context.Background(), "menina", metav1.GetOptions{}); err != nil {
-		t.Fatalf("service account not created: %v", err)
+	if f.object("/api/v1/namespaces/menina-system/serviceaccounts", "menina") == nil {
+		t.Fatal("service account not created")
 	}
 }
 

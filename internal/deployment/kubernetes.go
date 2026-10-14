@@ -4,21 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
+	"github.com/moureau-dev/menina/internal/kube"
 )
 
 const (
@@ -28,51 +20,51 @@ const (
 	labelEnv       = "menina.io/environment"
 	labelApp       = "menina.io/app"
 	managedByValue = "menina"
+
+	coreV1 = "/api/v1"
+	appsV1 = "/apis/apps/v1"
+	rbacV1 = "/apis/rbac.authorization.k8s.io/v1"
 )
 
 type KubernetesCluster struct {
-	client kubernetes.Interface
+	client *kube.Client
 }
 
 func NewKubernetesCluster(kubeconfig string) (*KubernetesCluster, error) {
-	restCfg, err := buildRestConfig(kubeconfig)
+	cfg, err := kube.Load(kubeconfig)
 	if err != nil {
 		return nil, err
 	}
-	cs, err := kubernetes.NewForConfig(restCfg)
+	client, err := kube.NewClient(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("create kubernetes client: %w", err)
 	}
-	return &KubernetesCluster{client: cs}, nil
+	return &KubernetesCluster{client: client}, nil
 }
 
-func NewKubernetesClusterFromInterface(cs kubernetes.Interface) *KubernetesCluster {
-	return &KubernetesCluster{client: cs}
+func NewKubernetesClusterFromClient(client *kube.Client) *KubernetesCluster {
+	return &KubernetesCluster{client: client}
 }
 
 func NodeInternalIP(ctx context.Context, kubeconfig string) (string, error) {
-	restCfg, err := buildRestConfig(kubeconfig)
+	cluster, err := NewKubernetesCluster(kubeconfig)
 	if err != nil {
 		return "", err
 	}
-	cs, err := kubernetes.NewForConfig(restCfg)
+	nodes, err := cluster.listNodes(ctx)
 	if err != nil {
 		return "", err
 	}
-	nodes, err := cs.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return "", err
-	}
-	for _, node := range nodes.Items {
+	for _, node := range nodes {
 		for _, addr := range node.Status.Addresses {
-			if addr.Type == corev1.NodeInternalIP {
+			if addr.Type == "InternalIP" {
 				return addr.Address, nil
 			}
 		}
 	}
-	for _, node := range nodes.Items {
+	for _, node := range nodes {
 		for _, addr := range node.Status.Addresses {
-			if addr.Type == corev1.NodeExternalIP {
+			if addr.Type == "ExternalIP" {
 				return addr.Address, nil
 			}
 		}
@@ -80,100 +72,120 @@ func NodeInternalIP(ctx context.Context, kubeconfig string) (string, error) {
 	return "", fmt.Errorf("no node internal address found")
 }
 
-func buildRestConfig(kubeconfig string) (*rest.Config, error) {
-	candidates := []string{kubeconfig, os.Getenv("KUBECONFIG"), "/etc/rancher/k3s/k3s.yaml", "/etc/rancher/rke2/rke2.yaml"}
-	for _, candidate := range candidates {
-		if candidate == "" {
-			continue
-		}
-		if _, err := os.Stat(candidate); err == nil {
-			return clientcmd.BuildConfigFromFlags("", candidate)
-		}
+func (k *KubernetesCluster) listNodes(ctx context.Context) ([]kube.Node, error) {
+	var list kube.List[kube.Node]
+	if err := k.client.List(ctx, coreV1+"/nodes", "", &list); err != nil {
+		return nil, err
 	}
-	if cfg, err := rest.InClusterConfig(); err == nil {
-		return cfg, nil
-	}
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{}).ClientConfig()
+	return list.Items, nil
 }
 
 func (k *KubernetesCluster) Ping(ctx context.Context) error {
-	_, err := k.client.Discovery().ServerVersion()
+	_, err := k.client.Version(ctx)
 	return err
 }
 
-func (k *KubernetesCluster) EnsureNamespace(ctx context.Context, name string) error {
-	_, err := k.client.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
-	if err == nil {
-		return nil
+func nsResource(prefix, namespace, resource string) string {
+	if namespace == "" {
+		return prefix + "/" + resource
 	}
-	if !apierrors.IsNotFound(err) {
+	return prefix + "/namespaces/" + namespace + "/" + resource
+}
+
+func (k *KubernetesCluster) EnsureNamespace(ctx context.Context, name string) error {
+	if err := k.client.Get(ctx, coreV1+"/namespaces/"+name, &kube.Namespace{}); err == nil {
+		return nil
+	} else if !kube.IsNotFound(err) {
 		return err
 	}
-	_, err = k.client.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{labelManagedBy: managedByValue}},
-	}, metav1.CreateOptions{})
-	if apierrors.IsAlreadyExists(err) {
+	err := k.client.Create(ctx, coreV1+"/namespaces", &kube.Namespace{
+		TypeMeta: kube.TypeMeta{APIVersion: "v1", Kind: "Namespace"},
+		Metadata: kube.ObjectMeta{Name: name, Labels: map[string]string{labelManagedBy: managedByValue}},
+	}, nil)
+	if kube.IsAlreadyExists(err) {
 		return nil
 	}
 	return err
 }
 
 func (k *KubernetesCluster) ApplyWorkload(ctx context.Context, w Workload) error {
+	collection := nsResource(appsV1, w.Namespace, "deployments")
+	item := collection + "/" + w.Name
 	desired := k.buildDeployment(w)
-	existing, err := k.client.AppsV1().Deployments(w.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		_, err = k.client.AppsV1().Deployments(w.Namespace).Create(ctx, desired, metav1.CreateOptions{})
-		return err
+
+	existing := map[string]any{}
+	err := k.client.Get(ctx, item, &existing)
+	if kube.IsNotFound(err) {
+		return k.client.Create(ctx, collection, desired, nil)
 	}
 	if err != nil {
 		return err
 	}
-	existing.Spec = desired.Spec
-	existing.Labels = desired.Labels
-	_, err = k.client.AppsV1().Deployments(w.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
-	return err
+	desiredMap := kube.ToMap(desired)
+	existing["spec"] = desiredMap["spec"]
+	meta, _ := existing["metadata"].(map[string]any)
+	if meta == nil {
+		meta = map[string]any{}
+		existing["metadata"] = meta
+	}
+	meta["labels"] = k.labels(w)
+	return k.client.Update(ctx, item, existing, nil)
 }
 
 func (k *KubernetesCluster) DeleteWorkload(ctx context.Context, namespace, name string) error {
-	err := k.client.AppsV1().Deployments(namespace).Delete(ctx, name, metav1.DeleteOptions{})
-	if apierrors.IsNotFound(err) {
+	err := k.client.Delete(ctx, nsResource(appsV1, namespace, "deployments")+"/"+name)
+	if kube.IsNotFound(err) {
 		return nil
 	}
 	return err
 }
 
 func (k *KubernetesCluster) DeleteService(ctx context.Context, namespace, name string) error {
-	err := k.client.CoreV1().Services(namespace).Delete(ctx, name, metav1.DeleteOptions{})
-	if apierrors.IsNotFound(err) {
+	err := k.client.Delete(ctx, nsResource(coreV1, namespace, "services")+"/"+name)
+	if kube.IsNotFound(err) {
 		return nil
 	}
 	return err
 }
 
 func (k *KubernetesCluster) RestartWorkload(ctx context.Context, namespace, name string) error {
-	d, err := k.client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
+	item := nsResource(appsV1, namespace, "deployments") + "/" + name
+	existing := map[string]any{}
+	if err := k.client.Get(ctx, item, &existing); err != nil {
 		return err
 	}
-	if d.Spec.Template.Annotations == nil {
-		d.Spec.Template.Annotations = map[string]string{}
+	spec, _ := existing["spec"].(map[string]any)
+	if spec == nil {
+		spec = map[string]any{}
+		existing["spec"] = spec
 	}
-	d.Spec.Template.Annotations["menina.io/restartedAt"] = time.Now().UTC().Format(time.RFC3339)
-	_, err = k.client.AppsV1().Deployments(namespace).Update(ctx, d, metav1.UpdateOptions{})
-	return err
+	template, _ := spec["template"].(map[string]any)
+	if template == nil {
+		template = map[string]any{}
+		spec["template"] = template
+	}
+	meta, _ := template["metadata"].(map[string]any)
+	if meta == nil {
+		meta = map[string]any{}
+		template["metadata"] = meta
+	}
+	ann, _ := meta["annotations"].(map[string]any)
+	if ann == nil {
+		ann = map[string]any{}
+		meta["annotations"] = ann
+	}
+	ann["menina.io/restartedAt"] = time.Now().UTC().Format(time.RFC3339)
+	return k.client.Update(ctx, item, existing, nil)
 }
 
 func (k *KubernetesCluster) ListWorkloads(ctx context.Context) ([]WorkloadRef, error) {
-	list, err := k.client.AppsV1().Deployments("").List(ctx, metav1.ListOptions{
-		LabelSelector: labelManagedBy + "=" + managedByValue,
-	})
-	if err != nil {
+	var list kube.List[kube.Deployment]
+	if err := k.client.List(ctx, appsV1+"/deployments", labelManagedBy+"="+managedByValue, &list); err != nil {
 		return nil, err
 	}
 	var out []WorkloadRef
 	for _, d := range list.Items {
-		out = append(out, WorkloadRef{Namespace: d.Namespace, Name: d.Name})
+		out = append(out, WorkloadRef{Namespace: d.Metadata.Namespace, Name: d.Metadata.Name})
 	}
 	return out, nil
 }
@@ -183,42 +195,51 @@ func (k *KubernetesCluster) ApplyService(ctx context.Context, w Workload) error 
 	if name == "" {
 		name = w.Name
 	}
-	desired := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: w.Namespace,
-			Labels:    k.labels(w),
-		},
-		Spec: corev1.ServiceSpec{
-			Type:     corev1.ServiceTypeClusterIP,
+	collection := nsResource(coreV1, w.Namespace, "services")
+	item := collection + "/" + name
+	desired := &kube.Service{
+		TypeMeta: kube.TypeMeta{APIVersion: "v1", Kind: "Service"},
+		Metadata: kube.ObjectMeta{Name: name, Namespace: w.Namespace, Labels: k.labels(w)},
+		Spec: kube.ServiceSpec{
+			Type:     "ClusterIP",
 			Selector: k.selector(w),
-			Ports: []corev1.ServicePort{{
-				Name:       "http",
-				Port:       int32(w.Port),
-				TargetPort: intstr.FromInt32(int32(w.Port)),
-				Protocol:   corev1.ProtocolTCP,
-			}},
+			Ports:    []kube.ServicePort{{Name: "http", Port: w.Port, TargetPort: w.Port, Protocol: "TCP"}},
 		},
 	}
-	existing, err := k.client.CoreV1().Services(w.Namespace).Get(ctx, name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		_, err = k.client.CoreV1().Services(w.Namespace).Create(ctx, desired, metav1.CreateOptions{})
-		return err
+	existing := map[string]any{}
+	err := k.client.Get(ctx, item, &existing)
+	if kube.IsNotFound(err) {
+		return k.client.Create(ctx, collection, desired, nil)
 	}
 	if err != nil {
 		return err
 	}
-	desired.Spec.ClusterIP = existing.Spec.ClusterIP
-	existing.Spec.Selector = desired.Spec.Selector
-	existing.Spec.Ports = desired.Spec.Ports
-	existing.Labels = desired.Labels
-	_, err = k.client.CoreV1().Services(w.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
-	return err
+	desiredMap := kube.ToMap(desired)
+	desiredSpec, _ := desiredMap["spec"].(map[string]any)
+	spec, _ := existing["spec"].(map[string]any)
+	if spec == nil {
+		spec = map[string]any{}
+		existing["spec"] = spec
+	}
+	// Preserve server-assigned/immutable fields (clusterIP, ipFamilies, ...):
+	// only replace selector and ports.
+	spec["selector"] = desiredSpec["selector"]
+	spec["ports"] = desiredSpec["ports"]
+	if _, ok := spec["type"]; !ok {
+		spec["type"] = "ClusterIP"
+	}
+	meta, _ := existing["metadata"].(map[string]any)
+	if meta == nil {
+		meta = map[string]any{}
+		existing["metadata"] = meta
+	}
+	meta["labels"] = k.labels(w)
+	return k.client.Update(ctx, item, existing, nil)
 }
 
 func (k *KubernetesCluster) WorkloadStatus(ctx context.Context, namespace, name string) (*WorkloadStatus, error) {
-	d, err := k.client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
+	var d kube.Deployment
+	if err := k.client.Get(ctx, nsResource(appsV1, namespace, "deployments")+"/"+name, &d); err != nil {
 		return nil, err
 	}
 	st := &WorkloadStatus{
@@ -237,25 +258,23 @@ func (k *KubernetesCluster) WorkloadStatus(ctx context.Context, namespace, name 
 }
 
 func (k *KubernetesCluster) ServiceClusterIP(ctx context.Context, namespace, name string) (string, error) {
-	svc, err := k.client.CoreV1().Services(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
+	var svc kube.Service
+	if err := k.client.Get(ctx, nsResource(coreV1, namespace, "services")+"/"+name, &svc); err != nil {
 		return "", err
 	}
 	return svc.Spec.ClusterIP, nil
 }
 
 func (k *KubernetesCluster) ListServices(ctx context.Context) ([]ServiceRef, error) {
-	list, err := k.client.CoreV1().Services("").List(ctx, metav1.ListOptions{
-		LabelSelector: labelManagedBy + "=" + managedByValue,
-	})
-	if err != nil {
+	var list kube.List[kube.Service]
+	if err := k.client.List(ctx, coreV1+"/services", labelManagedBy+"="+managedByValue, &list); err != nil {
 		return nil, err
 	}
 	var out []ServiceRef
 	for _, svc := range list.Items {
-		ref := ServiceRef{Namespace: svc.Namespace, Name: svc.Name, ClusterIP: svc.Spec.ClusterIP, Managed: true}
+		ref := ServiceRef{Namespace: svc.Metadata.Namespace, Name: svc.Metadata.Name, ClusterIP: svc.Spec.ClusterIP, Managed: true}
 		for _, p := range svc.Spec.Ports {
-			ref.Ports = append(ref.Ports, int(p.Port))
+			ref.Ports = append(ref.Ports, p.Port)
 		}
 		out = append(out, ref)
 	}
@@ -263,98 +282,102 @@ func (k *KubernetesCluster) ListServices(ctx context.Context) ([]ServiceRef, err
 }
 
 func (k *KubernetesCluster) PodLogs(ctx context.Context, namespace, name string, opts LogOptions) (io.ReadCloser, error) {
-	pods, err := k.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: labelName + "=" + name})
-	if err != nil {
+	var pods kube.List[kube.Pod]
+	if err := k.client.List(ctx, nsResource(coreV1, namespace, "pods"), labelName+"="+name, &pods); err != nil {
 		return nil, err
 	}
 	if len(pods.Items) == 0 {
 		return nil, fmt.Errorf("no pods found for %s/%s", namespace, name)
 	}
-	pod := pods.Items[0]
-	logOpts := &corev1.PodLogOptions{Follow: opts.Follow}
+	q := url.Values{}
+	if opts.Follow {
+		q.Set("follow", "true")
+	}
 	if opts.Container != "" {
-		logOpts.Container = opts.Container
+		q.Set("container", opts.Container)
 	}
 	if opts.TailLines != nil {
-		logOpts.TailLines = opts.TailLines
+		q.Set("tailLines", strconv.FormatInt(*opts.TailLines, 10))
 	}
-	return k.client.CoreV1().Pods(namespace).GetLogs(pod.Name, logOpts).Stream(ctx)
+	return k.client.Stream(ctx, nsResource(coreV1, namespace, "pods")+"/"+pods.Items[0].Metadata.Name+"/log", q)
 }
 
 func (k *KubernetesCluster) EnsureSecret(ctx context.Context, namespace, name string, data map[string][]byte) error {
-	desired := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{labelManagedBy: managedByValue}},
-		Type:       corev1.SecretTypeOpaque,
-		Data:       data,
+	collection := nsResource(coreV1, namespace, "secrets")
+	item := collection + "/" + name
+	desired := &kube.Secret{
+		TypeMeta: kube.TypeMeta{APIVersion: "v1", Kind: "Secret"},
+		Metadata: kube.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{labelManagedBy: managedByValue}},
+		Type:     "Opaque",
+		Data:     data,
 	}
-	existing, err := k.client.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		_, err = k.client.CoreV1().Secrets(namespace).Create(ctx, desired, metav1.CreateOptions{})
-		return err
+	existing := map[string]any{}
+	err := k.client.Get(ctx, item, &existing)
+	if kube.IsNotFound(err) {
+		return k.client.Create(ctx, collection, desired, nil)
 	}
 	if err != nil {
 		return err
 	}
-	existing.Data = data
-	_, err = k.client.CoreV1().Secrets(namespace).Update(ctx, existing, metav1.UpdateOptions{})
-	return err
+	existing["data"] = kube.ToMap(desired)["data"]
+	return k.client.Update(ctx, item, existing, nil)
+}
+
+func (k *KubernetesCluster) EnsureConfigMap(ctx context.Context, namespace, name string, data map[string]string) error {
+	collection := nsResource(coreV1, namespace, "configmaps")
+	item := collection + "/" + name
+	desired := &kube.ConfigMap{
+		TypeMeta: kube.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"},
+		Metadata: kube.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{labelManagedBy: managedByValue}},
+		Data:     data,
+	}
+	existing := map[string]any{}
+	err := k.client.Get(ctx, item, &existing)
+	if kube.IsNotFound(err) {
+		return k.client.Create(ctx, collection, desired, nil)
+	}
+	if err != nil {
+		return err
+	}
+	existing["data"] = kube.ToMap(desired)["data"]
+	return k.client.Update(ctx, item, existing, nil)
 }
 
 func (k *KubernetesCluster) EnsurePVC(ctx context.Context, namespace, name, size, storageClass string) error {
-	_, err := k.client.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err == nil {
+	collection := nsResource(coreV1, namespace, "persistentvolumeclaims")
+	item := collection + "/" + name
+	if err := k.client.Get(ctx, item, &kube.PersistentVolumeClaim{}); err == nil {
 		return nil
-	}
-	if !apierrors.IsNotFound(err) {
+	} else if !kube.IsNotFound(err) {
 		return err
 	}
-	q, err := resource.ParseQuantity(size)
-	if err != nil {
-		return fmt.Errorf("parse storage size %q: %w", size, err)
+	if size == "" {
+		size = "1Gi"
 	}
-	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{labelManagedBy: managedByValue}},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-			Resources: corev1.VolumeResourceRequirements{
-				Requests: corev1.ResourceList{corev1.ResourceStorage: q},
-			},
+	pvc := &kube.PersistentVolumeClaim{
+		TypeMeta: kube.TypeMeta{APIVersion: "v1", Kind: "PersistentVolumeClaim"},
+		Metadata: kube.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{labelManagedBy: managedByValue}},
+		Spec: kube.PVCSpec{
+			AccessModes: []string{"ReadWriteOnce"},
+			Resources:   kube.ResourceRequirements{Requests: map[string]string{"storage": size}},
 		},
 	}
 	if storageClass != "" {
 		pvc.Spec.StorageClassName = &storageClass
 	}
-	_, err = k.client.CoreV1().PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{})
-	if apierrors.IsAlreadyExists(err) {
+	err := k.client.Create(ctx, collection, pvc, nil)
+	if kube.IsAlreadyExists(err) {
 		return nil
 	}
 	return err
 }
 
-func (k *KubernetesCluster) EnsureConfigMap(ctx context.Context, namespace, name string, data map[string]string) error {
-	desired := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{labelManagedBy: managedByValue}},
-		Data:       data,
-	}
-	existing, err := k.client.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		_, err = k.client.CoreV1().ConfigMaps(namespace).Create(ctx, desired, metav1.CreateOptions{})
-		return err
-	}
-	if err != nil {
-		return err
-	}
-	existing.Data = data
-	_, err = k.client.CoreV1().ConfigMaps(namespace).Update(ctx, existing, metav1.UpdateOptions{})
-	return err
-}
-
-func (k *KubernetesCluster) buildDeployment(w Workload) *appsv1.Deployment {
+func (k *KubernetesCluster) buildDeployment(w Workload) *kube.Deployment {
 	replicas := int32(w.Replicas)
 	if w.Type == "worker" && replicas == 0 {
 		replicas = 1
 	}
-	container := corev1.Container{
+	container := kube.Container{
 		Name:    w.Name,
 		Image:   w.Image,
 		Command: w.Command,
@@ -365,12 +388,12 @@ func (k *KubernetesCluster) buildDeployment(w Workload) *appsv1.Deployment {
 		containerPort = w.ContainerPort
 	}
 	if containerPort > 0 {
-		container.Ports = []corev1.ContainerPort{{Name: "http", ContainerPort: int32(containerPort), Protocol: corev1.ProtocolTCP}}
+		container.Ports = []kube.ContainerPort{{Name: "http", ContainerPort: containerPort, Protocol: "TCP"}}
 	}
 	if w.PullPolicy != "" {
-		container.ImagePullPolicy = corev1.PullPolicy(w.PullPolicy)
+		container.ImagePullPolicy = w.PullPolicy
 	} else {
-		container.ImagePullPolicy = corev1.PullIfNotPresent
+		container.ImagePullPolicy = "IfNotPresent"
 	}
 	keys := make([]string, 0, len(w.Env))
 	for key := range w.Env {
@@ -378,80 +401,66 @@ func (k *KubernetesCluster) buildDeployment(w Workload) *appsv1.Deployment {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		container.Env = append(container.Env, corev1.EnvVar{Name: key, Value: w.Env[key]})
+		container.Env = append(container.Env, kube.EnvVar{Name: key, Value: w.Env[key]})
 	}
 	if w.CPU != "" || w.Memory != "" {
-		req := corev1.ResourceList{}
-		lim := corev1.ResourceList{}
+		req := map[string]string{}
+		lim := map[string]string{}
 		if w.CPU != "" {
-			if q, err := resource.ParseQuantity(w.CPU); err == nil {
-				req[corev1.ResourceCPU] = q
-				lim[corev1.ResourceCPU] = q
-			}
+			req["cpu"] = w.CPU
+			lim["cpu"] = w.CPU
 		}
 		if w.Memory != "" {
-			if q, err := resource.ParseQuantity(w.Memory); err == nil {
-				req[corev1.ResourceMemory] = q
-				lim[corev1.ResourceMemory] = q
-			}
+			req["memory"] = w.Memory
+			lim["memory"] = w.Memory
 		}
-		container.Resources = corev1.ResourceRequirements{Requests: req, Limits: lim}
+		container.Resources = &kube.ResourceRequirements{Requests: req, Limits: lim}
 	}
 	if w.HealthPath != "" {
-		probe := &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{Path: w.HealthPath, Port: intstr.FromInt32(int32(w.Port))},
-			},
-		}
+		probe := &kube.Probe{HTTPGet: &kube.HTTPGetAction{Path: w.HealthPath, Port: w.Port}}
 		container.ReadinessProbe = probe
-		container.LivenessProbe = probe.DeepCopy()
+		container.LivenessProbe = &kube.Probe{HTTPGet: &kube.HTTPGetAction{Path: w.HealthPath, Port: w.Port}}
 	}
-	podSpec := corev1.PodSpec{Containers: []corev1.Container{container}}
+	podSpec := kube.PodSpec{Containers: []kube.Container{container}}
 	if w.PullSecret != "" {
-		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: w.PullSecret}}
+		podSpec.ImagePullSecrets = []kube.LocalObjectReference{{Name: w.PullSecret}}
 	}
 	if w.StorageSize != "" && w.MountPath != "" {
 		fsGroup := int64(1000)
-		podSpec.SecurityContext = &corev1.PodSecurityContext{FSGroup: &fsGroup}
-		volumeName := "data"
-		podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
-			Name: volumeName,
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: w.Name + "-data"},
-			},
+		podSpec.SecurityContext = &kube.PodSecurityContext{FSGroup: &fsGroup}
+		podSpec.Volumes = append(podSpec.Volumes, kube.Volume{
+			Name:                  "data",
+			PersistentVolumeClaim: &kube.PVCVolumeSource{ClaimName: w.Name + "-data"},
 		})
-		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, corev1.VolumeMount{Name: volumeName, MountPath: w.MountPath})
+		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, kube.VolumeMount{Name: "data", MountPath: w.MountPath})
 	}
 	if w.ConfigMap != "" {
 		mount := w.ConfigMount
 		if mount == "" {
 			mount = "/etc/" + w.Name
 		}
-		podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
-			Name: "config",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: w.ConfigMap}},
-			},
+		podSpec.Volumes = append(podSpec.Volumes, kube.Volume{
+			Name:      "config",
+			ConfigMap: &kube.ConfigMapVolumeSource{Name: w.ConfigMap},
 		})
-		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "config", MountPath: mount, ReadOnly: true})
+		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, kube.VolumeMount{Name: "config", MountPath: mount, ReadOnly: true})
 	}
 	if w.SecretName != "" && w.SecretMount != "" {
-		podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
-			Name: "secret",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{SecretName: w.SecretName},
-			},
+		podSpec.Volumes = append(podSpec.Volumes, kube.Volume{
+			Name:   "secret",
+			Secret: &kube.SecretVolumeSource{SecretName: w.SecretName},
 		})
-		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "secret", MountPath: w.SecretMount, ReadOnly: true})
+		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, kube.VolumeMount{Name: "secret", MountPath: w.SecretMount, ReadOnly: true})
 	}
-	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: w.Name, Namespace: w.Namespace, Labels: k.labels(w)},
-		Spec: appsv1.DeploymentSpec{
+	return &kube.Deployment{
+		TypeMeta: kube.TypeMeta{APIVersion: "apps/v1", Kind: "Deployment"},
+		Metadata: kube.ObjectMeta{Name: w.Name, Namespace: w.Namespace, Labels: k.labels(w)},
+		Spec: kube.DeploymentSpec{
 			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{MatchLabels: k.selector(w)},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: k.selector(w)},
-				Spec:       podSpec,
+			Selector: &kube.LabelSelector{MatchLabels: k.selector(w)},
+			Template: kube.PodTemplateSpec{
+				Metadata: kube.ObjectMeta{Labels: k.selector(w)},
+				Spec:     podSpec,
 			},
 		},
 	}

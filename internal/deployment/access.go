@@ -2,17 +2,13 @@ package deployment
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"gopkg.in/yaml.v3"
+
+	"github.com/moureau-dev/menina/internal/kube"
 )
 
 const (
@@ -21,57 +17,54 @@ const (
 	platformContextName     = "menina"
 )
 
-// accessTokenPollTimeout is a variable so tests can shorten it.
 var accessTokenPollTimeout = 30 * time.Second
 
-// ProvisionServiceAccess creates (or reconciles) the Menina service identity —
-// a ServiceAccount, a scoped ClusterRole, its binding, and a long-lived token —
-// and returns a kubeconfig that uses only that identity. It requires an
-// admin-capable kubeconfig to create the RBAC objects; it never falls back to
-// using the admin kubeconfig as the service credential.
+// ProvisionServiceAccess creates (or reconciles) the Menina service identity on
+// a cluster reachable via the given (admin-capable) kubeconfig, and returns a
+// kubeconfig that uses only that scoped identity.
 func ProvisionServiceAccess(ctx context.Context, kubeconfig, namespace, saName string) ([]byte, error) {
-	restCfg, err := buildRestConfig(kubeconfig)
+	cfg, err := kube.Load(kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("load kubeconfig for RBAC provisioning: %w", err)
 	}
-	cs, err := kubernetes.NewForConfig(restCfg)
+	client, err := kube.NewClient(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return EnsureServiceAccess(ctx, cs, restCfg, namespace, saName)
+	return EnsureServiceAccess(ctx, client, namespace, saName)
 }
 
-func EnsureServiceAccess(ctx context.Context, cs kubernetes.Interface, restCfg *rest.Config, namespace, saName string) ([]byte, error) {
+func EnsureServiceAccess(ctx context.Context, client *kube.Client, namespace, saName string) ([]byte, error) {
 	if namespace == "" {
 		namespace = "menina-system"
 	}
 	if saName == "" {
 		saName = platformServiceAccount
 	}
-	if err := ensureNamespace(ctx, cs, namespace); err != nil {
+	if err := ensureNamespace(ctx, client, namespace); err != nil {
 		return nil, err
 	}
-	if err := ensureServiceAccount(ctx, cs, namespace, saName); err != nil {
+	if err := ensureServiceAccount(ctx, client, namespace, saName); err != nil {
 		return nil, err
 	}
-	if err := ensureClusterRole(ctx, cs); err != nil {
+	if err := ensureClusterRole(ctx, client); err != nil {
 		return nil, err
 	}
-	if err := ensureClusterRoleBinding(ctx, cs, namespace, saName); err != nil {
+	if err := ensureClusterRoleBinding(ctx, client, namespace, saName); err != nil {
 		return nil, err
 	}
-	token, ca, err := ensureServiceAccountToken(ctx, cs, namespace, saName)
+	token, ca, err := ensureServiceAccountToken(ctx, client, namespace, saName)
 	if err != nil {
 		return nil, err
 	}
 	if len(ca) == 0 {
-		ca = restCfg.CAData
+		ca = client.CAData()
 	}
-	return buildServiceKubeconfig(restCfg.Host, ca, token)
+	return buildServiceKubeconfig(client.Server(), ca, token)
 }
 
-func meninaPolicyRules() []rbacv1.PolicyRule {
-	return []rbacv1.PolicyRule{
+func meninaPolicyRules() []kube.PolicyRule {
+	return []kube.PolicyRule{
 		{APIGroups: []string{""}, Resources: []string{"namespaces"}, Verbs: []string{"get", "list", "create"}},
 		{APIGroups: []string{""}, Resources: []string{"nodes"}, Verbs: []string{"get", "list"}},
 		{APIGroups: []string{""}, Resources: []string{"services"}, Verbs: []string{"get", "list", "watch", "create", "update", "delete"}},
@@ -82,100 +75,103 @@ func meninaPolicyRules() []rbacv1.PolicyRule {
 	}
 }
 
-func ensureNamespace(ctx context.Context, cs kubernetes.Interface, name string) error {
-	if _, err := cs.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{}); err == nil {
+func ensureNamespace(ctx context.Context, client *kube.Client, name string) error {
+	if err := client.Get(ctx, coreV1+"/namespaces/"+name, &kube.Namespace{}); err == nil {
 		return nil
-	} else if !apierrors.IsNotFound(err) {
+	} else if !kube.IsNotFound(err) {
 		return err
 	}
-	_, err := cs.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{labelManagedBy: managedByValue}},
-	}, metav1.CreateOptions{})
-	if apierrors.IsAlreadyExists(err) {
+	err := client.Create(ctx, coreV1+"/namespaces", &kube.Namespace{
+		TypeMeta: kube.TypeMeta{APIVersion: "v1", Kind: "Namespace"},
+		Metadata: kube.ObjectMeta{Name: name, Labels: map[string]string{labelManagedBy: managedByValue}},
+	}, nil)
+	if kube.IsAlreadyExists(err) {
 		return nil
 	}
 	return err
 }
 
-func ensureServiceAccount(ctx context.Context, cs kubernetes.Interface, namespace, name string) error {
-	if _, err := cs.CoreV1().ServiceAccounts(namespace).Get(ctx, name, metav1.GetOptions{}); err == nil {
+func ensureServiceAccount(ctx context.Context, client *kube.Client, namespace, name string) error {
+	if err := client.Get(ctx, nsResource(coreV1, namespace, "serviceaccounts")+"/"+name, &kube.ServiceAccount{}); err == nil {
 		return nil
-	} else if !apierrors.IsNotFound(err) {
+	} else if !kube.IsNotFound(err) {
 		return err
 	}
-	_, err := cs.CoreV1().ServiceAccounts(namespace).Create(ctx, &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{labelManagedBy: managedByValue}},
-	}, metav1.CreateOptions{})
-	if apierrors.IsAlreadyExists(err) {
+	err := client.Create(ctx, nsResource(coreV1, namespace, "serviceaccounts"), &kube.ServiceAccount{
+		TypeMeta: kube.TypeMeta{APIVersion: "v1", Kind: "ServiceAccount"},
+		Metadata: kube.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{labelManagedBy: managedByValue}},
+	}, nil)
+	if kube.IsAlreadyExists(err) {
 		return nil
 	}
 	return err
 }
 
-func ensureClusterRole(ctx context.Context, cs kubernetes.Interface) error {
-	desired := &rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{Name: PlatformClusterRoleName, Labels: map[string]string{labelManagedBy: managedByValue}},
-		Rules:      meninaPolicyRules(),
-	}
-	existing, err := cs.RbacV1().ClusterRoles().Get(ctx, PlatformClusterRoleName, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		_, err = cs.RbacV1().ClusterRoles().Create(ctx, desired, metav1.CreateOptions{})
-		return err
+func ensureClusterRole(ctx context.Context, client *kube.Client) error {
+	item := rbacV1 + "/clusterroles/" + PlatformClusterRoleName
+	var existing kube.ClusterRole
+	err := client.Get(ctx, item, &existing)
+	if kube.IsNotFound(err) {
+		return client.Create(ctx, rbacV1+"/clusterroles", &kube.ClusterRole{
+			TypeMeta: kube.TypeMeta{APIVersion: "rbac.authorization.k8s.io/v1", Kind: "ClusterRole"},
+			Metadata: kube.ObjectMeta{Name: PlatformClusterRoleName, Labels: map[string]string{labelManagedBy: managedByValue}},
+			Rules:    meninaPolicyRules(),
+		}, nil)
 	}
 	if err != nil {
 		return err
 	}
-	existing.Rules = desired.Rules
-	existing.Labels = desired.Labels
-	_, err = cs.RbacV1().ClusterRoles().Update(ctx, existing, metav1.UpdateOptions{})
-	return err
+	existing.Rules = meninaPolicyRules()
+	return client.Update(ctx, item, &existing, nil)
 }
 
-func ensureClusterRoleBinding(ctx context.Context, cs kubernetes.Interface, namespace, saName string) error {
-	desired := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: PlatformClusterRoleName, Labels: map[string]string{labelManagedBy: managedByValue}},
-		RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: PlatformClusterRoleName},
-		Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: saName, Namespace: namespace}},
+func ensureClusterRoleBinding(ctx context.Context, client *kube.Client, namespace, saName string) error {
+	item := rbacV1 + "/clusterrolebindings/" + PlatformClusterRoleName
+	desired := kube.ClusterRoleBinding{
+		TypeMeta: kube.TypeMeta{APIVersion: "rbac.authorization.k8s.io/v1", Kind: "ClusterRoleBinding"},
+		Metadata: kube.ObjectMeta{Name: PlatformClusterRoleName, Labels: map[string]string{labelManagedBy: managedByValue}},
+		RoleRef:  kube.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: PlatformClusterRoleName},
+		Subjects: []kube.Subject{{Kind: "ServiceAccount", Name: saName, Namespace: namespace}},
 	}
-	existing, err := cs.RbacV1().ClusterRoleBindings().Get(ctx, PlatformClusterRoleName, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		_, err = cs.RbacV1().ClusterRoleBindings().Create(ctx, desired, metav1.CreateOptions{})
-		return err
+	var existing kube.ClusterRoleBinding
+	err := client.Get(ctx, item, &existing)
+	if kube.IsNotFound(err) {
+		return client.Create(ctx, rbacV1+"/clusterrolebindings", &desired, nil)
 	}
 	if err != nil {
 		return err
 	}
 	existing.RoleRef = desired.RoleRef
 	existing.Subjects = desired.Subjects
-	existing.Labels = desired.Labels
-	_, err = cs.RbacV1().ClusterRoleBindings().Update(ctx, existing, metav1.UpdateOptions{})
-	return err
+	return client.Update(ctx, item, &existing, nil)
 }
 
-func ensureServiceAccountToken(ctx context.Context, cs kubernetes.Interface, namespace, saName string) (token, ca []byte, err error) {
+func ensureServiceAccountToken(ctx context.Context, client *kube.Client, namespace, saName string) (token, ca []byte, err error) {
 	secretName := saName + "-token"
+	collection := nsResource(coreV1, namespace, "secrets")
+	item := collection + "/" + secretName
 	deadline := time.Now().Add(accessTokenPollTimeout)
 	for {
-		secret, getErr := cs.CoreV1().Secrets(namespace).Get(ctx, secretName, metav1.GetOptions{})
-		if apierrors.IsNotFound(getErr) {
-			_, createErr := cs.CoreV1().Secrets(namespace).Create(ctx, &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      secretName,
-					Namespace: namespace,
-					Labels:    map[string]string{labelManagedBy: managedByValue},
-					Annotations: map[string]string{
-						corev1.ServiceAccountNameKey: saName,
-					},
+		var secret kube.Secret
+		getErr := client.Get(ctx, item, &secret)
+		if kube.IsNotFound(getErr) {
+			createErr := client.Create(ctx, collection, &kube.Secret{
+				TypeMeta: kube.TypeMeta{APIVersion: "v1", Kind: "Secret"},
+				Metadata: kube.ObjectMeta{
+					Name:        secretName,
+					Namespace:   namespace,
+					Labels:      map[string]string{labelManagedBy: managedByValue},
+					Annotations: map[string]string{"kubernetes.io/service-account.name": saName},
 				},
-				Type: corev1.SecretTypeServiceAccountToken,
-			}, metav1.CreateOptions{})
-			if createErr != nil && !apierrors.IsAlreadyExists(createErr) {
+				Type: "kubernetes.io/service-account-token",
+			}, nil)
+			if createErr != nil && !kube.IsAlreadyExists(createErr) {
 				return nil, nil, fmt.Errorf("create service account token secret: %w", createErr)
 			}
 		} else if getErr != nil {
 			return nil, nil, getErr
-		} else if len(secret.Data[corev1.ServiceAccountTokenKey]) > 0 {
-			return secret.Data[corev1.ServiceAccountTokenKey], secret.Data[corev1.ServiceAccountRootCAKey], nil
+		} else if len(secret.Data["token"]) > 0 {
+			return secret.Data["token"], secret.Data["ca.crt"], nil
 		}
 		if time.Now().After(deadline) {
 			return nil, nil, fmt.Errorf("service account token for %s/%s was not populated within %s", namespace, saName, accessTokenPollTimeout)
@@ -188,11 +184,63 @@ func ensureServiceAccountToken(ctx context.Context, cs kubernetes.Interface, nam
 	}
 }
 
+type kubeconfigFile struct {
+	APIVersion     string              `yaml:"apiVersion"`
+	Kind           string              `yaml:"kind"`
+	Clusters       []kubeconfigCluster `yaml:"clusters"`
+	Contexts       []kubeconfigContext `yaml:"contexts"`
+	Users          []kubeconfigUser    `yaml:"users"`
+	CurrentContext string              `yaml:"current-context"`
+}
+
+type kubeconfigCluster struct {
+	Name    string `yaml:"name"`
+	Cluster struct {
+		Server   string `yaml:"server"`
+		CAData   string `yaml:"certificate-authority-data,omitempty"`
+		Insecure bool   `yaml:"insecure-skip-tls-verify,omitempty"`
+	} `yaml:"cluster"`
+}
+
+type kubeconfigContext struct {
+	Name    string `yaml:"name"`
+	Context struct {
+		Cluster   string `yaml:"cluster"`
+		User      string `yaml:"user"`
+		Namespace string `yaml:"namespace,omitempty"`
+	} `yaml:"context"`
+}
+
+type kubeconfigUser struct {
+	Name string `yaml:"name"`
+	User struct {
+		Token string `yaml:"token"`
+	} `yaml:"user"`
+}
+
 func buildServiceKubeconfig(server string, ca, token []byte) ([]byte, error) {
-	cfg := clientcmdapi.NewConfig()
-	cfg.Clusters[platformContextName] = &clientcmdapi.Cluster{Server: server, CertificateAuthorityData: ca}
-	cfg.AuthInfos[platformContextName] = &clientcmdapi.AuthInfo{Token: string(token)}
-	cfg.Contexts[platformContextName] = &clientcmdapi.Context{Cluster: platformContextName, AuthInfo: platformContextName}
-	cfg.CurrentContext = platformContextName
-	return clientcmd.Write(*cfg)
+	cfg := kubeconfigFile{
+		APIVersion:     "v1",
+		Kind:           "Config",
+		CurrentContext: platformContextName,
+	}
+	var cluster kubeconfigCluster
+	cluster.Name = platformContextName
+	cluster.Cluster.Server = server
+	if len(ca) > 0 {
+		cluster.Cluster.CAData = base64.StdEncoding.EncodeToString(ca)
+	} else {
+		cluster.Cluster.Insecure = true
+	}
+	var ctx kubeconfigContext
+	ctx.Name = platformContextName
+	ctx.Context.Cluster = platformContextName
+	ctx.Context.User = platformContextName
+	var user kubeconfigUser
+	user.Name = platformContextName
+	user.User.Token = string(token)
+	cfg.Clusters = []kubeconfigCluster{cluster}
+	cfg.Contexts = []kubeconfigContext{ctx}
+	cfg.Users = []kubeconfigUser{user}
+	return yaml.Marshal(cfg)
 }

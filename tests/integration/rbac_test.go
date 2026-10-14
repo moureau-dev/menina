@@ -8,12 +8,8 @@ import (
 	"testing"
 	"time"
 
-	authv1 "k8s.io/api/authorization/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
-
 	"github.com/moureau-dev/menina/internal/deployment"
+	"github.com/moureau-dev/menina/internal/kube"
 )
 
 func TestProvisionedServiceIdentityIsScoped(t *testing.T) {
@@ -27,36 +23,37 @@ func TestProvisionedServiceIdentityIsScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProvisionServiceAccess: %v", err)
 	}
-	restCfg, err := clientcmd.RESTConfigFromKubeConfig(data)
+	cfg, err := kube.Parse(data)
 	if err != nil {
 		t.Fatalf("returned kubeconfig is invalid: %v", err)
 	}
-	cs, err := kubernetes.NewForConfig(restCfg)
+	client, err := kube.NewClient(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cs.Discovery().ServerVersion(); err != nil {
+	if _, err := client.Version(ctx); err != nil {
 		t.Fatalf("service identity cannot reach the API: %v", err)
 	}
 
-	assertCan(t, cs, true, "list", "", "pods", "")
-	assertCan(t, cs, true, "get", "", "nodes", "")
-	assertCan(t, cs, true, "create", "apps", "deployments", "menina-apps")
-	assertCan(t, cs, true, "create", "", "namespaces", "")
-	assertCan(t, cs, false, "delete", "", "nodes", "")
-	assertCan(t, cs, false, "delete", "", "namespaces", "")
-	assertCan(t, cs, false, "create", "rbac.authorization.k8s.io", "clusterroles", "")
+	assertCan(t, client, true, "list", "", "pods", "")
+	assertCan(t, client, true, "get", "", "nodes", "")
+	assertCan(t, client, true, "create", "apps", "deployments", "menina-apps")
+	assertCan(t, client, true, "create", "", "namespaces", "")
+	assertCan(t, client, false, "delete", "", "nodes", "")
+	assertCan(t, client, false, "delete", "", "namespaces", "")
+	assertCan(t, client, false, "create", "rbac.authorization.k8s.io", "clusterroles", "")
 }
 
-func assertCan(t *testing.T, cs *kubernetes.Clientset, want bool, verb, group, resource, namespace string) {
+func assertCan(t *testing.T, client *kube.Client, want bool, verb, group, resource, namespace string) {
 	t.Helper()
-	sar := &authv1.SelfSubjectAccessReview{
-		Spec: authv1.SelfSubjectAccessReviewSpec{
-			ResourceAttributes: &authv1.ResourceAttributes{Verb: verb, Group: group, Resource: resource, Namespace: namespace},
+	review := &kube.SelfSubjectAccessReview{
+		TypeMeta: kube.TypeMeta{APIVersion: "authorization.k8s.io/v1", Kind: "SelfSubjectAccessReview"},
+		Spec: kube.SelfSubjectAccessReviewSpec{
+			ResourceAttributes: &kube.ResourceAttributes{Verb: verb, Group: group, Resource: resource, Namespace: namespace},
 		},
 	}
-	out, err := cs.AuthorizationV1().SelfSubjectAccessReviews().Create(context.Background(), sar, metav1.CreateOptions{})
-	if err != nil {
+	var out kube.SelfSubjectAccessReview
+	if err := client.Create(context.Background(), "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews", review, &out); err != nil {
 		t.Fatalf("self subject access review: %v", err)
 	}
 	if out.Status.Allowed != want {

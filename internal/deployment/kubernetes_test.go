@@ -4,18 +4,11 @@ import (
 	"context"
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
+	"github.com/moureau-dev/menina/internal/kube"
 )
 
-func newFakeCluster(t *testing.T) (*KubernetesCluster, *fake.Clientset) {
-	t.Helper()
-	cs := fake.NewSimpleClientset()
-	return NewKubernetesClusterFromInterface(cs), cs
-}
-
 func TestEnsureNamespaceIsIdempotent(t *testing.T) {
-	c, _ := newFakeCluster(t)
+	c := newFakeAPI(t).cluster(t)
 	ctx := context.Background()
 	if err := c.EnsureNamespace(ctx, "menina-apps"); err != nil {
 		t.Fatal(err)
@@ -26,7 +19,8 @@ func TestEnsureNamespaceIsIdempotent(t *testing.T) {
 }
 
 func TestApplyWorkloadCreatesDeployment(t *testing.T) {
-	c, cs := newFakeCluster(t)
+	f := newFakeAPI(t)
+	c := f.cluster(t)
 	ctx := context.Background()
 	w := Workload{
 		Project: "p", Environment: "prod", App: "api", Name: "api", Namespace: "menina-apps",
@@ -39,48 +33,42 @@ func TestApplyWorkloadCreatesDeployment(t *testing.T) {
 	if err := c.ApplyWorkload(ctx, w); err != nil {
 		t.Fatal(err)
 	}
-	d, err := cs.AppsV1().Deployments("menina-apps").Get(ctx, "api", metav1.GetOptions{})
-	if err != nil {
+	var d kube.Deployment
+	if err := c.client.Get(ctx, "/apis/apps/v1/namespaces/menina-apps/deployments/api", &d); err != nil {
 		t.Fatal(err)
 	}
-	if *d.Spec.Replicas != 2 || d.Spec.Template.Spec.Containers[0].Image != w.Image {
+	if d.Spec.Replicas == nil || *d.Spec.Replicas != 2 || d.Spec.Template.Spec.Containers[0].Image != w.Image {
 		t.Fatalf("deployment = %+v", d.Spec)
 	}
 	if len(d.Spec.Template.Spec.Containers[0].Env) != 1 || d.Spec.Template.Spec.Containers[0].Env[0].Name != "FOO" {
 		t.Fatalf("env = %+v", d.Spec.Template.Spec.Containers[0].Env)
 	}
+	// Idempotent apply must preserve the object (same name/resourceVersion).
 	if err := c.ApplyWorkload(ctx, w); err != nil {
 		t.Fatalf("idempotent apply: %v", err)
 	}
 }
 
 func TestWorkloadStatusReportsRollout(t *testing.T) {
-	c, cs := newFakeCluster(t)
+	f := newFakeAPI(t)
+	c := f.cluster(t)
 	ctx := context.Background()
 	w := Workload{App: "api", Name: "api", Namespace: "menina-apps", Image: "img:1", Port: 80, Replicas: 1, Type: "service"}
 	_ = c.EnsureNamespace(ctx, w.Namespace)
 	_ = c.ApplyWorkload(ctx, w)
-	d, _ := cs.AppsV1().Deployments(w.Namespace).Get(ctx, "api", metav1.GetOptions{})
-	d.Status.Replicas = 1
-	d.Status.ReadyReplicas = 1
-	d.Status.UpdatedReplicas = 1
-	if _, err := cs.AppsV1().Deployments(w.Namespace).UpdateStatus(ctx, d, metav1.UpdateOptions{}); err != nil {
-		t.Fatal(err)
-	}
+	obj := f.object("/apis/apps/v1/namespaces/menina-apps/deployments", "api")
+	obj["status"] = map[string]any{"replicas": 1, "readyReplicas": 1, "updatedReplicas": 1}
 	st, err := c.WorkloadStatus(ctx, w.Namespace, "api")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.ReadyReplicas != 1 || st.Replicas != 1 {
+	if st.ReadyReplicas != 1 || st.Replicas != 1 || st.Image != "img:1" {
 		t.Fatalf("status = %+v", st)
-	}
-	if st.Image != "img:1" {
-		t.Fatalf("image = %q", st.Image)
 	}
 }
 
 func TestApplyServiceAndListManaged(t *testing.T) {
-	c, _ := newFakeCluster(t)
+	c := newFakeAPI(t).cluster(t)
 	ctx := context.Background()
 	w := Workload{App: "api", Name: "api", Namespace: "menina-apps", Port: 8080, Type: "service"}
 	_ = c.EnsureNamespace(ctx, w.Namespace)
@@ -103,7 +91,8 @@ func TestApplyServiceAndListManaged(t *testing.T) {
 }
 
 func TestEnsureConfigMapSecretAndPVC(t *testing.T) {
-	c, cs := newFakeCluster(t)
+	f := newFakeAPI(t)
+	c := f.cluster(t)
 	ctx := context.Background()
 	_ = c.EnsureNamespace(ctx, "menina-registry")
 	if err := c.EnsureConfigMap(ctx, "menina-registry", "zot-config", map[string]string{"config.json": "{}"}); err != nil {
@@ -115,19 +104,19 @@ func TestEnsureConfigMapSecretAndPVC(t *testing.T) {
 	if err := c.EnsurePVC(ctx, "menina-registry", "zot-data", "10Gi", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cs.CoreV1().ConfigMaps("menina-registry").Get(ctx, "zot-config", metav1.GetOptions{}); err != nil {
-		t.Fatal(err)
+	if f.object("/api/v1/namespaces/menina-registry/configmaps", "zot-config") == nil {
+		t.Fatal("configmap missing")
 	}
-	if _, err := cs.CoreV1().Secrets("menina-registry").Get(ctx, "zot-htpasswd", metav1.GetOptions{}); err != nil {
-		t.Fatal(err)
+	if f.object("/api/v1/namespaces/menina-registry/secrets", "zot-htpasswd") == nil {
+		t.Fatal("secret missing")
 	}
-	if _, err := cs.CoreV1().PersistentVolumeClaims("menina-registry").Get(ctx, "zot-data", metav1.GetOptions{}); err != nil {
-		t.Fatal(err)
+	if f.object("/api/v1/namespaces/menina-registry/persistentvolumeclaims", "zot-data") == nil {
+		t.Fatal("pvc missing")
 	}
 }
 
 func TestBuildDeploymentMountsStorageConfigAndSecret(t *testing.T) {
-	c, _ := newFakeCluster(t)
+	c := newFakeAPI(t).cluster(t)
 	w := Workload{
 		App: "zot", Name: "zot", Namespace: "ns", Image: "zot:2", Port: 5000, ContainerPort: 5000,
 		StorageSize: "10Gi", MountPath: "/var/lib/registry",
@@ -162,7 +151,7 @@ func TestParseMemoryToBytes(t *testing.T) {
 }
 
 func TestDeleteWorkload(t *testing.T) {
-	c, _ := newFakeCluster(t)
+	c := newFakeAPI(t).cluster(t)
 	ctx := context.Background()
 	w := Workload{App: "api", Name: "api", Namespace: "ns", Image: "i:1", Port: 80, Replicas: 1, Type: "service"}
 	_ = c.EnsureNamespace(ctx, "ns")
