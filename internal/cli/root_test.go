@@ -70,6 +70,47 @@ func TestProjectAndAppCreate(t *testing.T) {
 	}
 }
 
+func TestDeleteCommandsRemoveConfigFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "project", "create", "p", "--namespace", "p"); err != nil {
+		t.Fatalf("project create: %v", err)
+	}
+	if err := execute("--config-dir", dir, "environment", "create", "production", "--project", "p"); err != nil {
+		t.Fatalf("environment create: %v", err)
+	}
+	if err := execute("--config-dir", dir, "app", "create", "api", "--project", "p", "--repository", "registry.example.com/p/api"); err != nil {
+		t.Fatalf("app create: %v", err)
+	}
+	if err := execute("--config-dir", dir, "app", "delete", "api", "--project", "p", "--yes"); err != nil {
+		t.Fatalf("app delete: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "projects", "p", "apps", "api.yml")); !os.IsNotExist(err) {
+		t.Fatal("app file should be removed")
+	}
+	if err := execute("--config-dir", dir, "environment", "delete", "production", "--project", "p", "--yes"); err != nil {
+		t.Fatalf("environment delete: %v", err)
+	}
+	if err := execute("--config-dir", dir, "project", "delete", "p", "--yes"); err != nil {
+		t.Fatalf("project delete: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "projects", "p")); !os.IsNotExist(err) {
+		t.Fatal("project directory should be removed")
+	}
+}
+
+func TestDeleteWithoutYesIsRefusedNonInteractively(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "project", "create", "p"); err != nil {
+		t.Fatal(err)
+	}
+	if err := execute("--config-dir", dir, "project", "delete", "p"); err == nil {
+		t.Fatal("non-interactive delete without --yes must be refused")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "projects", "p")); err != nil {
+		t.Fatal("project must still exist after a refused delete")
+	}
+}
+
 func TestCompletionGenerate(t *testing.T) {
 	for _, shell := range []string{"bash", "zsh", "fish"} {
 		if err := execute("completion", shell); err != nil {

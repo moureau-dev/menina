@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -10,7 +12,7 @@ import (
 
 func newProjectCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{Use: "project", Short: "Manage projects"}
-	cmd.AddCommand(projectCreate(app), projectList(app))
+	cmd.AddCommand(projectCreate(app), projectList(app), projectDelete(app))
 	return cmd
 }
 
@@ -56,4 +58,31 @@ func projectList(app *App) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func projectDelete(app *App) *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "delete <name>",
+		Short: "Delete a project (config only; workloads are pruned, data is retained)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			dir := config.ProjectDir(app.Opts.ConfigDir, name)
+			if _, err := os.Stat(dir); err != nil {
+				return fmt.Errorf("project %q not found", name)
+			}
+			prompt := fmt.Sprintf("Delete project %q?\n  - its config files are removed\n  - Menina will prune its Kubernetes Deployments/Services and routes\n  - PersistentVolumeClaims and release history are RETAINED", name)
+			if !confirmDestructive(app, prompt, yes) {
+				return fmt.Errorf("aborted")
+			}
+			if err := os.RemoveAll(dir); err != nil {
+				return err
+			}
+			app.Infof("Deleted project %q. Workloads/routes will be pruned by reconciliation; PVCs and release history are retained.", name)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion without prompting")
+	return cmd
 }

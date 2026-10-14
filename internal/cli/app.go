@@ -19,7 +19,36 @@ import (
 
 func newAppCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{Use: "app", Short: "Manage app definitions"}
-	cmd.AddCommand(appCreate(app), appEdit(app), appList(app), appDeploy(app), appLogs(app), appRollback(app))
+	cmd.AddCommand(appCreate(app), appEdit(app), appList(app), appDeploy(app), appLogs(app), appRollback(app), appDelete(app))
+	return cmd
+}
+
+func appDelete(app *App) *cobra.Command {
+	var project string
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "delete <name>",
+		Short: "Delete an app definition (workload pruned; data retained)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := appPath(app, project, args[0])
+			if _, err := os.Stat(path); err != nil {
+				return fmt.Errorf("app %q not found in project %q", args[0], project)
+			}
+			prompt := fmt.Sprintf("Delete app %q? Its Deployment/Service and routes are pruned; PersistentVolumeClaims and release history are RETAINED.", args[0])
+			if !confirmDestructive(app, prompt, yes) {
+				return fmt.Errorf("aborted")
+			}
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+			app.Infof("Deleted app %q. Its workload will be pruned; PVCs and release history are retained.", args[0])
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project name")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion without prompting")
+	_ = cmd.MarkFlagRequired("project")
 	return cmd
 }
 

@@ -88,6 +88,7 @@ exposure:
 YAML
 cat > "$CFG/cfg/projects/e2e/environments/production.yml" <<'YAML'
 name: production
+namespace: e2e
 apps:
   api:
     enabled: true

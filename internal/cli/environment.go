@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -10,7 +12,36 @@ import (
 
 func newEnvironmentCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{Use: "environment", Short: "Manage project environments"}
-	cmd.AddCommand(environmentCreate(app), environmentList(app))
+	cmd.AddCommand(environmentCreate(app), environmentList(app), environmentDelete(app))
+	return cmd
+}
+
+func environmentDelete(app *App) *cobra.Command {
+	var project string
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "delete <name>",
+		Short: "Delete an environment (its workloads are pruned; data retained)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := filepath.Join(config.ProjectDir(app.Opts.ConfigDir, project), "environments", args[0]+".yml")
+			if _, err := os.Stat(path); err != nil {
+				return fmt.Errorf("environment %q not found in project %q", args[0], project)
+			}
+			prompt := fmt.Sprintf("Delete environment %q (namespace %s)? Its workloads, Services and routes are pruned; PersistentVolumeClaims and release history are RETAINED.", args[0], project+"-"+args[0])
+			if !confirmDestructive(app, prompt, yes) {
+				return fmt.Errorf("aborted")
+			}
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+			app.Infof("Deleted environment %q. Its workloads/routes will be pruned; PVCs and release history are retained.", args[0])
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project name")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion without prompting")
+	_ = cmd.MarkFlagRequired("project")
 	return cmd
 }
 

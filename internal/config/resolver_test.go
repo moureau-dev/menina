@@ -47,6 +47,36 @@ func testProject() *Project {
 
 func boolPtr(b bool) *bool { return &b }
 
+func TestResolveIsolatesEnvironmentsByNamespace(t *testing.T) {
+	r := NewResolver(testConfig())
+	rc, err := r.Resolve([]*Project{testProject()}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev, _ := rc.FindApp("my-platform", "development", "api")
+	prod, _ := rc.FindApp("my-platform", "production", "api")
+	if dev.Namespace != "my-platform-development" || prod.Namespace != "my-platform-production" {
+		t.Fatalf("namespaces: dev=%q prod=%q", dev.Namespace, prod.Namespace)
+	}
+	if dev.Namespace == prod.Namespace {
+		t.Fatal("environments must not share a namespace (deleting one would affect the other)")
+	}
+}
+
+func TestResolveEnvironmentNamespaceOverride(t *testing.T) {
+	p := testProject()
+	p.Envs["production"].Namespace = "custom-prod"
+	r := NewResolver(testConfig())
+	rc, err := r.Resolve([]*Project{p}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prod, _ := rc.FindApp("my-platform", "production", "api")
+	if prod.Namespace != "custom-prod" {
+		t.Fatalf("namespace = %q, want custom-prod", prod.Namespace)
+	}
+}
+
 func TestResolveMergesEnvironmentOverrides(t *testing.T) {
 	r := NewResolver(testConfig())
 	rc, err := r.Resolve([]*Project{testProject()}, 7)

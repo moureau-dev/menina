@@ -79,8 +79,9 @@ type AppOverride struct {
 }
 
 type EnvironmentFile struct {
-	Name string                  `yaml:"name"`
-	Apps map[string]*AppOverride `yaml:"apps"`
+	Name      string                  `yaml:"name"`
+	Namespace string                  `yaml:"namespace"`
+	Apps      map[string]*AppOverride `yaml:"apps"`
 }
 
 type Project struct {

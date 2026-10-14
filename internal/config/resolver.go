@@ -43,6 +43,14 @@ func (r *Resolver) resolveProject(p *Project) (*ResolvedProject, error) {
 	}
 	for _, envName := range p.EnvOrder {
 		envFile := p.Envs[envName]
+		envNS := envFile.Namespace
+		if envNS == "" {
+			base := p.Namespace
+			if base == "" {
+				base = r.cfg.Defaults.Namespace
+			}
+			envNS = base + "-" + envName
+		}
 		re := &ResolvedEnvironment{Project: p.Name, Name: envName, Apps: map[string]*ResolvedApp{}}
 		names := make([]string, 0, len(p.Apps))
 		for n := range p.Apps {
@@ -52,7 +60,7 @@ func (r *Resolver) resolveProject(p *Project) (*ResolvedProject, error) {
 		for _, name := range names {
 			app := p.Apps[name]
 			override := envFile.Apps[name]
-			ra, err := r.resolveApp(p, rp, envFile, app, override)
+			ra, err := r.resolveApp(p, envFile, app, override, envNS)
 			if err != nil {
 				return nil, err
 			}
@@ -68,12 +76,12 @@ func (r *Resolver) resolveProject(p *Project) (*ResolvedProject, error) {
 	return rp, nil
 }
 
-func (r *Resolver) resolveApp(p *Project, rp *ResolvedProject, env *EnvironmentFile, app *AppFile, override *AppOverride) (*ResolvedApp, error) {
+func (r *Resolver) resolveApp(p *Project, env *EnvironmentFile, app *AppFile, override *AppOverride, namespace string) (*ResolvedApp, error) {
 	ra := &ResolvedApp{
 		Project:     p.Name,
 		Environment: env.Name,
 		Name:        app.Name,
-		Namespace:   rp.Namespace,
+		Namespace:   namespace,
 		Enabled:     true,
 		Repository:  app.Image.Repository,
 		Tag:         app.Image.Tag,
