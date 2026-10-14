@@ -193,6 +193,9 @@ func applyForwarded(pr *httputil.ProxyRequest, trusted bool) {
 		}
 	} else {
 		out.Header.Set("X-Forwarded-For", clientIP)
+		// Do not let an untrusted client inject forwarded metadata.
+		out.Header.Del("X-Forwarded-Host")
+		out.Header.Del("Forwarded")
 		if in.TLS != nil {
 			out.Header.Set("X-Forwarded-Proto", "https")
 		} else {

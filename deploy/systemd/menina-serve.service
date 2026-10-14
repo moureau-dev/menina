@@ -18,8 +18,19 @@ StateDirectory=menina
 StateDirectoryMode=0750
 Environment=MENINA_CONFIG_DIR=@CONFIG_DIR@
 NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
 ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+PrivateDevices=true
 PrivateTmp=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 ReadWritePaths=@DATA_DIR@ /run/menina
 
 [Install]

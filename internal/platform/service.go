@@ -130,6 +130,9 @@ func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Servic
 			svc.notifyToken = token
 		}
 	}
+	if cfg.Registry.Notifications.Enabled && svc.notifyToken == "" {
+		log.Warn("registry webhook authentication is DISABLED (no notifications token configured); any client that can reach the events listener can trigger deployments for configured apps")
+	}
 	return svc, nil
 }
 

@@ -465,6 +465,42 @@ func TestProxyBadGatewayOnDeadBackend(t *testing.T) {
 	}
 }
 
+func TestProxyStripsForwardedHostFromUntrustedClient(t *testing.T) {
+	var xfh string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		xfh = r.Header.Get("X-Forwarded-Host")
+	}))
+	defer backend.Close()
+	_, proxySrv := startProxy(t, Options{}, Route{Host: "example.com", PathPrefix: "/", Backend: backendHost(t, backend)})
+	req, _ := http.NewRequest(http.MethodGet, proxySrv.URL+"/", nil)
+	req.Host = "example.com"
+	req.Header.Set("X-Forwarded-Host", "evil.example.org")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if xfh != "" {
+		t.Fatalf("untrusted X-Forwarded-Host must be stripped, got %q", xfh)
+	}
+}
+
+func TestProxyMaliciousHostHeaderRejected(t *testing.T) {
+	_, proxySrv := startProxy(t, Options{}, Route{Host: "example.com", PathPrefix: "/", Backend: "1.1.1.1:80"})
+	for _, host := range []string{"", "evil.com", "../../etc/passwd", "example.com.evil.com"} {
+		req, _ := http.NewRequest(http.MethodGet, proxySrv.URL+"/", nil)
+		req.Host = host
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("host %q: status = %d, want 404", host, resp.StatusCode)
+		}
+	}
+}
+
 func TestProxySSEFlushesByDefaultWithoutStreamingFlag(t *testing.T) {
 	release := make(chan struct{})
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

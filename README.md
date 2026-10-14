@@ -375,11 +375,23 @@ make docker            # or: docker build -t menina:dev .
 
 ## Security and recovery
 
-- `menina serve` and `menina proxy` run as a dedicated unprivileged user; only
-  host provisioning requires elevation, and privileged port binding is granted
-  narrowly (`CAP_NET_BIND_SERVICE`).
-- Kubernetes access uses a scoped service identity; CI registry credentials are
-  separate from cluster credentials.
+- `menina serve` and `menina proxy` run as a dedicated unprivileged user, with
+  systemd hardening (`NoNewPrivileges`, `ProtectSystem=full`, `ProtectHome`,
+  `ProtectKernel*`, `ProtectControlGroups`, `PrivateDevices`, `PrivateTmp`,
+  `RestrictNamespaces`, `RestrictSUIDSGID`, `LockPersonality`, and a minimal
+  `RestrictAddressFamilies`). Only the proxy is granted `CAP_NET_BIND_SERVICE`.
+- The registry webhook is bearer-token authenticated; when notifications are
+  enabled without a token Menina logs a prominent warning. Forwarded headers are
+  trusted only from configured proxies; untrusted `X-Forwarded-Host`/`Forwarded`
+  are stripped. The proxy routes only configured hostnames (unknown hosts get
+  404) and never dials a client-controlled destination, so a request cannot
+  cause SSRF or route injection.
+- **Known gap:** on k3s, `deploy` currently copies the admin kubeconfig
+  (`/etc/rancher/k3s/k3s.yaml`) for the service instead of a scoped
+  ServiceAccount. This is cluster-admin for the `menina` group and should be
+  replaced with a namespace-scoped ServiceAccount/Role; it is a local privilege
+  boundary (requires host/group access), not a remote exposure.
+- CI registry credentials are separate from cluster credentials.
 - On SIGTERM the control plane stops accepting work, re-queues in-progress
   deployments and flushes state. When Kubernetes is unavailable it stays up,
   keeps queuing events and retries with backoff. After a database restore,
