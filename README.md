@@ -145,8 +145,8 @@ Other runtime behavior worth knowing:
 ## CLI
 
 The full command surface — including the interactive shortcuts (`menina create`,
-bare `menina app` / `project` / `environment`) — is documented in
-[docs/CLI.md](docs/CLI.md). Quick start:
+bare `menina app` / `project` / `environment`) — is documented in the
+[docs](docs/README.md) ([CLI reference](docs/CLI.md)). Quick start:
 
 ```bash
 menina create my-app          # create a project; asks if you use multiple environments
