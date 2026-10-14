@@ -52,8 +52,6 @@ type Host struct {
 	Hostname  string `yaml:"hostname"`
 	ConfigDir string `yaml:"configDir"`
 	DataDir   string `yaml:"dataDir"`
-	OS        string `yaml:"os"`
-	Arch      string `yaml:"arch"`
 }
 
 type Kubernetes struct {
@@ -70,9 +68,8 @@ type RegistryAuth struct {
 }
 
 type Retention struct {
-	KeepRecentTags   int      `yaml:"keepRecentTags"`
-	ProtectedDigests []string `yaml:"protectedDigests"`
-	Enabled          bool     `yaml:"enabled"`
+	KeepRecentTags int  `yaml:"keepRecentTags"`
+	Enabled        bool `yaml:"enabled"`
 }
 
 type Notifications struct {
@@ -85,7 +82,6 @@ type Notifications struct {
 type Registry struct {
 	Enabled       bool          `yaml:"enabled"`
 	Domain        string        `yaml:"domain"`
-	StorageDir    string        `yaml:"storageDir"`
 	Auth          RegistryAuth  `yaml:"auth"`
 	Retention     Retention     `yaml:"retention"`
 	Notifications Notifications `yaml:"notifications"`
@@ -169,7 +165,6 @@ func Default() Config {
 		Registry: Registry{
 			Enabled:    true,
 			Domain:     "registry.moureau.dev",
-			StorageDir: "/var/lib/menina/registry",
 			ZotImage:   "ghcr.io/project-zot/zot",
 			ZotVersion: "v2.1.22",
 			Namespace:  "menina-registry",

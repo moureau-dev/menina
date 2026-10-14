@@ -191,7 +191,7 @@ func TestHasRelease(t *testing.T) {
 	}
 }
 
-func TestReleasesAndProtectedDigests(t *testing.T) {
+func TestReleases(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 	if err := db.RecordRelease(ctx, Release{Project: "p", Environment: "prod", App: "api", Repository: "r/api", Tag: "prod", Digest: "sha256:one", Status: "deployed"}); err != nil {
@@ -203,13 +203,6 @@ func TestReleasesAndProtectedDigests(t *testing.T) {
 	releases, err := db.Releases(ctx, "p", "prod", "api")
 	if err != nil || len(releases) != 2 {
 		t.Fatalf("releases = %+v err=%v", releases, err)
-	}
-	protected, err := db.ProtectedDigests(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := protected["sha256:one"]; !ok {
-		t.Fatalf("expected sha256:one protected, got %+v", protected)
 	}
 }
 

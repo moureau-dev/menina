@@ -1,10 +1,29 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
+
+	"github.com/moureau-dev/menina/internal/config"
 )
+
+func printStaticStatus(app *App, cfg *config.Config, controlErr error) error {
+	if app.Opts.JSON {
+		return app.PrintJSON(map[string]any{
+			"controlPlane": "unavailable: " + controlErr.Error(),
+			"configDir":    cfg.Host.ConfigDir,
+			"registry":     cfg.Registry.Domain,
+			"tls":          cfg.TLS.Mode,
+			"networking":   cfg.Networking.Mode,
+		})
+	}
+	app.Infof("Menina status (control plane unavailable: %v)", controlErr)
+	app.Infof("  config dir:      %s", cfg.Host.ConfigDir)
+	app.Infof("  registry:        %s", cfg.Registry.Domain)
+	app.Infof("  tls mode:        %s", cfg.TLS.Mode)
+	app.Infof("  networking:      %s", cfg.Networking.Mode)
+	app.Infof("  start the control plane with `menina serve`")
+	return nil
+}
 
 func newStatusCommand(app *App) *cobra.Command {
 	return &cobra.Command{
@@ -17,11 +36,11 @@ func newStatusCommand(app *App) *cobra.Command {
 			}
 			client, err := app.Control(cfg)
 			if err != nil {
-				return fmt.Errorf("control plane not reachable (%v); start it with `menina serve`", err)
+				return printStaticStatus(app, cfg, err)
 			}
 			var status map[string]any
 			if err := client.GetJSON(cmd.Context(), "/status", &status); err != nil {
-				return err
+				return printStaticStatus(app, cfg, err)
 			}
 			if app.Opts.JSON {
 				return app.PrintJSON(status)

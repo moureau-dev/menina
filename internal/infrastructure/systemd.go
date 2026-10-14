@@ -28,15 +28,6 @@ func (s *Systemd) WriteUnit(name, content string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
-func (s *Systemd) RemoveUnit(name string) error {
-	path := filepath.Join(s.UnitDir, name)
-	err := os.Remove(path)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	return err
-}
-
 func (s *Systemd) DaemonReload(ctx context.Context) error {
 	_, err := s.Runner.Run(ctx, "systemctl", "daemon-reload")
 	return err
@@ -67,11 +58,6 @@ func (s *Systemd) Stop(ctx context.Context, name string) error {
 func (s *Systemd) IsActive(ctx context.Context, name string) bool {
 	out, err := s.Runner.Run(ctx, "systemctl", "is-active", name)
 	return err == nil && strings.TrimSpace(out) == "active"
-}
-
-func (s *Systemd) Status(ctx context.Context, name string) string {
-	out, _ := s.Runner.Run(ctx, "systemctl", "status", "--no-pager", name)
-	return out
 }
 
 func (s *Systemd) Apply(ctx context.Context, name, content string) error {

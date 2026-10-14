@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"github.com/moureau-dev/menina/internal/config"
 )
 
 type ZotStorage struct {
@@ -177,23 +175,4 @@ func parseZotVersion(version string) (major, minor, patch int, err error) {
 		patch, _ = strconv.Atoi(patchPart)
 	}
 	return major, minor, patch, nil
-}
-
-func TranslateRetention(cfg config.Registry, protectedDigests []string) (int, []string, error) {
-	keep := cfg.Retention.KeepRecentTags
-	var protected []string
-	for _, d := range protectedDigests {
-		d = strings.TrimSpace(d)
-		if d == "" {
-			continue
-		}
-		if !strings.Contains(d, ":") {
-			return 0, nil, fmt.Errorf("protected digest %q is not a valid digest (expected algorithm:hex)", d)
-		}
-		protected = append(protected, d)
-	}
-	if keep < 0 {
-		return 0, nil, fmt.Errorf("registry.retention.keepRecentTags must be >= 0")
-	}
-	return keep, protected, nil
 }

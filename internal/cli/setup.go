@@ -116,7 +116,6 @@ func newSetupCommand(app *App) *cobra.Command {
 			app.Infof("\nRegistry")
 			cfg.Registry.Enabled = p.Confirm("  Install Zot on this cluster?", cfg.Registry.Enabled)
 			cfg.Registry.Domain = p.Ask("  Registry domain", cfg.Registry.Domain)
-			cfg.Registry.StorageDir = p.Ask("  Registry storage directory", cfg.Registry.StorageDir)
 			keep := p.Ask("  Retention: keep recent tags per repository", strconv.Itoa(cfg.Registry.Retention.KeepRecentTags))
 			if n, err := strconv.Atoi(keep); err == nil {
 				cfg.Registry.Retention.KeepRecentTags = n
@@ -178,7 +177,6 @@ func newSetupCommand(app *App) *cobra.Command {
 			app.Opts.ConfigDir = cfg.Host.ConfigDir
 			cfg.Host.DataDir = p.Ask("  Data directory", cfg.Host.DataDir)
 			cfg.Platform.DBPath = p.Ask("  SQLite database path", orDefault(cfg.Platform.DBPath, cfg.Host.DataDir+"/menina.db"))
-			cfg.Registry.StorageDir = p.Ask("  Registry storage directory", cfg.Registry.StorageDir)
 
 			if cfg.Registry.Enabled {
 				app.Infof("\nRegistry credentials")

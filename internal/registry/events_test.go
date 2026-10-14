@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/moureau-dev/menina/internal/config"
 )
 
 const ociNotificationBody = `{
@@ -166,16 +164,5 @@ func TestValidateAgainstZotVersion(t *testing.T) {
 	}
 	if err := ValidateAgainstZotVersion("v1.4.0"); err == nil {
 		t.Fatal("v1 is unsupported")
-	}
-}
-
-func TestTranslateRetentionRejectsBadDigest(t *testing.T) {
-	reg := config.Registry{Retention: config.Retention{KeepRecentTags: 3}}
-	if _, _, err := TranslateRetention(reg, []string{"not-a-digest"}); err == nil {
-		t.Fatal("expected invalid digest error")
-	}
-	keep, protected, err := TranslateRetention(reg, []string{"sha256:abc"})
-	if err != nil || keep != 3 || len(protected) != 1 {
-		t.Fatalf("keep=%d protected=%v err=%v", keep, protected, err)
 	}
 }

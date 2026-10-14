@@ -354,6 +354,9 @@ test [--project p]` sends a synthetic event. By default only definitive outcomes
 (`deploy.succeeded`, `deploy.failed` after retries are exhausted, and
 `deploy.rolled_back`) are sent; `deploy.queued` is available via the `events` list.
 
+The control plane also exposes Prometheus metrics at `/metrics` on the events
+listener (`menina_snapshot_version`, `menina_routes`, `menina_jobs{status="…"}`).
+
 ## Reverse proxy
 
 The proxy forwards to Kubernetes Services over plain HTTP. Capability status:

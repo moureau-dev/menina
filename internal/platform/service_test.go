@@ -30,6 +30,20 @@ func serviceWithNotifyToken(t *testing.T, token string) *Service {
 	return svc
 }
 
+func TestMetricsEndpoint(t *testing.T) {
+	svc := serviceWithNotifyToken(t, "tok")
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	svc.handleMetrics(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "menina_snapshot_version") || !strings.Contains(body, "menina_routes") {
+		t.Fatalf("metrics body = %q", body)
+	}
+}
+
 func TestRegistryWebhookRequiresToken(t *testing.T) {
 	svc := serviceWithNotifyToken(t, "super-secret-token")
 	body := `{"events":[{"id":"e1","action":"push","target":{"repository":"p/api","tag":"dev","digest":"sha256:x"}}]}`

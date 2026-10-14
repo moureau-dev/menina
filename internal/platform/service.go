@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -223,6 +224,7 @@ func (s *Service) startEventsServer(ctx context.Context) error {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, "ok")
 	})
+	mux.HandleFunc("/metrics", s.handleMetrics)
 	s.eventsSrv = &http.Server{Addr: s.cfg.Platform.EventsListen, Handler: mux, ReadHeaderTimeout: 15 * time.Second}
 	go func() {
 		s.log.Info("registry event listener started", "addr", s.cfg.Platform.EventsListen)
@@ -237,6 +239,23 @@ func (s *Service) startEventsServer(ctx context.Context) error {
 		_ = s.eventsSrv.Shutdown(shutdownCtx)
 	}()
 	return nil
+}
+
+func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	fmt.Fprintf(w, "# HELP menina_snapshot_version Current routing snapshot version\n# TYPE menina_snapshot_version gauge\nmenina_snapshot_version %d\n", s.bus.snapshotVersion())
+	fmt.Fprintf(w, "# HELP menina_routes Number of configured proxy routes\n# TYPE menina_routes gauge\nmenina_routes %d\n", s.bus.snapshotRoutes())
+	if counts, err := s.db.CountJobsByStatus(r.Context()); err == nil {
+		fmt.Fprintf(w, "# HELP menina_jobs Deployment jobs by status\n# TYPE menina_jobs gauge\n")
+		statuses := make([]string, 0, len(counts))
+		for status := range counts {
+			statuses = append(statuses, status)
+		}
+		sort.Strings(statuses)
+		for _, status := range statuses {
+			fmt.Fprintf(w, "menina_jobs{status=%q} %d\n", status, counts[status])
+		}
+	}
 }
 
 func (s *Service) handleRegistryEvent(w http.ResponseWriter, r *http.Request) {

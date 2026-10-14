@@ -81,11 +81,6 @@ func (db *DB) IngestRegistryEvent(ctx context.Context, e *Event, jobs []Job) (bo
 	return true, nil
 }
 
-func (db *DB) MarkEventProcessed(ctx context.Context, id string) error {
-	_, err := db.ExecContext(ctx, `UPDATE events SET status = 'processed', processed_at = unixepoch(), updated_at = unixepoch() WHERE id = ?`, id)
-	return err
-}
-
 func (db *DB) PendingEvents(ctx context.Context, limit int) ([]Event, error) {
 	rows, err := db.QueryContext(ctx, `SELECT id, dedup_key, registry, repository, tag, digest, delivery, status, created_at, processed_at
 		FROM events WHERE status = 'pending' AND `+activeWhere+` ORDER BY created_at ASC LIMIT ?`, limit)
