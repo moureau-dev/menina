@@ -173,6 +173,24 @@ func TestRoutesReplaceAndQuery(t *testing.T) {
 	}
 }
 
+func TestHasRelease(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	if err := db.RecordRelease(ctx, Release{Project: "p", Environment: "prod", App: "api", Repository: "r/api", Tag: "prod", Digest: "sha256:one", Status: "deployed"}); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := db.HasRelease(ctx, "p", "prod", "api", "sha256:one")
+	if err != nil || !ok {
+		t.Fatalf("expected existing release: ok=%v err=%v", ok, err)
+	}
+	if ok, _ := db.HasRelease(ctx, "p", "prod", "api", "sha256:other"); ok {
+		t.Fatal("unexpected match for a different digest")
+	}
+	if ok, _ := db.HasRelease(ctx, "p", "prod", "api", ""); ok {
+		t.Fatal("empty digest must never match")
+	}
+}
+
 func TestReleasesAndProtectedDigests(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()

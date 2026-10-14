@@ -139,7 +139,6 @@ EOF
 Description=Menina reverse proxy
 After=network-online.target menina-serve.service
 Wants=network-online.target
-PartOf=menina-serve.service
 
 [Service]
 Type=simple

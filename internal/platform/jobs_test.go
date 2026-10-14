@@ -112,6 +112,31 @@ func TestProcessJobIsNoOpWhenAlreadyDesired(t *testing.T) {
 	if len(cluster.applied) != 0 {
 		t.Fatalf("expected no-op, but applied %d workloads", len(cluster.applied))
 	}
+	// A no-op still represents a successful desired state; the release must be
+	// recorded (e.g. after a crash between apply and release recording).
+	releases, _ := db.Releases(context.Background(), "my-platform", "production", "api")
+	if len(releases) != 1 || releases[0].Digest != "sha256:same" {
+		t.Fatalf("no-op must record the release: %+v", releases)
+	}
+}
+
+func TestProcessJobNoOpDoesNotDuplicateRelease(t *testing.T) {
+	db := testDB(t)
+	cluster := &fakeCluster{status: &deployment.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "registry.moureau.dev/my-platform/api@sha256:same"}}
+	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:same"}, testLogger())
+	jobs := NewJobs(db, engine, cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
+	if err := db.RecordRelease(context.Background(), database.Release{Project: "my-platform", Environment: "production", App: "api", Repository: "registry.moureau.dev/my-platform/api", Tag: "production", Digest: "sha256:same", Status: "deployed"}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, _ = jobs.Ingest(context.Background(), registry.PushEvent{Repository: "my-platform/api", Tag: "production", DeliveryID: "d"})
+	pending, _ := db.PendingJobs(context.Background(), 10)
+	if err := jobs.ProcessJob(context.Background(), pending[0]); err != nil {
+		t.Fatal(err)
+	}
+	releases, _ := db.Releases(context.Background(), "my-platform", "production", "api")
+	if len(releases) != 1 {
+		t.Fatalf("re-processing a no-op must not duplicate releases: %+v", releases)
+	}
 }
 
 func TestProcessJobFailureRequeues(t *testing.T) {

@@ -3,7 +3,6 @@ Description=Menina reverse proxy
 Documentation=https://menina.moureau.dev
 After=network-online.target menina-serve.service
 Wants=network-online.target
-PartOf=menina-serve.service
 
 [Service]
 Type=simple

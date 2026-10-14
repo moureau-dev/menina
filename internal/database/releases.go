@@ -36,6 +36,20 @@ func (db *DB) Releases(ctx context.Context, project, environment, app string) ([
 	return scanReleases(rows)
 }
 
+func (db *DB) HasRelease(ctx context.Context, project, environment, app, digest string) (bool, error) {
+	if digest == "" {
+		return false, nil
+	}
+	var n int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM releases
+		WHERE project = ? AND environment = ? AND app = ? AND digest = ? AND `+activeWhere,
+		project, environment, app, digest).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 func (db *DB) ReleasesForProject(ctx context.Context, project string) ([]Release, error) {
 	rows, err := db.QueryContext(ctx, `SELECT id, project, environment, app, repository, tag, digest, status, created_at
 		FROM releases WHERE project = ? AND `+activeWhere+` ORDER BY created_at DESC`, project)

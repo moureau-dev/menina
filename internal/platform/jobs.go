@@ -150,6 +150,19 @@ func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
 		desiredImage := app.Repository + "@" + digest
 		if current.Image == desiredImage && current.ReadyReplicas >= current.Replicas && current.Replicas >= app.Replicas {
 			j.log.Info("workload already at desired digest; no-op", "app", app.Name, "digest", digest)
+			// A previous run may have applied the workload and crashed before
+			// recording the release; make sure the history is complete.
+			if recorded, _ := j.db.HasRelease(ctx, app.Project, app.Environment, app.Name, digest); !recorded {
+				_ = j.db.RecordRelease(ctx, database.Release{
+					Project:     app.Project,
+					Environment: app.Environment,
+					App:         app.Name,
+					Repository:  app.Repository,
+					Tag:         app.Tag,
+					Digest:      digest,
+					Status:      "deployed",
+				})
+			}
 			return j.db.CompleteJob(ctx, job.ID, digest)
 		}
 	}
