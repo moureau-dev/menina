@@ -49,7 +49,10 @@ func newCreateCommand(app *App) *cobra.Command {
 			if err := createEnvironments(app, name, resolveEnvironmentNames(p, environments, p.enabled && !yes)); err != nil {
 				return err
 			}
-			if p.enabled && !yes && p.Confirm(fmt.Sprintf("Create an app in %q now?", name), false) {
+			if p.enabled && !yes && p.yesNo(fmt.Sprintf("Create an app in %q now?", name),
+				"Add an app definition now (repository defaults to the bundled registry).",
+				"Finish without creating an app.",
+				false) {
 				if _, err := createAppInline(app, p, name); err != nil {
 					return err
 				}

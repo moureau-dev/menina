@@ -507,6 +507,35 @@ func TestSelectAndYesNo(t *testing.T) {
 	if !p.yesNo("q", "yes desc", "no desc", true) {
 		t.Fatal("yesNo blank should default to Yes")
 	}
+	// y/n are accepted as aliases on a Yes/No menu.
+	p = &prompter{reader: bufio.NewReader(strings.NewReader("n\n")), enabled: true}
+	if p.yesNo("q", "yes desc", "no desc", true) {
+		t.Fatal("yesNo 'n' should choose No")
+	}
+	p = &prompter{reader: bufio.NewReader(strings.NewReader("y\n")), enabled: true}
+	if !p.yesNo("q", "yes desc", "no desc", false) {
+		t.Fatal("yesNo 'y' should choose Yes")
+	}
+}
+
+func TestDefaultImageRepository(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Host.ConfigDir = dir
+	cfg.Registry.Enabled = true
+	cfg.Registry.Domain = "registry.test"
+	if err := config.SavePlatform(dir, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{Opts: RootOptions{ConfigDir: dir}}
+	if got := defaultImageRepository(app, "my-app", "api"); got != "registry.test/my-app/api" {
+		t.Fatalf("defaultImageRepository = %q", got)
+	}
+	cfg.Registry.Enabled = false
+	_ = config.SavePlatform(dir, &cfg)
+	if got := defaultImageRepository(app, "my-app", "api"); got != "" {
+		t.Fatalf("registry disabled should default to empty, got %q", got)
+	}
 }
 
 func TestSelectRendersDescriptions(t *testing.T) {

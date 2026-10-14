@@ -1,0 +1,177 @@
+# Menina
+
+> Self-hosted application platform: point container images at it, it runs them on
+> k3s and routes public hostnames (HTTP + raw TCP/UDP) through its own proxy.
+
+Menina is one Go binary with distinct modes. Desired state is human-editable YAML
+(`/etc/menina`); operational state is SQLite (`/var/lib/menina`). `menina serve`
+is the control plane (single SQLite writer, config watcher, registry listener,
+reconciler); `menina proxy` serves traffic. Deploys happen by pushing images to
+the bundled registry.
+
+## Install and provision
+
+```bash
+curl -fsSL https://menina.moureau.dev/install.sh | sudo sh   # installs binary + systemd units (does not provision)
+sudo menina setup            # write config.yml (interactive; --non-interactive for defaults)
+sudo menina deploy           # provision k3s, registry, control plane, proxy (idempotent)
+menina registry credential   # username/password for `docker login`
+```
+
+Root is needed for `install`, `setup`, `deploy`, `upgrade`, and
+`backup --with-volumes/--with-images`. Day-to-day commands run as any user in
+the `menina` group.
+
+## Concepts
+
+- **Project** — a unit of config (`projects/<name>/`). Has a namespace (default
+  `menina-apps`).
+- **Environment** — a deployment target (`production`, `staging`, ...). Each env
+  gets its own namespace `<project-ns>-<env>` unless overridden. Holds per-app
+  overrides.
+- **App** — a container image + workload (service or worker) + scaling/storage.
+- **Registry** — bundled Zot at `registry.<domain>`; pushing an image triggers
+  an automatic deploy of matching apps.
+
+## Config layout
+
+```text
+/etc/menina/
+  config.yml
+  projects/<project>/
+    project.yml                 # name, namespace, description
+    apps/<app>.yml              # shared app definition
+    environments/<env>.yml      # per-env overrides + exposure
+/var/lib/menina/                # menina.db, certs/, releases/, backups/
+```
+
+## App definition (`apps/<app>.yml`)
+
+```yaml
+name: api
+image: { repository: registry.example.com/my-app/api }   # repository is immutable
+workload: { type: service, port: 8080 }                  # type: service|worker; command/args optional
+resources: { cpu: 250m, memory: 256Mi }                  # requests == limits
+replicas: 1                                              # or {min: 2, max: 10, targetCPU: 70} -> HPA
+storage: { enabled: true, size: 1Gi, mountPath: /data }  # PVC <app>-data
+health: { readiness: /healthz }                          # HTTP probes
+env: { RUST_LOG: info }
+```
+
+## Environment (`environments/<env>.yml`)
+
+Only this file opts a host in (exposure is environment-level). `image.repository`
+cannot be overridden; other fields merge (override wins).
+
+```yaml
+name: production
+apps:
+  api:
+    enabled: true
+    image: { tag: production }        # default tag = environment name (defaults.imageTagStrategy)
+    replicas: { min: 2, max: 10 }
+    exposure:
+      enabled: true
+      hosts: [api.example.com]
+      pathPrefix: /
+      headers: { X-Frame-Options: DENY }
+      compression: false
+      h2c: false                      # cleartext HTTP/2 to the backend (gRPC)
+      maxBodyBytes: 0
+      timeouts: { read: 30s, write: 60s, idle: 120s }
+      ports: { tcp: [25565], udp: [19132] }   # raw L4 ports (bypass proxy)
+```
+
+## CLI
+
+```bash
+# projects / envs / apps
+menina create                                # guided: prompts name, environments
+menina create my-project --yes --environments development,staging,production
+menina project create <name> --environments a,b  |  menina project list
+menina environment create <env> --project <p>    |  menina environment list --project <p>
+menina app create api --project <p> --repository <repo> --port 8080 --yes
+menina app list --project <p>
+menina app edit api --project <p>            # $EDITOR
+
+# deploy / operate
+menina app deploy api --project <p> --environment <env> --yes   # waits for rollout
+menina app logs api --project <p> --environment <env> --follow
+menina app rollback api --project <p> --environment <env> [--digest sha256:...]
+menina app scale api --project <p> --min 2 --max 10              # baseline (all envs)
+menina app scale api --project <p> -e production --replicas 4    # one environment
+menina app delete api --project <p>            # soft: stop + keep config; --hard removes+prunes
+menina app restore api --project <p>
+
+# observe / infra
+menina status [--json]
+menina routes [--json]               # HTTP routes + L4 TCP/UDP exposures
+menina doctor                        # config, k8s, registry, routes, TLS checks
+menina registry status | menina registry credential [--regenerate]
+menina notify list | menina notify test [--project <p>]
+menina backup [--out f.tgz --with-secrets --with-volumes --with-images --consistent --passphrase]
+menina restore <f.tgz> --force [--with-volumes --with-images]
+menina upgrade [--check]
+```
+
+Interactive shortcuts (TTY only): bare `menina app` / `project` / `environment`
+open project → app → action menus (`Deploy · Scale · Edit · Logs · Rollback ·
+Delete · Back`); selectors have an `Exit`. Scaffolding prompts only on a TTY;
+`--yes`/pipes use flags only. `Ctrl+C` always exits.
+
+## Deploy pipeline
+
+1. `docker push registry.<domain>/<project>/<app>:<tag>`.
+2. Zot emits an event; `menina serve` matches enabled apps by repository + tag.
+3. The tag is resolved to an immutable **digest**; the Deployment is updated to
+   `repo@sha256:...` (rollback restores a recorded digest).
+4. `menina deploy` reconciles k3s/Zot/services; a periodic reconciler applies
+   desired state and prunes removed workloads (PVCs and history are retained).
+
+## Scaling
+
+- Baseline `replicas` in the app file; per-environment override in the env file.
+- `{min,max,targetCPU}` ⇒ a `HorizontalPodAutoscaler`; a fixed count removes any
+  stale HPA. `menina app scale` writes baseline or `-e <env>` override;
+  `--reset` removes the override.
+
+## TLS and networking
+
+- `tls.terminate: true` + `tls.mode: acme` ⇒ Menina issues a **per-hostname**
+  Let's Encrypt cert automatically for every routed host and **auto-renews**
+  (`httpRedirect: false` serves `:80` and `:443` with no forced redirect/HSTS).
+- `tls.mode: none` ⇒ HTTP only (e.g. behind a proxy).
+- Wildcards are **not** supported (ACME is HTTP-01/TLS-ALPN-01, not DNS-01).
+- Cloudflare: orange cloud + **Flexible** if the origin is HTTP-only; or run
+  origin ACME and use **Full (strict)**. Keep `registry.<domain>` **DNS-only
+  (grey)** so pushes aren't capped by the CF proxy (100 MB / ~100 s).
+
+## L4 (non-HTTP) exposure
+
+`exposure.ports` binds raw ports on the node via `hostPort` (bypassing the proxy)
+— for game servers, TURN/STUN, etc. Accepts a number, list, or `{tcp, udp}`.
+Ports 80/443 are reserved; duplicate host ports are rejected. `menina deploy`
+opens them with `ufw` when active. Keep L4 apps at 1 replica (hostPort is
+per-pod). gRPC works over the HTTP proxy via `exposure.h2c: true`.
+
+## Backup and migration
+
+`menina backup` → portable `tar.gz` (DB + `config.yml` + `projects/`; opt-in
+`--with-secrets` [encryptable via `--passphrase`], `--with-volumes`,
+`--with-images`; `--consistent` quiesces writers). `menina restore <f.tgz>
+--force` applies it (stop the writer first: `systemctl stop menina-serve`).
+
+## Not supported (today)
+
+No HTTP/3/QUIC, no ACME wildcards, no built-in auth/rate-limiting/WAF, no
+multi-node k3s or HA control plane (SQLite is a single writer; `local-path`
+volumes are node-local), no canary/blue-green strategies, no cron/one-off jobs.
+
+## Docs
+
+- `docs/CLI.md` — commands, interactive flows, environment/scaling model.
+- `docs/CONFIGURATION.md` — layout, merge rules, scaling, deploy notifications.
+- `docs/PROXY.md` — routing, TLS, caching, security, protocols, L4 exposure.
+- `docs/KUBERNETES.md` — k3s provisioning, namespaces, RBAC, workloads.
+- `docs/REGISTRY.md` — Zot, auth, digest pinning, retention, push→deploy.
+- `docs/OPERATIONS.md` — privileges, security, backups, upgrades, Docker.

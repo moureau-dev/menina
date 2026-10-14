@@ -87,8 +87,14 @@ func createAppInline(app *App, p *prompter, project string) (string, error) {
 	if name == "" {
 		return "", fmt.Errorf("app name is required")
 	}
-	repository := p.Ask("Image repository (e.g. registry.example.com/project/app)", "")
-	workload := []string{config.WorkloadService, config.WorkloadWorker}[p.Choose("Workload type", []string{"service", "worker"}, 0)]
+	repository := p.Ask("Image repository", defaultImageRepository(app, project, name))
+	if repository == "" {
+		return "", fmt.Errorf("image repository is required")
+	}
+	workload := []string{config.WorkloadService, config.WorkloadWorker}[p.Select("Workload type", []Option{
+		{Label: "service", Description: "Listens on a port; gets a ClusterIP Service and can be exposed on a hostname."},
+		{Label: "worker", Description: "No inbound port; runs continuously (queues, background jobs)."},
+	}, 0)]
 	af := config.AppFile{Name: name, Image: config.ImageSpec{Repository: repository}, Workload: config.WorkloadSpec{Type: workload}, Resources: config.ResourceSpec{CPU: "250m", Memory: "256Mi"}, Env: map[string]string{}}
 	if workload == config.WorkloadService {
 		af.Workload.Port = atoiOr(p.Ask("Service port", "8080"), 8080)
@@ -108,6 +114,16 @@ func createAppInline(app *App, p *prompter, project string) (string, error) {
 	}
 	app.Infof("Created app %q in project %q", name, project)
 	return name, nil
+}
+
+// defaultImageRepository returns the bundled-registry repository for an app
+// (registry.<domain>/<project>/<app>) so the user doesn't have to type it.
+func defaultImageRepository(app *App, project, name string) string {
+	cfg, err := app.LoadConfig()
+	if err != nil || !cfg.Registry.Enabled || cfg.Registry.Domain == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/%s/%s", strings.TrimRight(cfg.Registry.Domain, "/"), project, name)
 }
 
 func writeEnvironment(app *App, project, name string) error {

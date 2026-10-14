@@ -107,11 +107,24 @@ func (p *prompter) Select(label string, options []Option, def int) int {
 	if line == "" {
 		return def
 	}
-	n, err := strconv.Atoi(line)
-	if err != nil || n < 1 || n > len(options) {
-		return def
+	if n, err := strconv.Atoi(line); err == nil {
+		if n < 1 || n > len(options) {
+			return def
+		}
+		return n - 1
 	}
-	return n - 1
+	// Accept y/n as aliases for a Yes/No menu.
+	switch strings.ToLower(line) {
+	case "y", "yes":
+		if len(options) >= 1 {
+			return 0
+		}
+	case "n", "no":
+		if len(options) >= 2 {
+			return 1
+		}
+	}
+	return def
 }
 
 // yesNo is a Select with Yes/No options and descriptions.

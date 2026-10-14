@@ -35,14 +35,20 @@ func appCreate(app *App) *cobra.Command {
 			if err := config.EnsureProjectDirs(app.Opts.ConfigDir, project); err != nil {
 				return err
 			}
+			if repository == "" {
+				repository = defaultImageRepository(app, project, name)
+			}
 			if repository == "" && interactive {
-				repository = p.Ask("Image repository (e.g. registry.example.com/project/app)", "")
+				repository = p.Ask("Image repository", "")
 			}
 			if repository == "" {
-				return fmt.Errorf("--repository is required")
+				return fmt.Errorf("--repository is required (or enable the bundled registry)")
 			}
 			if !cmd.Flags().Changed("type") && interactive {
-				workload = []string{config.WorkloadService, config.WorkloadWorker}[p.Choose("Workload type", []string{"service", "worker"}, 0)]
+				workload = []string{config.WorkloadService, config.WorkloadWorker}[p.Select("Workload type", []Option{
+					{Label: "service", Description: "Listens on a port; gets a ClusterIP Service and can be exposed on a hostname."},
+					{Label: "worker", Description: "No inbound port; runs continuously (queues, background jobs)."},
+				}, 0)]
 			}
 			if workload == config.WorkloadService && !cmd.Flags().Changed("port") && interactive {
 				port = atoiOr(p.Ask("Service port", strconv.Itoa(port)), port)
