@@ -36,7 +36,8 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
 | `menina setup [--non-interactive]` | Configure the host, registry, networking, TLS and defaults |
 | `menina deploy [infra\|platform] [--dry-run]` | Reconcile k3s, storage, Zot, the control plane and the proxy |
 | `menina upgrade [--check]` | Verify and install a new release, safely |
-| `menina backup` | Write a consistent SQLite backup to `<data-dir>/backups/` |
+| `menina backup [--out FILE] [--with-secrets] [--with-volumes] [--with-images] [--consistent] [--passphrase]` | Create a portable `tar.gz` bundle (DB + config + projects; opt-in secrets, certs, app volumes, registry images) |
+| `menina restore <archive> [--force] [--with-volumes] [--with-images] [--consistent] [--passphrase]` | Restore a `menina backup` archive |
 | `menina install` | Install shell completion (bash/zsh/fish) |
 | `menina serve` | Run the control-plane service (watcher, webhooks, deployments) |
 | `menina proxy` | Run the reverse proxy |

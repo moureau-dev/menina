@@ -233,17 +233,30 @@ func (k *KubernetesCluster) RestartWorkload(ctx context.Context, namespace, name
 
 func (k *KubernetesCluster) ScaleWorkload(ctx context.Context, namespace, name string, replicas int) error {
 	item := nsResource(appsV1, namespace, "deployments") + "/" + name
-	existing := map[string]any{}
-	if err := k.client.Get(ctx, item, &existing); err != nil {
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		existing := map[string]any{}
+		if err := k.client.Get(ctx, item, &existing); err != nil {
+			return err
+		}
+		spec, _ := existing["spec"].(map[string]any)
+		if spec == nil {
+			spec = map[string]any{}
+			existing["spec"] = spec
+		}
+		spec["replicas"] = replicas
+		err := k.client.Update(ctx, item, existing, nil)
+		if err == nil {
+			return nil
+		}
+		if kube.IsConflict(err) {
+			lastErr = err
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
 		return err
 	}
-	spec, _ := existing["spec"].(map[string]any)
-	if spec == nil {
-		spec = map[string]any{}
-		existing["spec"] = spec
-	}
-	spec["replicas"] = replicas
-	return k.client.Update(ctx, item, existing, nil)
+	return lastErr
 }
 
 func (k *KubernetesCluster) ListWorkloads(ctx context.Context) ([]WorkloadRef, error) {

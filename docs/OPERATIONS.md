@@ -51,12 +51,47 @@ app management, `status`, `routes`, `logs`, `doctor`, `app deploy`,
   Menina reconciles against the live cluster and registry rather than trusting
   the restored database blindly.
 
-## Backups
+## Backups and migration
 
-`menina backup` writes a consistent `VACUUM INTO` copy of the SQLite database to
-`<data-dir>/backups/`. This covers release history, routes and job state — not
-image blobs (back up the registry PVC separately; see
-[REGISTRY.md](REGISTRY.md#storage-and-backups)).
+`menina backup` creates a **portable `tar.gz` bundle** and `menina restore`
+applies it — this is how you migrate to another host:
+
+```bash
+menina backup --out /root/menina.tgz                       # DB + config.yml + projects/
+sudo menina backup --out /root/full.tgz --with-volumes --with-images
+MENINA_BACKUP_PASSPHRASE=... sudo menina backup --out /root/enc.tgz \
+  --with-secrets --with-volumes --with-images
+```
+
+- **Always**: a consistent `VACUUM INTO` snapshot of the SQLite database,
+  `config.yml` + `projects/`, TLS material, and `manifest.json` (version,
+  timestamp, components, checksums).
+- `--with-secrets`: include `secrets/` (registry password, webhook/CF tokens).
+  Combine with `--passphrase` (or `MENINA_BACKUP_PASSPHRASE`) to **encrypt** the
+  archive (scrypt + AES-GCM); without it secrets are stored in plaintext.
+- `--with-volumes`: application volume data (each app's `<app>-data` PVC).
+- `--with-images`: the registry's `zot-data` PVC (the image blobs).
+- Volume/image capture reads the k3s `local-path` storage directly (fast), so
+  `--with-volumes`/`--with-images` **require root**. By default it is
+  **crash-consistent** (copied while the workload runs); add `--consistent` to
+  scale the owning workload (or Zot) to 0 for the copy and back afterwards.
+- Archive format is `tar.gz` (preserves ownership/permissions), not zip.
+
+Restore **stops nothing by itself** — stop the writer first:
+
+```bash
+sudo systemctl stop menina-serve
+sudo menina restore /root/full.tgz --force --with-volumes --with-images
+sudo systemctl start menina-serve menina-proxy   # migrations run on start
+```
+
+`--force` overwrites the existing database/config. Without `--with-volumes`/
+`--with-images`, only DB + config (+ secrets/certs if present) are applied.
+After a restore, Menina reconciles against the live cluster and registry rather
+than trusting the restored database blindly.
+
+See [REGISTRY.md](REGISTRY.md#storage-and-backups) for the registry's storage
+layout.
 
 ## Upgrades
 

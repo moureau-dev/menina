@@ -30,6 +30,12 @@ func statusCode(err error) int {
 func IsNotFound(err error) bool      { return statusCode(err) == 404 }
 func IsAlreadyExists(err error) bool { return statusCode(err) == 409 }
 
+// IsConflict reports a 409 due to a resourceVersion conflict (not AlreadyExists).
+func IsConflict(err error) bool {
+	se, ok := err.(*StatusError)
+	return ok && se.Code == 409 && se.Reason == "Conflict"
+}
+
 func parseStatus(code int, body []byte) error {
 	se := &StatusError{Code: code}
 	var s struct {

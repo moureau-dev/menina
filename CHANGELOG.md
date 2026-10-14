@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `menina backup` now produces a portable `tar.gz` bundle (SQLite `VACUUM INTO`
+  snapshot, `config.yml` + `projects/`, TLS material, `manifest.json`) with
+  opt-in `--with-secrets` (optionally `--passphrase`-encrypted), `--with-volumes`
+  (app PVC data) and `--with-images` (registry blobs), captured directly from the
+  k3s `local-path` storage (crash-consistent by default; `--consistent` quiesces
+  the workload).
+- `menina restore <archive>` applies a bundle (DB, config, secrets, certs,
+  volumes/images), with `--force` to overwrite.
+
 ## [0.0.4] - 2026-10-14
 
 ### Fixed
