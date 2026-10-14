@@ -125,13 +125,12 @@ func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Servic
 	if cfg.Registry.Notifications.TokenRef != "" {
 		token, err := secrets.NewResolver().Resolve(cfg.Registry.Notifications.TokenRef)
 		if err != nil {
-			log.Warn("registry notification token could not be resolved; webhook authentication disabled", "error", err)
-		} else {
-			svc.notifyToken = token
+			return nil, fmt.Errorf("resolve registry notification token: %w", err)
 		}
+		svc.notifyToken = token
 	}
 	if cfg.Registry.Notifications.Enabled && svc.notifyToken == "" {
-		log.Warn("registry webhook authentication is DISABLED (no notifications token configured); any client that can reach the events listener can trigger deployments for configured apps")
+		return nil, fmt.Errorf("registry notifications are enabled but no valid token is configured (registry.notifications.tokenRef); refusing to start an unauthenticated webhook")
 	}
 	return svc, nil
 }
@@ -197,8 +196,12 @@ func (s *Service) Run(ctx context.Context) error {
 		s.reconciler.ReconcileWorkloads(ctx, snap.Resolved)
 	}
 
-	if err := s.startEventsServer(ctx); err != nil {
-		return err
+	if s.cfg.Registry.Notifications.Enabled {
+		if err := s.startEventsServer(ctx); err != nil {
+			return err
+		}
+	} else {
+		s.log.Info("registry notifications are disabled; event listener not started")
 	}
 	s.jobs.RunWorkers(ctx, s.cfg.Platform.Workers)
 	go s.reconciler.Run(ctx, s.cfg.Platform.ReconcileInterval)
@@ -236,12 +239,13 @@ func (s *Service) handleRegistryEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.notifyToken != "" {
-		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(s.notifyToken)) != 1 {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
+	if s.notifyToken == "" {
+		http.Error(w, "registry notifications are not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "); got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(s.notifyToken)) != 1 {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
 	}
 	events, err := registry.ParseNotification(r.Header, r.Body)
 	if err != nil {
@@ -407,7 +411,8 @@ func (s *Service) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"queued": true})
+	id, _, _ := s.db.JobIDByDedupKey(r.Context(), dedup)
+	writeJSON(w, http.StatusAccepted, map[string]any{"queued": true, "jobId": id})
 }
 
 type rollbackRequest struct {
@@ -461,13 +466,25 @@ func (s *Service) handleRollback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"queued": true, "digest": req.Digest})
+	id, _, _ := s.db.JobIDByDedupKey(r.Context(), dedup)
+	writeJSON(w, http.StatusAccepted, map[string]any{"queued": true, "digest": req.Digest, "jobId": id})
 }
 
 func (s *Service) handleJobStatus(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	project, environment, app := q.Get("project"), q.Get("environment"), q.Get("app")
 	resp := map[string]any{"found": false}
+	if id := q.Get("id"); id != "" {
+		if job, ok, err := s.db.JobByID(r.Context(), id); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		} else if ok {
+			resp["found"] = true
+			resp["job"] = job
+		}
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	project, environment, app := q.Get("project"), q.Get("environment"), q.Get("app")
 	if job, ok, err := s.db.LatestJobByTarget(r.Context(), project, environment, app); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

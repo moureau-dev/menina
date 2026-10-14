@@ -58,6 +58,9 @@ func ValidatePlatform(cfg *Config) error {
 		if cfg.Registry.StorageDir == "" {
 			errs = append(errs, "registry.storageDir is required when registry is enabled")
 		}
+		if cfg.Registry.Notifications.Enabled && cfg.Registry.Notifications.TokenRef == "" {
+			errs = append(errs, "registry.notifications is enabled but no tokenRef is configured; refusing an unauthenticated webhook (run `menina setup` or set registry.notifications.tokenRef, or disable notifications)")
+		}
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("invalid configuration:\n  - %s", strings.Join(errs, "\n  - "))

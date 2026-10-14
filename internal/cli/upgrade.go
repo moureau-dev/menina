@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -18,6 +19,16 @@ import (
 
 	"github.com/moureau-dev/menina/internal/version"
 )
+
+func verifyExecutable(ctx context.Context, path string) error {
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(cctx, path, "version").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
 
 const releaseRepo = "moureau-dev/menina"
 
@@ -64,6 +75,9 @@ func newUpgradeCommand(app *App) *cobra.Command {
 				return err
 			}
 			defer os.Remove(tmp)
+			if err := verifyExecutable(ctx, tmp); err != nil {
+				return fmt.Errorf("downloaded binary failed to execute; refusing to install: %w", err)
+			}
 			exe, err := os.Executable()
 			if err != nil {
 				return err
@@ -71,7 +85,10 @@ func newUpgradeCommand(app *App) *cobra.Command {
 			if err := replaceBinary(tmp, exe); err != nil {
 				return err
 			}
-			app.Infof("Upgraded to %s. Restart services with: systemctl restart menina-serve menina-proxy", latest.TagName)
+			app.Infof("Installed %s (backup at %s.bak).", latest.TagName, exe)
+			app.Infof("The running services still use the previous binary until restarted:")
+			app.Infof("  systemctl restart menina-serve menina-proxy")
+			app.Infof("Database migrations run on the next `menina serve` start.")
 			return nil
 		},
 	}
@@ -168,14 +185,46 @@ func downloadVerified(ctx context.Context, url, expected string) (string, error)
 }
 
 func replaceBinary(src, dst string) error {
-	if err := os.Chmod(src, 0o755); err != nil {
+	data, err := os.ReadFile(src)
+	if err != nil {
 		return err
 	}
-	backup := dst + ".bak"
-	if err := copyFile(dst, backup); err != nil {
+	dir := filepath.Dir(dst)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.Rename(src, dst)
+	// Stage the new binary in the destination directory so the final rename is
+	// atomic and never crosses filesystems (os.Rename fails with EXDEV across
+	// mounts, e.g. /tmp -> /usr/local/bin).
+	staged, err := os.CreateTemp(dir, ".menina-upgrade-*")
+	if err != nil {
+		return err
+	}
+	stagedName := staged.Name()
+	if _, err := staged.Write(data); err != nil {
+		_ = staged.Close()
+		_ = os.Remove(stagedName)
+		return err
+	}
+	if err := staged.Close(); err != nil {
+		_ = os.Remove(stagedName)
+		return err
+	}
+	if err := os.Chmod(stagedName, 0o755); err != nil {
+		_ = os.Remove(stagedName)
+		return err
+	}
+	if _, err := os.Stat(dst); err == nil {
+		if err := copyFile(dst, dst+".bak"); err != nil {
+			_ = os.Remove(stagedName)
+			return err
+		}
+	}
+	if err := os.Rename(stagedName, dst); err != nil {
+		_ = os.Remove(stagedName)
+		return err
+	}
+	return nil
 }
 
 func copyFile(src, dst string) error {

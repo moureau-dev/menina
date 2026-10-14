@@ -81,19 +81,34 @@ func TestRegistryWebhookAcceptsZotCloudEvent(t *testing.T) {
 	}
 }
 
-func TestRegistryWebhookOpenWhenNoTokenConfigured(t *testing.T) {
+func TestNewServiceFailsWhenNotificationsEnabledWithoutToken(t *testing.T) {
+	cfg := config.Default()
+	cfg.Registry.Enabled = true
+	cfg.Registry.Notifications.Enabled = true
+	cfg.Registry.Notifications.TokenRef = ""
+	cfg.Platform.DBPath = filepath.Join(t.TempDir(), "menina.db")
+	if _, err := NewService(&cfg, t.TempDir(), testLogger()); err == nil {
+		t.Fatal("NewService must fail closed when notifications are enabled without a token")
+	}
+}
+
+func TestNewServiceSucceedsWhenNotificationsDisabled(t *testing.T) {
 	cfg := config.Default()
 	cfg.Registry.Enabled = false
+	cfg.Registry.Notifications.Enabled = false
+	cfg.Registry.Notifications.TokenRef = ""
 	cfg.Platform.DBPath = filepath.Join(t.TempDir(), "menina.db")
-	svc, err := NewService(&cfg, t.TempDir(), testLogger())
-	if err != nil {
-		t.Fatal(err)
+	if _, err := NewService(&cfg, t.TempDir(), testLogger()); err != nil {
+		t.Fatalf("disabled notifications must not require a token: %v", err)
 	}
-	body := `{"events":[{"id":"e1","action":"push","target":{"repository":"p/api","tag":"dev","digest":"sha256:x"}}]}`
-	req := httptest.NewRequest(http.MethodPost, "/v2/events", strings.NewReader(body))
+}
+
+func TestRegistryWebhookRefusesWithoutToken(t *testing.T) {
+	svc := &Service{}
+	req := httptest.NewRequest(http.MethodPost, "/v2/events", strings.NewReader(`{}`))
 	rr := httptest.NewRecorder()
 	svc.handleRegistryEvent(rr, req)
-	if rr.Code != http.StatusAccepted {
-		t.Fatalf("status = %d, want 202", rr.Code)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 when no token is configured", rr.Code)
 	}
 }

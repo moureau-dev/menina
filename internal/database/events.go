@@ -145,6 +145,32 @@ func (db *DB) LatestJobByTarget(ctx context.Context, project, environment, app s
 	return jobs[0], true, nil
 }
 
+func (db *DB) JobByID(ctx context.Context, id string) (Job, bool, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, dedup_key, kind, project, environment, app, repository, tag, desired_digest, status, attempts, last_error, created_at, updated_at
+		FROM jobs WHERE id = ? AND `+activeWhere, id)
+	if err != nil {
+		return Job{}, false, err
+	}
+	defer rows.Close()
+	jobs, err := scanJobs(rows)
+	if err != nil || len(jobs) == 0 {
+		return Job{}, false, err
+	}
+	return jobs[0], true, nil
+}
+
+func (db *DB) JobIDByDedupKey(ctx context.Context, dedup string) (string, bool, error) {
+	var id string
+	err := db.QueryRowContext(ctx, `SELECT id FROM jobs WHERE dedup_key = ?`, dedup).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return id, true, nil
+}
+
 func (db *DB) ClaimJob(ctx context.Context, id string) (bool, error) {
 	res, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, updated_at = unixepoch() WHERE id = ? AND status = ?`,
 		JobStatusProcessing, id, JobStatusPending)

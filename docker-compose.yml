@@ -28,7 +28,8 @@ services:
       - >
         if [ ! -f /etc/menina/config.yml ]; then
           menina --config-dir /etc/menina setup --non-interactive;
-          sed -i "/tokenRef:/d" /etc/menina/config.yml;
+          sed -i '/notifications:/,/tokenRef:/ s/enabled: true/enabled: false/' /etc/menina/config.yml;
+          sed -i '/tokenRef:/d' /etc/menina/config.yml;
         fi
     volumes:
       - menina-config:/etc/menina

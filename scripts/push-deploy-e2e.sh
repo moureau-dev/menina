@@ -54,6 +54,7 @@ registry:
     enabled: true
     path: /v2/events
     endpoint: "http://127.0.0.1:9000/v2/events"
+    tokenRef: "file:/cfg/notifications.token"
 platform:
   dbPath: /data/menina.db
   controlSocket: /data/run/control.sock
@@ -95,6 +96,7 @@ apps:
     image:
       tag: production
 YAML
+printf 'e2e-token' > "$CFG/cfg/notifications.token"
 
 step "write zot config + k3s registries.yaml"
 cat > "$CFG/zot/config.json" <<'JSON'
@@ -104,7 +106,7 @@ cat > "$CFG/zot/config.json" <<'JSON'
   "http": { "address": "0.0.0.0", "port": "5000", "compat": ["docker2s2"] },
   "log": { "level": "error" },
   "extensions": {
-    "events": { "enable": true, "sinks": [ { "type": "http", "address": "http://127.0.0.1:9000/v2/events" } ] }
+    "events": { "enable": true, "sinks": [ { "type": "http", "address": "http://127.0.0.1:9000/v2/events", "headers": { "Authorization": "Bearer e2e-token" } } ] }
   }
 }
 JSON

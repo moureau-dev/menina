@@ -185,7 +185,7 @@ func deployInfra(ctx context.Context, app *App, cfg *config.Config) error {
 	} else {
 		app.Infof("Using existing local cluster (kubeconfig=%s)", orDefault(cfg.Kubernetes.Kubeconfig, "default"))
 	}
-	if err := ensureServiceKubeconfig(app, cfg); err != nil {
+	if err := ensureServiceKubeconfig(ctx, app, cfg); err != nil {
 		return err
 	}
 
@@ -333,7 +333,35 @@ func deployZot(ctx context.Context, app *App, cfg *config.Config) error {
 	if err := cluster.ApplyService(ctx, w); err != nil {
 		return err
 	}
-	app.Infof("Zot deployed in namespace %s (image %s)", ns, w.Image)
+	if _, err := deployment.WaitForRollout(ctx, cluster, ns, "zot", deployment.RolloutOptions{Timeout: 5 * time.Minute}); err != nil {
+		return fmt.Errorf("Zot did not become ready: %w", err)
+	}
+	app.Infof("Zot ready in namespace %s (image %s)", ns, w.Image)
+	return nil
+}
+
+func installServices(ctx context.Context, app *App, systemd *infrastructure.Systemd, services []string, vars map[string]string) error {
+	var failed []string
+	for _, name := range services {
+		content, err := deployassets.RenderUnit(name, vars)
+		if err != nil {
+			return err
+		}
+		if err := systemd.Apply(ctx, name, content); err != nil {
+			app.Log.Error("failed to install or start service", "unit", name, "error", err)
+			failed = append(failed, name)
+			continue
+		}
+		if !systemd.IsActive(ctx, name) {
+			app.Log.Error("service is not active after start", "unit", name)
+			failed = append(failed, name)
+			continue
+		}
+		app.Infof("Installed and started %s", name)
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("failed to install/start required services: %s", strings.Join(failed, ", "))
+	}
 	return nil
 }
 
@@ -357,17 +385,8 @@ func deployPlatform(ctx context.Context, app *App, cfg *config.Config) error {
 	if cfg.TLS.Terminate || cfg.Networking.Mode == config.NetworkingPublic {
 		services = append(services, "menina-proxy.service")
 	}
-	for _, name := range services {
-		content, err := deployassets.RenderUnit(name, vars)
-		if err != nil {
-			return err
-		}
-		if err := systemd.Apply(ctx, name, content); err != nil {
-			app.Log.Warn("systemd not available; wrote unit but could not start service", "unit", name, "error", err)
-			_ = systemd.WriteUnit(name, content)
-			continue
-		}
-		app.Infof("Installed and started %s", name)
+	if err := installServices(ctx, app, systemd, services, vars); err != nil {
+		return err
 	}
 	if cfg.Networking.Mode == config.NetworkingCloudflareTunnel {
 		app.Infof("Cloudflare Tunnel mode: ensure cloudflared routes the configured hostnames to origin %s", orDefault(cfg.Networking.Cloudflare.OriginURL, "http://127.0.0.1:80"))
@@ -583,9 +602,10 @@ func waitForKubernetes(ctx context.Context, app *App, cfg *config.Config, timeou
 	}
 }
 
-// ensureServiceKubeconfig makes the kubeconfig readable by the unprivileged
-// service user and persists the path into config.yml.
-func ensureServiceKubeconfig(app *App, cfg *config.Config) error {
+// ensureServiceKubeconfig provisions a scoped Kubernetes identity for the
+// service (ServiceAccount + ClusterRole/Binding + token) and writes a kubeconfig
+// that uses only that identity. It never falls back to the admin kubeconfig.
+func ensureServiceKubeconfig(ctx context.Context, app *App, cfg *config.Config) error {
 	if os.Geteuid() != 0 {
 		return nil
 	}
@@ -595,14 +615,12 @@ func ensureServiceKubeconfig(app *App, cfg *config.Config) error {
 		src = cfg.Kubernetes.Kubeconfig
 	}
 	if src == "" {
-		return nil
+		return fmt.Errorf("no Kubernetes kubeconfig found; cannot provision the Menina service identity")
 	}
-	if src == filepath.Join(cfg.Host.ConfigDir, "kubeconfig") {
-		return nil
-	}
-	data, err := os.ReadFile(src)
+	ns := orDefault(cfg.Platform.Namespace, defaultPlatformNS)
+	data, err := deployment.ProvisionServiceAccess(ctx, src, ns, "menina")
 	if err != nil {
-		return fmt.Errorf("read kubeconfig %s: %w", src, err)
+		return fmt.Errorf("provision scoped Kubernetes access (refusing to use the admin kubeconfig): %w", err)
 	}
 	dst := filepath.Join(cfg.Host.ConfigDir, "kubeconfig")
 	if err := os.MkdirAll(cfg.Host.ConfigDir, 0o750); err != nil {

@@ -162,6 +162,23 @@ func (c *ControlClient) PostJSON(ctx context.Context, path string, body []byte) 
 	return nil
 }
 
+// PostJSONDecode posts a JSON body and decodes the JSON response.
+func (c *ControlClient) PostJSONDecode(ctx context.Context, path string, body []byte, out any) error {
+	resp, err := c.do(ctx, http.MethodPost, path, strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("control request %s failed: %s: %s", path, resp.Status, strings.TrimSpace(string(data)))
+	}
+	if out != nil {
+		return json.NewDecoder(resp.Body).Decode(out)
+	}
+	return nil
+}
+
 type SnapshotStream func(*proxy.Snapshot)
 
 func (c *ControlClient) Stream(ctx context.Context, fn SnapshotStream) error {

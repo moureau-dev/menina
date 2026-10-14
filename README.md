@@ -380,17 +380,25 @@ make docker            # or: docker build -t menina:dev .
   `ProtectKernel*`, `ProtectControlGroups`, `PrivateDevices`, `PrivateTmp`,
   `RestrictNamespaces`, `RestrictSUIDSGID`, `LockPersonality`, and a minimal
   `RestrictAddressFamilies`). Only the proxy is granted `CAP_NET_BIND_SERVICE`.
-- The registry webhook is bearer-token authenticated; when notifications are
-  enabled without a token Menina logs a prominent warning. Forwarded headers are
-  trusted only from configured proxies; untrusted `X-Forwarded-Host`/`Forwarded`
-  are stripped. The proxy routes only configured hostnames (unknown hosts get
-  404) and never dials a client-controlled destination, so a request cannot
-  cause SSRF or route injection.
-- **Known gap:** on k3s, `deploy` currently copies the admin kubeconfig
-  (`/etc/rancher/k3s/k3s.yaml`) for the service instead of a scoped
-  ServiceAccount. This is cluster-admin for the `menina` group and should be
-  replaced with a namespace-scoped ServiceAccount/Role; it is a local privilege
-  boundary (requires host/group access), not a remote exposure.
+- The registry webhook is bearer-token authenticated and **fails closed**: if
+  notifications are enabled without a valid token, `menina serve` refuses to
+  start; if notifications are disabled, no listener is started. Forwarded
+  headers are trusted only from configured proxies; untrusted
+  `X-Forwarded-Host`/`Forwarded` are stripped. The proxy routes only configured
+  hostnames (unknown hosts get 404) and never dials a client-controlled
+  destination.
+- **Kubernetes access is a scoped identity.** `menina deploy` creates a
+  ServiceAccount (`menina-system/menina`), a `menina-platform` ClusterRole with
+  only the namespaces/nodes(read)/services/configmaps/secrets/PVCs/pods/pods-log/
+  deployments verbs it needs, and a long-lived token; the service kubeconfig uses
+  that token only. Menina never falls back to the admin kubeconfig as the service
+  credential. Verified against real k3s (`scripts/rbac-e2e.sh`).
+- `menina deploy` propagates systemd install/enable/start failures (nonzero exit,
+  no success message), `menina app deploy` waits for the rollout and reports
+  succeeded/failed, and Zot readiness is verified before deploy reports success.
+  `menina upgrade` verifies the artifact checksum, executes the staged binary
+  before replacing it (atomic, same-directory rename with a `.bak`), and reports
+  that services must be restarted and migrations run on next start.
 - CI registry credentials are separate from cluster credentials.
 - On SIGTERM the control plane stops accepting work, re-queues in-progress
   deployments and flushes state. When Kubernetes is unavailable it stays up,

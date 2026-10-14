@@ -168,10 +168,17 @@ func appDeploy(app *App) *cobra.Command {
 				return fmt.Errorf("control plane not reachable (%v); start it with `menina serve`", err)
 			}
 			body := fmt.Sprintf(`{"project":%q,"environment":%q,"app":%q}`, project, environment, args[0])
-			if err := client.PostJSON(cmd.Context(), "/deploy", []byte(body)); err != nil {
+			var res struct {
+				JobID string `json:"jobId"`
+			}
+			if err := client.PostJSONDecode(cmd.Context(), "/deploy", []byte(body), &res); err != nil {
 				return err
 			}
-			app.Infof("Deployment of %s/%s/%s queued", project, environment, args[0])
+			app.Infof("Deployment of %s/%s/%s queued; waiting for the rollout...", project, environment, args[0])
+			if err := waitForDeploy(cmd.Context(), client, res.JobID, 5*time.Minute); err != nil {
+				return err
+			}
+			app.Infof("Deployment of %s/%s/%s succeeded", project, environment, args[0])
 			return nil
 		},
 	}
@@ -264,11 +271,14 @@ func appRollback(app *App) *cobra.Command {
 				return fmt.Errorf("control plane not reachable (%v); start it with `menina serve`", err)
 			}
 			body := fmt.Sprintf(`{"project":%q,"environment":%q,"app":%q,"digest":%q}`, project, environment, args[0], digest)
-			if err := client.PostJSON(cmd.Context(), "/rollback", []byte(body)); err != nil {
+			var res struct {
+				JobID string `json:"jobId"`
+			}
+			if err := client.PostJSONDecode(cmd.Context(), "/rollback", []byte(body), &res); err != nil {
 				return err
 			}
 			app.Infof("Rollback of %s/%s/%s to %s requested; waiting for the rollout...", project, environment, args[0], digest)
-			if err := waitForDeploy(cmd.Context(), client, project, environment, args[0], digest, 5*time.Minute); err != nil {
+			if err := waitForDeploy(cmd.Context(), client, res.JobID, 5*time.Minute); err != nil {
 				return err
 			}
 			app.Infof("Rollback complete: %s is running %s", args[0], digest)
@@ -283,30 +293,28 @@ func appRollback(app *App) *cobra.Command {
 	return cmd
 }
 
-// waitForDeploy polls the control plane until the job for the target reaches a
-// terminal state, so the CLI reports the actual outcome rather than just
-// "queued".
-func waitForDeploy(ctx context.Context, client *platform.ControlClient, project, environment, app, wantDigest string, timeout time.Duration) error {
+// waitForDeploy polls the control plane until the specific job reaches a
+// terminal state, so the CLI reports the actual outcome rather than "queued".
+func waitForDeploy(ctx context.Context, client *platform.ControlClient, jobID string, timeout time.Duration) error {
+	if jobID == "" {
+		return fmt.Errorf("control plane did not return a job id; cannot confirm the rollout")
+	}
 	deadline := time.Now().Add(timeout)
-	path := fmt.Sprintf("/job-status?project=%s&environment=%s&app=%s",
-		url.QueryEscape(project), url.QueryEscape(environment), url.QueryEscape(app))
+	path := "/job-status?id=" + url.QueryEscape(jobID)
 	for {
 		var resp struct {
 			Found bool `json:"found"`
 			Job   struct {
-				Status        string `json:"Status"`
-				LastError     string `json:"LastError"`
-				DesiredDigest string `json:"DesiredDigest"`
+				Status    string `json:"Status"`
+				LastError string `json:"LastError"`
 			} `json:"job"`
 		}
 		if err := client.GetJSON(ctx, path, &resp); err == nil && resp.Found {
-			if wantDigest == "" || resp.Job.DesiredDigest == wantDigest {
-				switch resp.Job.Status {
-				case "done":
-					return nil
-				case "failed":
-					return fmt.Errorf("deployment failed: %s (the previously running version, if healthy, remains available)", resp.Job.LastError)
-				}
+			switch resp.Job.Status {
+			case "done":
+				return nil
+			case "failed":
+				return fmt.Errorf("deployment failed: %s (the previously running version, if healthy, remains available)", resp.Job.LastError)
 			}
 		}
 		if time.Now().After(deadline) {
