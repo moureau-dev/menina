@@ -126,6 +126,22 @@ app's Kubernetes Service. Verify with `menina doctor` and `menina routes`.
 create an application for you. A deployable app needs a project/app/environment
 definition and an image pushed to the registry.
 
+Other runtime behavior worth knowing:
+
+- `registry.retention.enabled: false` disables the generated Zot retention policy.
+- `security.enforceProdPolicy: true` (default) makes `app deploy`/`app rollback`
+  require `--yes` (and the control plane reject unconfirmed requests) for the
+  `production` environment. `security.trustedProxies` is the single trusted-proxy
+  list the proxy uses; `setup` prompts for it.
+- `menina backup` writes a consistent `VACUUM INTO` copy of the SQLite database to
+  `<data-dir>/backups/`.
+- `menina deploy platform` refuses to run when the registry is enabled but the
+  Zot Service is absent, telling you to run `menina deploy infra` first.
+- Cloudflare Tunnel mode installs the local proxy origin (the tunnel needs an
+  origin service to forward to).
+- For a machine with no published release, install a locally built binary with
+  `MENINA_LOCAL_BINARY=/path/to/menina sh scripts/install.sh`.
+
 ## Configuration
 
 ```text
@@ -331,9 +347,13 @@ also eligible.
 Prerequisites: the public DNS name must resolve to the VPS and ports `:80`/`:443`
 must be reachable. When `networking.cloudflare.apiTokenSecretRef` and a public IP
 (`networking.publicIp`, or detected automatically) are available, `menina deploy`
-creates the `A` records for the base domains and the registry domain. `menina
-doctor` validates the ACME directory reachability, the certificate directory,
-and the served certificate for every exposed hostname.
+creates the `A` records for the base domains, the registry domain, **and every
+resolved application exposure host**; it refuses to overwrite a name that already
+has a record of a different type. `menina doctor` validates the ACME directory
+reachability, the certificate directory, the webhook listener (reachable and
+authenticated), and the served certificate for every exposed hostname (a
+hostname unreachable from inside the VPS is reported as a warning, not a
+failure).
 
 Wildcards (`*.example.com`) are **not** supported: routing and ACME use
 individual hostnames, and wildcard certificates would require DNS-01. Menina

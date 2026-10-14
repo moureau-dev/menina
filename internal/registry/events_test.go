@@ -101,12 +101,13 @@ func TestDedupKeyStableAndDistinct(t *testing.T) {
 
 func TestBuildZotConfigTranslation(t *testing.T) {
 	data, err := BuildZotConfig(ZotParams{
-		RootDirectory:  "/var/lib/registry",
-		ContainerPort:  "5000",
-		HtpasswdPath:   "/etc/zot-auth/htpasswd",
-		EventAddress:   "http://10.0.0.5:9000/v2/events",
-		EventToken:     "secret-token",
-		KeepRecentTags: 3,
+		RootDirectory:    "/var/lib/registry",
+		ContainerPort:    "5000",
+		HtpasswdPath:     "/etc/zot-auth/htpasswd",
+		EventAddress:     "http://10.0.0.5:9000/v2/events",
+		EventToken:       "secret-token",
+		RetentionEnabled: true,
+		KeepRecentTags:   3,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -139,6 +140,20 @@ func TestBuildZotConfigTranslation(t *testing.T) {
 	}
 	if sink.Headers["Authorization"] != "Bearer secret-token" {
 		t.Fatalf("sink headers = %+v", sink.Headers)
+	}
+}
+
+func TestBuildZotConfigRetentionDisabled(t *testing.T) {
+	data, err := BuildZotConfig(ZotParams{RootDirectory: "/var/lib/registry", RetentionEnabled: false, KeepRecentTags: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg ZotConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Storage.Retention != nil {
+		t.Fatalf("retention must be omitted when disabled: %+v", cfg.Storage.Retention)
 	}
 }
 

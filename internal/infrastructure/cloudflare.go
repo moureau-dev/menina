@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -103,7 +104,7 @@ func (c *CloudflareClient) FindZoneID(ctx context.Context, zone string) (string,
 }
 
 func (c *CloudflareClient) UpsertDNSRecord(ctx context.Context, zoneID, recordType, name, content string, proxied bool) error {
-	result, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/zones/%s/dns_records?type=%s&name=%s", zoneID, recordType, url.QueryEscape(name)), nil)
+	result, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/zones/%s/dns_records?name=%s", zoneID, url.QueryEscape(name)), nil)
 	if err != nil {
 		return err
 	}
@@ -111,12 +112,20 @@ func (c *CloudflareClient) UpsertDNSRecord(ctx context.Context, zoneID, recordTy
 	if err := json.Unmarshal(result, &records); err != nil {
 		return err
 	}
+	// Never clobber an unrelated record that already owns this name.
+	var matches []DNSRecord
+	for _, r := range records {
+		if !strings.EqualFold(r.Type, recordType) {
+			return fmt.Errorf("DNS name %q already has a %s record; refusing to overwrite it with a %s record", name, r.Type, recordType)
+		}
+		matches = append(matches, r)
+	}
 	payload := map[string]any{"type": recordType, "name": name, "content": content, "proxied": proxied, "ttl": 1}
-	if len(records) == 0 {
+	if len(matches) == 0 {
 		_, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/zones/%s/dns_records", zoneID), payload)
 		return err
 	}
-	_, err = c.do(ctx, http.MethodPut, fmt.Sprintf("/zones/%s/dns_records/%s", zoneID, records[0].ID), payload)
+	_, err = c.do(ctx, http.MethodPut, fmt.Sprintf("/zones/%s/dns_records/%s", zoneID, matches[0].ID), payload)
 	return err
 }
 

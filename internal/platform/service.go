@@ -370,6 +370,17 @@ type deployRequest struct {
 	Environment string `json:"environment"`
 	App         string `json:"app"`
 	Digest      string `json:"digest"`
+	Confirm     bool   `json:"confirm"`
+}
+
+func (s *Service) requireProductionConfirmation(environment string, confirmed bool) error {
+	if !s.cfg.Security.EnforceProdPolicy {
+		return nil
+	}
+	if strings.EqualFold(environment, "production") && !confirmed {
+		return fmt.Errorf("deploying to the %q environment requires explicit confirmation (security.enforceProdPolicy)", environment)
+	}
+	return nil
 }
 
 func (s *Service) handleDeploy(w http.ResponseWriter, r *http.Request) {
@@ -380,6 +391,10 @@ func (s *Service) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	var req deployRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.requireProductionConfirmation(req.Environment, req.Confirm); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 	snap := s.watcher.Snapshot()
@@ -420,6 +435,7 @@ type rollbackRequest struct {
 	Environment string `json:"environment"`
 	App         string `json:"app"`
 	Digest      string `json:"digest"`
+	Confirm     bool   `json:"confirm"`
 }
 
 func (s *Service) handleRollback(w http.ResponseWriter, r *http.Request) {
@@ -430,6 +446,10 @@ func (s *Service) handleRollback(w http.ResponseWriter, r *http.Request) {
 	var req rollbackRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.requireProductionConfirmation(req.Environment, req.Confirm); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 	if req.Digest == "" || !strings.Contains(req.Digest, ":") {

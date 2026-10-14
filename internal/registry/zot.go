@@ -75,13 +75,14 @@ type ZotConfig struct {
 }
 
 type ZotParams struct {
-	RootDirectory  string
-	ContainerPort  string
-	HtpasswdPath   string
-	EventAddress   string
-	EventToken     string
-	KeepRecentTags int
-	ProtectedTags  []string
+	RootDirectory    string
+	ContainerPort    string
+	HtpasswdPath     string
+	EventAddress     string
+	EventToken       string
+	RetentionEnabled bool
+	KeepRecentTags   int
+	ProtectedTags    []string
 }
 
 func BuildZotConfig(p ZotParams) ([]byte, error) {
@@ -106,7 +107,7 @@ func BuildZotConfig(p ZotParams) ([]byte, error) {
 		},
 		Log: ZotLog{Level: "info"},
 	}
-	if p.KeepRecentTags > 0 {
+	if p.RetentionEnabled && p.KeepRecentTags > 0 {
 		cfg.Storage.Retention = &ZotRetention{
 			Policies: []ZotRetentionPolicy{{
 				Repositories: []string{"**"},

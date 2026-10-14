@@ -81,6 +81,24 @@ func TestRegistryWebhookAcceptsZotCloudEvent(t *testing.T) {
 	}
 }
 
+func TestRequireProductionConfirmation(t *testing.T) {
+	svc := &Service{cfg: &config.Config{}}
+	svc.cfg.Security.EnforceProdPolicy = true
+	if err := svc.requireProductionConfirmation("production", false); err == nil {
+		t.Fatal("production deploy without confirmation must be rejected")
+	}
+	if err := svc.requireProductionConfirmation("production", true); err != nil {
+		t.Fatalf("confirmed production deploy should pass: %v", err)
+	}
+	if err := svc.requireProductionConfirmation("development", false); err != nil {
+		t.Fatalf("non-production deploy should not require confirmation: %v", err)
+	}
+	svc.cfg.Security.EnforceProdPolicy = false
+	if err := svc.requireProductionConfirmation("production", false); err != nil {
+		t.Fatalf("policy disabled should allow: %v", err)
+	}
+}
+
 func TestNewServiceFailsWhenNotificationsEnabledWithoutToken(t *testing.T) {
 	cfg := config.Default()
 	cfg.Registry.Enabled = true

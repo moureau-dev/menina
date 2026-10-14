@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -16,6 +17,13 @@ import (
 	"github.com/moureau-dev/menina/internal/deployment"
 	"github.com/moureau-dev/menina/internal/platform"
 )
+
+func requireProdConfirmation(cfg *config.Config, environment string, yes bool) error {
+	if cfg.Security.EnforceProdPolicy && strings.EqualFold(environment, "production") && !yes {
+		return fmt.Errorf("deploying to the %q environment requires --yes (security.enforceProdPolicy)", environment)
+	}
+	return nil
+}
 
 func newAppCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{Use: "app", Short: "Manage app definitions"}
@@ -154,6 +162,7 @@ func appList(app *App) *cobra.Command {
 
 func appDeploy(app *App) *cobra.Command {
 	var project, environment string
+	var yes bool
 	cmd := &cobra.Command{
 		Use:   "deploy <name>",
 		Short: "Deploy an app into an environment",
@@ -163,11 +172,14 @@ func appDeploy(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := requireProdConfirmation(cfg, environment, yes); err != nil {
+				return err
+			}
 			client, err := app.Control(cfg)
 			if err != nil {
 				return fmt.Errorf("control plane not reachable (%v); start it with `menina serve`", err)
 			}
-			body := fmt.Sprintf(`{"project":%q,"environment":%q,"app":%q}`, project, environment, args[0])
+			body := fmt.Sprintf(`{"project":%q,"environment":%q,"app":%q,"confirm":%t}`, project, environment, args[0], yes)
 			var res struct {
 				JobID string `json:"jobId"`
 			}
@@ -184,6 +196,7 @@ func appDeploy(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm a production deployment")
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("environment")
 	return cmd
@@ -242,6 +255,7 @@ func appLogs(app *App) *cobra.Command {
 
 func appRollback(app *App) *cobra.Command {
 	var project, environment, digest string
+	var yes bool
 	cmd := &cobra.Command{
 		Use:   "rollback <name>",
 		Short: "Restore a previously recorded immutable image digest",
@@ -249,6 +263,9 @@ func appRollback(app *App) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := app.LoadConfig()
 			if err != nil {
+				return err
+			}
+			if err := requireProdConfirmation(cfg, environment, yes); err != nil {
 				return err
 			}
 			if digest == "" {
@@ -270,7 +287,7 @@ func appRollback(app *App) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("control plane not reachable (%v); start it with `menina serve`", err)
 			}
-			body := fmt.Sprintf(`{"project":%q,"environment":%q,"app":%q,"digest":%q}`, project, environment, args[0], digest)
+			body := fmt.Sprintf(`{"project":%q,"environment":%q,"app":%q,"digest":%q,"confirm":%t}`, project, environment, args[0], digest, yes)
 			var res struct {
 				JobID string `json:"jobId"`
 			}
@@ -288,6 +305,7 @@ func appRollback(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
 	cmd.Flags().StringVar(&digest, "digest", "", "image digest to restore")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm a production rollback")
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("environment")
 	return cmd

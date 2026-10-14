@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/infrastructure"
+	"github.com/moureau-dev/menina/internal/secrets"
 )
 
 func newDoctorCommand(app *App) *cobra.Command {
@@ -76,6 +78,7 @@ func newDoctorCommand(app *App) *cobra.Command {
 					results = append(results, check("registry", nil))
 				}
 				results = append(results, checkRegistryRoute(ctx, app, cfg))
+				results = append(results, checkWebhook(ctx, cfg))
 			}
 
 			results = append(results, checkProxyTunnel(ctx, cfg))
@@ -85,7 +88,9 @@ func newDoctorCommand(app *App) *cobra.Command {
 			failed := 0
 			for _, r := range results {
 				mark := "ok"
-				if r.err != nil {
+				if r.warn && r.err != nil {
+					mark = "WARN"
+				} else if r.err != nil {
 					mark = "FAIL"
 					failed++
 				}
@@ -106,9 +111,14 @@ func newDoctorCommand(app *App) *cobra.Command {
 type checkResult struct {
 	name string
 	err  error
+	warn bool
 }
 
 func check(name string, err error) checkResult { return checkResult{name: name, err: err} }
+
+func warnCheck(name string, err error) checkResult {
+	return checkResult{name: name, err: err, warn: true}
+}
 
 func infraStorage(cfg *config.Config) (infrastructure.DiskStats, error) {
 	st := infrastructure.NewStorage(cfg.Host.DataDir)
@@ -193,10 +203,73 @@ func checkTLS(ctx context.Context, cfg *config.Config, resolved *config.Resolved
 	if cfg.TLS.Mode == config.TLSModeACME || cfg.TLS.Mode == config.TLSModeManual {
 		port := httpsPort(cfg.Platform.HTTPSListen)
 		for _, host := range exposedHosts(resolved) {
-			out = append(out, check("tls "+host, verifyHostCert(ctx, host, port)))
+			err := verifyHostCert(ctx, host, port)
+			if err != nil && isConnectivityError(err) {
+				out = append(out, warnCheck("tls "+host, fmt.Errorf("%v (could not reach the public hostname from the VPS; this is expected without hairpin NAT and does not necessarily indicate a problem)", err)))
+				continue
+			}
+			out = append(out, check("tls "+host, err))
 		}
 	}
 	return out
+}
+
+func isConnectivityError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if _, ok := err.(net.Error); ok {
+		return true
+	}
+	msg := err.Error()
+	for _, s := range []string{"connection refused", "i/o timeout", "no such host", "dial tcp", "connection reset", "network is unreachable"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkWebhook verifies the registry events listener is reachable and enforces
+// authentication.
+func checkWebhook(ctx context.Context, cfg *config.Config) checkResult {
+	if !cfg.Registry.Notifications.Enabled {
+		return check("webhook", nil)
+	}
+	port := "9000"
+	if _, p, err := net.SplitHostPort(cfg.Platform.EventsListen); err == nil && p != "" {
+		port = p
+	}
+	token := ""
+	if cfg.Registry.Notifications.TokenRef != "" {
+		t, err := secrets.NewResolver().Resolve(cfg.Registry.Notifications.TokenRef)
+		if err != nil {
+			return check("webhook", fmt.Errorf("could not resolve the registry notification token: %w", err))
+		}
+		token = t
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://127.0.0.1:"+port+"/v2/events", strings.NewReader("{}"))
+	if err != nil {
+		return check("webhook", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	if err != nil {
+		return check("webhook", fmt.Errorf("events listener not reachable on 127.0.0.1:%s (is the port reachable from the cluster?): %w", port, err))
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusAccepted, http.StatusBadRequest:
+		return check("webhook", nil)
+	case http.StatusUnauthorized:
+		return check("webhook", fmt.Errorf("events listener rejected the configured token"))
+	case http.StatusServiceUnavailable:
+		return check("webhook", fmt.Errorf("events listener reports notifications are not configured"))
+	default:
+		return check("webhook", fmt.Errorf("unexpected status %d from the events listener", resp.StatusCode))
+	}
 }
 
 func exposedHosts(resolved *config.ResolvedConfig) []string {

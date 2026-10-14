@@ -189,14 +189,25 @@ EOF
   info "installed systemd unit templates to ${SHARE_DIR}/systemd"
 }
 
+install_local_binary() {
+  [ -x "$MENINA_LOCAL_BINARY" ] || die "MENINA_LOCAL_BINARY=$MENINA_LOCAL_BINARY is not an executable file"
+  info "installing local binary $MENINA_LOCAL_BINARY (development path; no download, no checksum)"
+  install -m 0755 "$MENINA_LOCAL_BINARY" "${BIN_DIR}/${APP}"
+}
+
 main() {
   [ "$(id -u)" -eq 0 ] || die "installing to ${BIN_DIR} requires root; re-run with sudo"
   detect_platform
   check_prereqs
   mkdir -p "$BIN_DIR"
-  version="$(resolve_version)"
-  [ -n "$version" ] || die "could not determine the latest release version"
-  download_and_verify "$version"
+  if [ -n "${MENINA_LOCAL_BINARY:-}" ]; then
+    install_local_binary
+    version="$("${BIN_DIR}/${APP}" version 2>/dev/null || echo local)"
+  else
+    version="$(resolve_version)"
+    [ -n "$version" ] || die "could not determine the latest release version; if no release is published yet, build from source and set MENINA_LOCAL_BINARY=/path/to/menina"
+    download_and_verify "$version"
+  fi
   create_service_user
   install_completion
   install_unit_templates

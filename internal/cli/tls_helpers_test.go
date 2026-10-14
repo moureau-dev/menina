@@ -8,9 +8,10 @@ import (
 
 func TestBaseZone(t *testing.T) {
 	cases := map[string]string{
-		"api.hello.com":   "hello.com",
-		"hello.com":       "hello.com",
-		"a.b.hello.co.uk": "co.uk",
+		"api.hello.com":      "hello.com",
+		"hello.com":          "hello.com",
+		"a.b.hello.co.uk":    "hello.co.uk",
+		"api.example.com.br": "example.com.br",
 	}
 	for in, want := range cases {
 		if got := baseZone(in); got != want {
@@ -19,13 +20,13 @@ func TestBaseZone(t *testing.T) {
 	}
 }
 
-func TestDNSTargetsIncludesRegistryAndBaseDomains(t *testing.T) {
+func TestDNSTargetsIncludesRegistryBaseDomainsAndExposureHosts(t *testing.T) {
 	cfg := config.Default()
 	cfg.Networking.BaseDomains = []string{"hello.com", "hello.com"}
 	cfg.Registry.Enabled = true
 	cfg.Registry.Domain = "registry.hello.com"
-	got := dnsTargets(&cfg)
-	want := map[string]bool{"hello.com": true, "registry.hello.com": true}
+	got := dnsTargets(&cfg, []string{"api.hello.com", "hello.com"})
+	want := map[string]bool{"hello.com": true, "registry.hello.com": true, "api.hello.com": true}
 	if len(got) != len(want) {
 		t.Fatalf("dnsTargets = %v, want %v", got, want)
 	}

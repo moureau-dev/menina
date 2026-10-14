@@ -141,6 +141,8 @@ func newSetupCommand(app *App) *cobra.Command {
 			}
 			domains := p.Ask("  Base domains (comma-separated)", strings.Join(cfg.Networking.BaseDomains, ","))
 			cfg.Networking.BaseDomains = splitCSV(domains)
+			trusted := p.Ask("  Trusted reverse proxies (CIDR/IP, comma-separated; they may set X-Forwarded-*)", strings.Join(cfg.Security.TrustedProxies, ","))
+			cfg.Security.TrustedProxies = splitCSV(trusted)
 
 			app.Infof("\nTLS")
 			cfg.TLS.Terminate = p.Confirm("  Terminate TLS in Menina?", cfg.TLS.Terminate)

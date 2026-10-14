@@ -131,8 +131,11 @@ func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
 	}
 	app, err := snap.FindApp(job.Project, job.Environment, job.App)
 	if err != nil {
-		_ = j.db.FailJob(ctx, job.ID, err.Error())
-		return err
+		// The target is no longer part of the desired configuration (deleted,
+		// renamed or its environment removed). Drop the job instead of retrying
+		// it forever.
+		j.log.Warn("job target is no longer configured; dropping job", "project", job.Project, "environment", job.Environment, "app", job.App)
+		return j.db.CompleteJob(ctx, job.ID, "")
 	}
 	if !app.Enabled {
 		return j.db.CompleteJob(ctx, job.ID, "")

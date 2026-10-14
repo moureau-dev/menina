@@ -58,6 +58,7 @@ func NewRootCommand() *cobra.Command {
 		newRoutesCommand(app),
 		newRegistryCommand(app),
 		newDoctorCommand(app),
+		newBackupCommand(app),
 		newServeCommand(app),
 		newProxyCommand(app),
 		newUpgradeCommand(app),

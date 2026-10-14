@@ -17,15 +17,16 @@ import (
 )
 
 type Reconciler struct {
-	db        *database.DB
-	cluster   deployment.Cluster
-	engine    *deployment.Engine
-	snapshot  func() *config.ResolvedConfig
-	cfg       *config.Config
-	log       *slog.Logger
-	onPublish func(*proxy.Snapshot)
-	mu        sync.Mutex
-	lastSig   string
+	db          *database.DB
+	cluster     deployment.Cluster
+	engine      *deployment.Engine
+	snapshot    func() *config.ResolvedConfig
+	cfg         *config.Config
+	log         *slog.Logger
+	onPublish   func(*proxy.Snapshot)
+	mu          sync.Mutex
+	lastSig     string
+	reconcileMu sync.Mutex
 }
 
 const (
@@ -143,6 +144,12 @@ func (r *Reconciler) BuildSnapshot(rc *config.ResolvedConfig) (*proxy.Snapshot, 
 }
 
 func (r *Reconciler) Publish(ctx context.Context, rc *config.ResolvedConfig) error {
+	r.reconcileMu.Lock()
+	defer r.reconcileMu.Unlock()
+	return r.publishLocked(ctx, rc)
+}
+
+func (r *Reconciler) publishLocked(ctx context.Context, rc *config.ResolvedConfig) error {
 	snap, err := r.BuildSnapshot(rc)
 	if err != nil {
 		return err
@@ -184,7 +191,9 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) {
 	if rc == nil {
 		return
 	}
-	if err := r.Publish(ctx, rc); err != nil {
+	r.reconcileMu.Lock()
+	defer r.reconcileMu.Unlock()
+	if err := r.publishLocked(ctx, rc); err != nil {
 		r.log.Warn("route reconciliation failed", "error", err)
 	}
 	r.ReconcileWorkloads(ctx, rc)

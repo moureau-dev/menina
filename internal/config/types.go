@@ -89,11 +89,10 @@ type Cloudflare struct {
 }
 
 type Networking struct {
-	Mode           string     `yaml:"mode"`
-	BaseDomains    []string   `yaml:"baseDomains"`
-	PublicIP       string     `yaml:"publicIp"`
-	TrustedProxies []string   `yaml:"trustedProxies"`
-	Cloudflare     Cloudflare `yaml:"cloudflare"`
+	Mode        string     `yaml:"mode"`
+	BaseDomains []string   `yaml:"baseDomains"`
+	PublicIP    string     `yaml:"publicIp"`
+	Cloudflare  Cloudflare `yaml:"cloudflare"`
 }
 
 type ACME struct {

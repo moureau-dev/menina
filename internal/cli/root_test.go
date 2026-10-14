@@ -111,6 +111,22 @@ func TestDeleteWithoutYesIsRefusedNonInteractively(t *testing.T) {
 	}
 }
 
+func TestBackupCommandCreatesDatabaseCopy(t *testing.T) {
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, "data")
+	cfg := "host:\n  configDir: " + dir + "\n  dataDir: " + dataDir + "\nplatform:\n  dbPath: " + filepath.Join(dataDir, "menina.db") + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(cfg), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := execute("--config-dir", dir, "backup"); err != nil {
+		t.Fatalf("backup: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(dataDir, "backups"))
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("expected a backup file: entries=%v err=%v", entries, err)
+	}
+}
+
 func TestCompletionGenerate(t *testing.T) {
 	for _, shell := range []string{"bash", "zsh", "fish"} {
 		if err := execute("completion", shell); err != nil {

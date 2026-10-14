@@ -155,6 +155,32 @@ func TestProcessJobFailureRequeues(t *testing.T) {
 	}
 }
 
+func TestProcessJobDropsRemovedTarget(t *testing.T) {
+	db := testDB(t)
+	cluster := &fakeCluster{}
+	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
+	empty := func() *config.ResolvedConfig {
+		return &config.ResolvedConfig{Projects: map[string]*config.ResolvedProject{}}
+	}
+	jobs := NewJobs(db, engine, cluster, empty, "registry.moureau.dev", testLogger())
+	if _, err := db.IngestRegistryEvent(context.Background(), &database.Event{DedupKey: "e1"}, []database.Job{{
+		DedupKey: "j1", Kind: "deploy", Project: "my-platform", Environment: "production", App: "api",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	pending, _ := db.PendingJobs(context.Background(), 10)
+	if err := jobs.ProcessJob(context.Background(), pending[0]); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := db.PendingJobs(context.Background(), 10); len(p) != 0 {
+		t.Fatalf("job for a removed target must not be requeued: %+v", p)
+	}
+	done, _ := db.JobsByStatus(context.Background(), database.JobStatusDone)
+	if len(done) != 1 {
+		t.Fatalf("expected the job to be dropped (done), got %+v", done)
+	}
+}
+
 type errResolver struct{}
 
 func (errResolver) ResolveTag(context.Context, string, string) (string, error) {

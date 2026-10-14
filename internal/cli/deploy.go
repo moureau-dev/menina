@@ -284,10 +284,11 @@ func deployZot(ctx context.Context, app *App, cfg *config.Config) error {
 		return err
 	}
 	params := registry.ZotParams{
-		RootDirectory:  zotRootDir,
-		ContainerPort:  zotContainerPort,
-		EventAddress:   eventEndpoint,
-		KeepRecentTags: cfg.Registry.Retention.KeepRecentTags,
+		RootDirectory:    zotRootDir,
+		ContainerPort:    zotContainerPort,
+		EventAddress:     eventEndpoint,
+		KeepRecentTags:   cfg.Registry.Retention.KeepRecentTags,
+		RetentionEnabled: cfg.Registry.Retention.Enabled,
 	}
 	if cfg.Registry.Notifications.TokenRef != "" {
 		token, err := secrets.NewResolver().Resolve(cfg.Registry.Notifications.TokenRef)
@@ -369,6 +370,19 @@ func deployPlatform(ctx context.Context, app *App, cfg *config.Config) error {
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("menina deploy installs system services and must run as root (try: sudo menina deploy platform)")
 	}
+	if cfg.Registry.Enabled {
+		cluster, err := deployment.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
+		if err != nil {
+			return fmt.Errorf("cannot verify the registry before deploying platform services: %w", err)
+		}
+		if err := cluster.Ping(ctx); err != nil {
+			return fmt.Errorf("Kubernetes API unreachable: %w", err)
+		}
+		ns := orDefault(cfg.Registry.Namespace, defaultRegistryNS)
+		if ip, err := cluster.ServiceClusterIP(ctx, ns, "zot"); err != nil || ip == "" {
+			return fmt.Errorf("registry is enabled but the Zot Service (%s/zot) was not found; run `menina deploy infra` first", ns)
+		}
+	}
 	systemd := infrastructure.NewSystemd(infrastructure.ExecRunner{})
 	binary, err := os.Executable()
 	if err != nil {
@@ -382,7 +396,7 @@ func deployPlatform(ctx context.Context, app *App, cfg *config.Config) error {
 		"DATA_DIR":   cfg.Host.DataDir,
 	}
 	services := []string{"menina-serve.service"}
-	if cfg.TLS.Terminate || cfg.Networking.Mode == config.NetworkingPublic {
+	if cfg.TLS.Terminate || cfg.Networking.Mode == config.NetworkingPublic || cfg.Networking.Mode == config.NetworkingCloudflareTunnel {
 		services = append(services, "menina-proxy.service")
 	}
 	if err := installServices(ctx, app, systemd, services, vars); err != nil {
@@ -419,7 +433,7 @@ func configurePublicDNS(ctx context.Context, app *App, cfg *config.Config) error
 	}
 	client := infrastructure.NewCloudflareClient(token)
 	zone := cfg.Networking.Cloudflare.Zone
-	for _, domain := range dnsTargets(cfg) {
+	for _, domain := range dnsTargets(cfg, exposureHosts(cfg)) {
 		z := zone
 		if z == "" {
 			z = baseZone(domain)
@@ -436,7 +450,7 @@ func configurePublicDNS(ctx context.Context, app *App, cfg *config.Config) error
 	return nil
 }
 
-func dnsTargets(cfg *config.Config) []string {
+func dnsTargets(cfg *config.Config, extraHosts []string) []string {
 	seen := map[string]struct{}{}
 	var out []string
 	add := func(d string) {
@@ -456,7 +470,42 @@ func dnsTargets(cfg *config.Config) []string {
 	if cfg.Registry.Enabled {
 		add(cfg.Registry.Domain)
 	}
+	for _, h := range extraHosts {
+		add(h)
+	}
 	return out
+}
+
+// exposureHosts returns every hostname exposed by the resolved configuration,
+// so automatic DNS management covers application hostnames (not just base
+// domains and the registry).
+func exposureHosts(cfg *config.Config) []string {
+	projects, err := config.LoadAllProjects(config.ProjectsDir(cfg.Host.ConfigDir))
+	if err != nil {
+		return nil
+	}
+	resolved, err := config.NewResolver(cfg).Resolve(projects, 0)
+	if err != nil {
+		return nil
+	}
+	var hosts []string
+	for _, rp := range resolved.Projects {
+		for _, re := range rp.Environments {
+			for _, app := range re.Apps {
+				if app.Enabled && app.Exposure.Enabled {
+					hosts = append(hosts, app.Exposure.Hosts...)
+				}
+			}
+		}
+	}
+	return hosts
+}
+
+var twoLabelPublicSuffixes = map[string]struct{}{
+	"co.uk": {}, "org.uk": {}, "ac.uk": {}, "gov.uk": {},
+	"com.au": {}, "net.au": {}, "org.au": {},
+	"com.br": {}, "com.mx": {}, "com.ar": {},
+	"co.jp": {}, "co.nz": {}, "co.za": {}, "co.in": {},
 }
 
 func baseZone(domain string) string {
@@ -464,7 +513,11 @@ func baseZone(domain string) string {
 	if len(labels) <= 2 {
 		return strings.Join(labels, ".")
 	}
-	return strings.Join(labels[len(labels)-2:], ".")
+	lastTwo := strings.Join(labels[len(labels)-2:], ".")
+	if _, ok := twoLabelPublicSuffixes[lastTwo]; ok && len(labels) >= 3 {
+		return strings.Join(labels[len(labels)-3:], ".")
+	}
+	return lastTwo
 }
 
 func detectPublicIP(ctx context.Context) string {
