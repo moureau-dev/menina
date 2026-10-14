@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-10-14
+
 ### Fixed
 - `menina upgrade`: the downloaded binary was staged without the executable bit
   (and under `/tmp`), so the pre-install verification failed with
@@ -162,7 +164,8 @@ reverse proxy.
 - Umask-independent permissions on secrets, config and control files.
 - `status` degrades gracefully when the control plane is unavailable.
 
-[Unreleased]: https://github.com/moureau-dev/menina/compare/v0.0.3...HEAD
+[Unreleased]: https://github.com/moureau-dev/menina/compare/v0.0.4...HEAD
+[0.0.4]: https://github.com/moureau-dev/menina/releases/tag/v0.0.4
 [0.0.3]: https://github.com/moureau-dev/menina/releases/tag/v0.0.3
 [0.0.2]: https://github.com/moureau-dev/menina/releases/tag/v0.0.2
 [0.0.1]: https://github.com/moureau-dev/menina/releases/tag/v0.0.1
