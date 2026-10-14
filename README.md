@@ -232,7 +232,8 @@ password is written with `0600` permissions and referenced from `config.yml`
 only as a secret reference (`file:/etc/menina/secrets/registry-password`) — the
 configuration never contains plaintext credentials. `setup` also generates the
 webhook authentication token that Zot presents to the Menina event listener, so
-the listener is not anonymously writable.
+the listener is not anonymously writable. See
+[docs/REGISTRY.md](docs/REGISTRY.md) for the full registry reference.
 
 Show the current credential (for `docker login` / CI):
 

@@ -130,7 +130,9 @@ are **retained** on delete (deleting a project/environment does not delete data)
 
 ## The registry (Zot) in-cluster
 
-When `registry.enabled`, Menina runs **Zot** as a workload in `menina-registry`:
+When `registry.enabled`, Menina runs **Zot** as a workload in `menina-registry`
+(see the [registry reference](REGISTRY.md) for auth, retention, and
+push-triggered deploys):
 
 - A Deployment + ClusterIP Service + **PVC** (`registry.pvcSize`, default
   `10Gi`) holding images at the local-path storage.
