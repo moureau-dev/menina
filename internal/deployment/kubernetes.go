@@ -143,6 +143,14 @@ func (k *KubernetesCluster) DeleteWorkload(ctx context.Context, namespace, name 
 	return err
 }
 
+func (k *KubernetesCluster) DeleteService(ctx context.Context, namespace, name string) error {
+	err := k.client.CoreV1().Services(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
 func (k *KubernetesCluster) RestartWorkload(ctx context.Context, namespace, name string) error {
 	d, err := k.client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {

@@ -68,6 +68,65 @@ func TestLoadAllProjectsAndResolve(t *testing.T) {
 	}
 }
 
+func TestWatcherInvalidYAMLPreservesLastValid(t *testing.T) {
+	dir := t.TempDir()
+	seedProject(t, dir)
+	cfg := Default()
+	w := NewWatcher(dir, &cfg, NewResolver(&cfg), time.Millisecond, testLoggerConfig())
+	if _, err := w.Load(); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "projects", "my-platform", "apps", "api.yml"), "name: api\nimage: [oops\n")
+	if _, err := w.Load(); err == nil {
+		t.Fatal("expected malformed YAML to be rejected")
+	}
+	if w.Snapshot().Version != 1 {
+		t.Fatalf("last valid snapshot must be retained, version=%d", w.Snapshot().Version)
+	}
+}
+
+func TestWatcherDeletedAppReferencedByEnvIsRejected(t *testing.T) {
+	dir := t.TempDir()
+	seedProject(t, dir)
+	cfg := Default()
+	w := NewWatcher(dir, &cfg, NewResolver(&cfg), time.Millisecond, testLoggerConfig())
+	if _, err := w.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "projects", "my-platform", "apps", "api.yml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Load(); err == nil {
+		t.Fatal("deleting an app still referenced by an environment must be rejected (no partial deploy)")
+	}
+	if w.Snapshot().Version != 1 {
+		t.Fatalf("last valid snapshot must be retained, version=%d", w.Snapshot().Version)
+	}
+}
+
+func TestWatcherDeletedEnvironmentIsApplied(t *testing.T) {
+	dir := t.TempDir()
+	seedProject(t, dir)
+	cfg := Default()
+	w := NewWatcher(dir, &cfg, NewResolver(&cfg), time.Millisecond, testLoggerConfig())
+	if _, err := w.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "projects", "my-platform", "environments", "production.yml")); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := w.Load()
+	if err != nil {
+		t.Fatalf("removing an environment should be valid: %v", err)
+	}
+	if len(snap.Resolved.Projects["my-platform"].Environments) != 0 {
+		t.Fatalf("environment should be gone from the resolved snapshot: %+v", snap.Resolved.Projects["my-platform"].Environments)
+	}
+	if snap.Version != 2 {
+		t.Fatalf("version = %d, want 2", snap.Version)
+	}
+}
+
 func TestWatcherPromotesValidAndRetainsLastValid(t *testing.T) {
 	dir := t.TempDir()
 	seedProject(t, dir)

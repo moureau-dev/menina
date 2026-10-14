@@ -69,6 +69,7 @@ type Cluster interface {
 	ApplyWorkload(ctx context.Context, w Workload) error
 	ApplyService(ctx context.Context, w Workload) error
 	DeleteWorkload(ctx context.Context, namespace, name string) error
+	DeleteService(ctx context.Context, namespace, name string) error
 	RestartWorkload(ctx context.Context, namespace, name string) error
 	ListWorkloads(ctx context.Context) ([]WorkloadRef, error)
 	WorkloadStatus(ctx context.Context, namespace, name string) (*WorkloadStatus, error)

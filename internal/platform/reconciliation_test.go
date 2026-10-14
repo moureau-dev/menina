@@ -43,6 +43,99 @@ func TestBuildSnapshotResolvesClusterIPRoutes(t *testing.T) {
 	}
 }
 
+func containsStr(list []string, want string) bool {
+	for _, v := range list {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestReconcileWorkloadsAppliesAndPrunes(t *testing.T) {
+	db := testDB(t)
+	cluster := &fakeCluster{
+		clusterIP: "10.43.0.5",
+		workloads: []deployment.WorkloadRef{
+			{Namespace: "my-platform", Name: "api"},
+			{Namespace: "my-platform", Name: "stale"},
+			{Namespace: "menina-registry", Name: "zot"},
+		},
+	}
+	cfg := config.Default()
+	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
+	rec := NewReconciler(db, cluster, engine, resolvedFunc(), &cfg, testLogger())
+
+	rec.ReconcileWorkloads(context.Background(), testResolved())
+
+	if len(cluster.applied) == 0 || cluster.applied[0].Name != "api" {
+		t.Fatalf("expected api workload to be applied, got %+v", cluster.applied)
+	}
+	if cluster.applied[0].Image != "registry.moureau.dev/my-platform/api@sha256:x" {
+		t.Fatalf("applied image = %q", cluster.applied[0].Image)
+	}
+	if !containsStr(cluster.deleted, "my-platform/stale") {
+		t.Fatalf("stale workload should be pruned, deleted=%v", cluster.deleted)
+	}
+	if containsStr(cluster.deleted, "my-platform/api") || containsStr(cluster.deleted, "menina-registry/zot") {
+		t.Fatalf("must not prune desired apps or the registry, deleted=%v", cluster.deleted)
+	}
+}
+
+func TestReconcileWorkloadsRemovesDisabledApp(t *testing.T) {
+	db := testDB(t)
+	cluster := &fakeCluster{
+		clusterIP: "10.43.0.5",
+		workloads: []deployment.WorkloadRef{{Namespace: "my-platform", Name: "api"}},
+	}
+	cfg := config.Default()
+	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
+	rec := NewReconciler(db, cluster, engine, resolvedFunc(), &cfg, testLogger())
+
+	rc := testResolved()
+	rc.Projects["my-platform"].Environments["production"].Apps["api"].Enabled = false
+	rec.ReconcileWorkloads(context.Background(), rc)
+
+	if len(cluster.applied) != 0 {
+		t.Fatalf("disabled app must not be applied: %+v", cluster.applied)
+	}
+	if !containsStr(cluster.deleted, "my-platform/api") {
+		t.Fatalf("disabled app workload should be pruned, deleted=%v", cluster.deleted)
+	}
+}
+
+func TestBuildSnapshotDropsRemovedExposure(t *testing.T) {
+	db := testDB(t)
+	cluster := &fakeCluster{clusterIP: "10.43.0.5"}
+	cfg := config.Default()
+	rec := NewReconciler(db, cluster, deployment.NewEngine(cluster, db, nil, testLogger()), resolvedFunc(), &cfg, testLogger())
+	rc := testResolved()
+	rc.Projects["my-platform"].Environments["production"].Apps["api"].Exposure = config.ExposureSpec{}
+	snap, err := rec.BuildSnapshot(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range snap.Routes {
+		if r.Host == "api.hello.com" {
+			t.Fatalf("route for a de-exposed app must be removed: %+v", snap.Routes)
+		}
+	}
+}
+
+func TestReconcileWorkloadsAppliesChangedPort(t *testing.T) {
+	db := testDB(t)
+	cluster := &fakeCluster{clusterIP: "10.43.0.5"}
+	cfg := config.Default()
+	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
+	rec := NewReconciler(db, cluster, engine, resolvedFunc(), &cfg, testLogger())
+	rc := testResolved()
+	rc.Projects["my-platform"].Environments["production"].Apps["api"].Workload.Port = 9090
+	rec.ReconcileWorkloads(context.Background(), rc)
+	if len(cluster.applied) == 0 || cluster.applied[0].Port != 9090 {
+		t.Fatalf("changed port must be applied, got %+v", cluster.applied)
+	}
+}
+
 func TestReconcileAllRepublishesOnClusterIPDrift(t *testing.T) {
 	db := testDB(t)
 	cluster := &fakeCluster{clusterIP: "10.0.0.1"}

@@ -145,6 +145,9 @@ func (r *Reconciler) Publish(ctx context.Context, rc *config.ResolvedConfig) err
 	if err != nil {
 		return err
 	}
+	if data, err := json.Marshal(rc); err == nil {
+		_ = r.db.SetMeta(ctx, "resolved_config", string(data))
+	}
 	r.publishSnapshot(snap)
 	return nil
 }
@@ -170,9 +173,10 @@ func routeSignature(routes []proxy.Route) string {
 }
 
 // ReconcileAll rebuilds the routing snapshot (refreshing ClusterIPs and
-// recovering routes that were degraded when a Service did not yet exist) and
-// then reconciles image tags. It runs on the periodic ticker so routing does
-// not silently drift while only configuration-triggered reloads would fix it.
+// recovering routes that were degraded when a Service did not yet exist),
+// reconciles Kubernetes workloads to the desired configuration, and then
+// reconciles image tags. It runs on the periodic ticker so routing does not
+// silently drift while only configuration-triggered reloads would fix it.
 func (r *Reconciler) ReconcileAll(ctx context.Context) {
 	rc := r.snapshot()
 	if rc == nil {
@@ -181,7 +185,79 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) {
 	if err := r.Publish(ctx, rc); err != nil {
 		r.log.Warn("route reconciliation failed", "error", err)
 	}
+	r.ReconcileWorkloads(ctx, rc)
 	r.ReconcileTags(ctx)
+}
+
+// ReconcileWorkloads applies the desired Kubernetes resources for every enabled
+// app and removes workloads that are no longer part of the desired state
+// (disabled, deleted or renamed apps). Applying an unchanged workload is a
+// no-op: the pod template hash is identical so Kubernetes does not roll out.
+func (r *Reconciler) ReconcileWorkloads(ctx context.Context, rc *config.ResolvedConfig) {
+	if rc == nil {
+		return
+	}
+	desired := map[string]bool{}
+	for _, rp := range rc.Projects {
+		for _, re := range rp.Environments {
+			for _, app := range re.Apps {
+				if !app.Enabled {
+					continue
+				}
+				image := r.desiredImage(ctx, app)
+				if _, err := r.engine.Apply(ctx, app, image); err != nil {
+					r.log.Warn("config reconcile: apply failed", "app", app.Name, "namespace", app.Namespace, "error", err)
+				}
+				// Mark desired even if the apply failed, so a configured app is
+				// never pruned just because the cluster was briefly unreachable.
+				desired[app.Namespace+"/"+app.Name] = true
+			}
+		}
+	}
+	r.pruneWorkloads(ctx, desired)
+}
+
+func (r *Reconciler) desiredImage(ctx context.Context, app *config.ResolvedApp) string {
+	digest, err := r.engine.ResolveDigest(ctx, app)
+	if err == nil && digest != "" {
+		return deployment.ImageForDigest(app, digest)
+	}
+	if err != nil {
+		// Preserve the currently pinned digest instead of falling back to a
+		// mutable tag when the registry is temporarily unreachable.
+		if st, serr := r.cluster.WorkloadStatus(ctx, app.Namespace, app.Name); serr == nil && st.Image != "" {
+			return st.Image
+		}
+		r.log.Warn("config reconcile: could not resolve digest; using configured tag", "app", app.Name, "error", err)
+	}
+	return deployment.ImageForDigest(app, "")
+}
+
+func (r *Reconciler) pruneWorkloads(ctx context.Context, desired map[string]bool) {
+	workloads, err := r.cluster.ListWorkloads(ctx)
+	if err != nil {
+		r.log.Warn("config reconcile: could not list workloads for pruning", "error", err)
+		return
+	}
+	registryNS := r.cfg.Registry.Namespace
+	if registryNS == "" {
+		registryNS = "menina-registry"
+	}
+	for _, w := range workloads {
+		if w.Namespace == registryNS {
+			continue
+		}
+		if desired[w.Namespace+"/"+w.Name] {
+			continue
+		}
+		r.log.Info("config reconcile: removing workload no longer in desired state", "namespace", w.Namespace, "name", w.Name)
+		if err := r.cluster.DeleteWorkload(ctx, w.Namespace, w.Name); err != nil {
+			r.log.Warn("config reconcile: delete workload failed", "name", w.Name, "error", err)
+		}
+		if err := r.cluster.DeleteService(ctx, w.Namespace, w.Name); err != nil {
+			r.log.Warn("config reconcile: delete service failed", "name", w.Name, "error", err)
+		}
+	}
 }
 
 func (r *Reconciler) Run(ctx context.Context, interval time.Duration) {

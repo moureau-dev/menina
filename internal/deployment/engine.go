@@ -44,10 +44,33 @@ func (e *Engine) ResolveDigest(ctx context.Context, app *config.ResolvedApp) (st
 }
 
 func (e *Engine) DeployResolved(ctx context.Context, app *config.ResolvedApp, desiredDigest string) (*Result, error) {
+	return e.applyResolved(ctx, app, ImageForDigest(app, desiredDigest), desiredDigest, true)
+}
+
+// Apply reconciles an app's Kubernetes resources to the given image without
+// recording a release. It is used by the configuration-driven reconciler and is
+// idempotent (an unchanged pod template does not trigger a rollout).
+func (e *Engine) Apply(ctx context.Context, app *config.ResolvedApp, image string) (*Result, error) {
+	return e.applyResolved(ctx, app, image, "", false)
+}
+
+// ImageForDigest returns the image reference for an app: repository@digest when
+// a digest is known, otherwise repository:tag.
+func ImageForDigest(app *config.ResolvedApp, digest string) string {
+	if digest != "" {
+		return app.Repository + "@" + digest
+	}
+	if app.Tag != "" {
+		return app.Repository + ":" + app.Tag
+	}
+	return app.Repository
+}
+
+func (e *Engine) applyResolved(ctx context.Context, app *config.ResolvedApp, image, digest string, recordRelease bool) (*Result, error) {
 	if !app.Enabled {
 		return nil, fmt.Errorf("app %s/%s/%s is disabled", app.Project, app.Environment, app.Name)
 	}
-	w := e.buildWorkload(app, desiredDigest)
+	w := e.buildWorkloadImage(app, image)
 	if err := e.cluster.EnsureNamespace(ctx, app.Namespace); err != nil {
 		return nil, fmt.Errorf("ensure namespace %q: %w", app.Namespace, err)
 	}
@@ -68,14 +91,14 @@ func (e *Engine) DeployResolved(ctx context.Context, app *config.ResolvedApp, de
 	if err := e.cluster.ApplyWorkload(ctx, w); err != nil {
 		return nil, fmt.Errorf("apply workload for %s/%s: %w", app.Namespace, app.Name, err)
 	}
-	if e.db != nil {
+	if recordRelease && e.db != nil {
 		_ = e.db.RecordRelease(ctx, database.Release{
 			Project:     app.Project,
 			Environment: app.Environment,
 			App:         app.Name,
 			Repository:  app.Repository,
 			Tag:         app.Tag,
-			Digest:      desiredDigest,
+			Digest:      digest,
 			Status:      "deployed",
 		})
 	}
@@ -86,7 +109,7 @@ func (e *Engine) DeployResolved(ctx context.Context, app *config.ResolvedApp, de
 		App:         app.Name,
 		Namespace:   app.Namespace,
 		Image:       w.Image,
-		Digest:      desiredDigest,
+		Digest:      digest,
 		RolledOut:   true,
 	}, nil
 }
@@ -100,12 +123,10 @@ func (e *Engine) Deploy(ctx context.Context, app *config.ResolvedApp) (*Result, 
 }
 
 func (e *Engine) buildWorkload(app *config.ResolvedApp, digest string) Workload {
-	image := app.Repository
-	if digest != "" {
-		image = app.Repository + "@" + digest
-	} else if app.Tag != "" {
-		image = app.Repository + ":" + app.Tag
-	}
+	return e.buildWorkloadImage(app, ImageForDigest(app, digest))
+}
+
+func (e *Engine) buildWorkloadImage(app *config.ResolvedApp, image string) Workload {
 	w := Workload{
 		Project:     app.Project,
 		Environment: app.Environment,

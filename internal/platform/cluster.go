@@ -79,6 +79,14 @@ func (d *deferredCluster) DeleteWorkload(ctx context.Context, namespace, name st
 	return c.DeleteWorkload(ctx, namespace, name)
 }
 
+func (d *deferredCluster) DeleteService(ctx context.Context, namespace, name string) error {
+	c, err := d.get()
+	if err != nil {
+		return err
+	}
+	return c.DeleteService(ctx, namespace, name)
+}
+
 func (d *deferredCluster) RestartWorkload(ctx context.Context, namespace, name string) error {
 	c, err := d.get()
 	if err != nil {

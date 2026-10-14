@@ -179,6 +179,7 @@ func (s *Service) Run(ctx context.Context) error {
 		if err := s.reconciler.Publish(ctx, snap.Resolved); err != nil {
 			s.log.Warn("publish routing snapshot", "error", err)
 		}
+		s.reconciler.ReconcileWorkloads(ctx, snap.Resolved)
 	})
 	go func() {
 		if err := s.watcher.Run(ctx); err != nil {
@@ -190,6 +191,7 @@ func (s *Service) Run(ctx context.Context) error {
 		if err := s.reconciler.Publish(ctx, snap.Resolved); err != nil {
 			s.log.Warn("initial routing snapshot publish", "error", err)
 		}
+		s.reconciler.ReconcileWorkloads(ctx, snap.Resolved)
 	}
 
 	if err := s.startEventsServer(ctx); err != nil {

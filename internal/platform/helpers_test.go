@@ -30,10 +30,13 @@ func testDB(t *testing.T) *database.DB {
 }
 
 type fakeCluster struct {
-	status    *deployment.WorkloadStatus
-	clusterIP string
-	applied   []deployment.Workload
-	services  []deployment.ServiceRef
+	status     *deployment.WorkloadStatus
+	clusterIP  string
+	applied    []deployment.Workload
+	services   []deployment.ServiceRef
+	workloads  []deployment.WorkloadRef
+	deleted    []string
+	deletedSvc []string
 }
 
 func (f *fakeCluster) EnsureNamespace(context.Context, string) error { return nil }
@@ -45,10 +48,17 @@ func (f *fakeCluster) ApplyService(_ context.Context, w deployment.Workload) err
 	f.applied = append(f.applied, w)
 	return nil
 }
-func (f *fakeCluster) DeleteWorkload(context.Context, string, string) error  { return nil }
+func (f *fakeCluster) DeleteWorkload(_ context.Context, namespace, name string) error {
+	f.deleted = append(f.deleted, namespace+"/"+name)
+	return nil
+}
+func (f *fakeCluster) DeleteService(_ context.Context, namespace, name string) error {
+	f.deletedSvc = append(f.deletedSvc, namespace+"/"+name)
+	return nil
+}
 func (f *fakeCluster) RestartWorkload(context.Context, string, string) error { return nil }
 func (f *fakeCluster) ListWorkloads(context.Context) ([]deployment.WorkloadRef, error) {
-	return nil, nil
+	return f.workloads, nil
 }
 func (f *fakeCluster) WorkloadStatus(context.Context, string, string) (*deployment.WorkloadStatus, error) {
 	if f.status == nil {
