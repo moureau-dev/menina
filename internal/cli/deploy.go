@@ -211,6 +211,13 @@ func deployInfra(ctx context.Context, app *App, cfg *config.Config) error {
 				app.Log.Warn("could not write k3s registries.yaml", "error", err)
 			} else {
 				app.Infof("Wrote %s", registriesConfigPath)
+				if cfg.Kubernetes.Managed {
+					if err := k3.Restart(ctx); err != nil {
+						app.Log.Warn("could not restart k3s to load registries.yaml", "error", err)
+					} else if err := waitForKubernetes(ctx, app, cfg, 3*time.Minute); err != nil {
+						return err
+					}
+				}
 			}
 		}
 		if err := deployZot(ctx, app, cfg); err != nil {
@@ -664,6 +671,13 @@ func applyRegistryCredentials(ctx context.Context, app *App, cfg *config.Config)
 		return fmt.Errorf("write %s: %w", registriesConfigPath, err)
 	}
 	app.Infof("Updated %s", registriesConfigPath)
+	if cfg.Kubernetes.Managed {
+		if err := k3.Restart(ctx); err != nil {
+			app.Log.Warn("could not restart k3s to load rotated credentials", "error", err)
+		} else if err := waitForKubernetes(ctx, app, cfg, 3*time.Minute); err != nil {
+			return err
+		}
+	}
 
 	cluster, err := deployment.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
 	if err != nil {

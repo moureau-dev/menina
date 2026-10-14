@@ -13,6 +13,32 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+func TestK3sWriteRegistriesConfigSetsRootOnlyMode(t *testing.T) {
+	runner := NewFakeRunner()
+	k := NewK3s(runner, testLogger())
+	if err := k.WriteRegistriesConfig(context.Background(), "/etc/rancher/k3s/registries.yaml", "configs: {}\n"); err != nil {
+		t.Fatal(err)
+	}
+	joined := ""
+	for _, c := range runner.Commands {
+		joined += strings.Join(c, " ") + "\n"
+	}
+	if !strings.Contains(joined, "chmod 0600") || !strings.Contains(joined, "registries.yaml") {
+		t.Fatalf("registries.yaml with credentials must be chmod 0600:\n%s", joined)
+	}
+}
+
+func TestK3sRestart(t *testing.T) {
+	runner := NewFakeRunner()
+	k := NewK3s(runner, testLogger())
+	if err := k.Restart(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.Commands) != 1 || strings.Join(runner.Commands[0], " ") != "systemctl restart k3s" {
+		t.Fatalf("unexpected restart command: %v", runner.Commands)
+	}
+}
+
 func TestUserManagerEnsureCreatesUser(t *testing.T) {
 	runner := NewFakeRunner()
 	um := NewUserManager(runner)

@@ -54,10 +54,22 @@ func (k *K3s) EnsureInstalled(ctx context.Context, disableTraefik bool) error {
 }
 
 func (k *K3s) WriteRegistriesConfig(ctx context.Context, path, content string) error {
-	script := fmt.Sprintf("mkdir -p $(dirname %q) && cat > %q <<'EOF'\n%s\nEOF", path, path, content)
+	// The file contains registry credentials; keep it root-only readable.
+	script := fmt.Sprintf("mkdir -p $(dirname %q) && cat > %q <<'EOF'\n%s\nEOF\nchmod 0600 %q", path, path, content, path)
 	out, err := k.Runner.Run(ctx, "sh", "-c", script)
 	if err != nil {
 		return fmt.Errorf("write registries.yaml: %w: %s", err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
+// Restart reloads containerd's registry configuration. k3s reads
+// registries.yaml at startup (and on change), but a restart is the reliable way
+// to guarantee new or rotated credentials take effect.
+func (k *K3s) Restart(ctx context.Context) error {
+	out, err := k.Runner.Run(ctx, "systemctl", "restart", "k3s")
+	if err != nil {
+		return fmt.Errorf("restart k3s: %w: %s", err, strings.TrimSpace(out))
 	}
 	return nil
 }
