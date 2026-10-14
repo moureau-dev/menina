@@ -11,7 +11,26 @@ import (
 )
 
 func newProjectCommand(app *App) *cobra.Command {
-	cmd := &cobra.Command{Use: "project", Short: "Manage projects"}
+	cmd := &cobra.Command{
+		Use:   "project",
+		Short: "Manage projects (interactive when run without a subcommand)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p := newPrompter()
+			if !p.enabled {
+				return cmd.Help()
+			}
+			project, err := selectProject(app, p)
+			if err != nil {
+				return err
+			}
+			name, err := selectApp(app, p, project)
+			if err != nil {
+				return err
+			}
+			return appMenu(cmd.Context(), app, p, project, name, "")
+		},
+	}
 	cmd.AddCommand(projectCreate(app), projectList(app), projectDelete(app))
 	return cmd
 }

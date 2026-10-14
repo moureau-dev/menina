@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/moureau-dev/menina/internal/config"
@@ -162,6 +163,41 @@ func TestAppCreateAndScaleReplicas(t *testing.T) {
 	apps, _ = config.LoadApps(config.ProjectsDir(dir), "p")
 	if apps["api"].Replicas != nil {
 		t.Fatalf("reset must remove the replica override, got %+v", apps["api"].Replicas)
+	}
+}
+
+func TestVersionFlags(t *testing.T) {
+	for _, flag := range []string{"--version", "-v"} {
+		out, err := executeCapture(flag)
+		if err != nil {
+			t.Fatalf("%s: %v", flag, err)
+		}
+		if !strings.Contains(out, "menina") {
+			t.Fatalf("%s output = %q", flag, out)
+		}
+	}
+}
+
+func TestCreateCommandCreatesProject(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "create", "demo"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "projects", "demo", "project.yml")); err != nil {
+		t.Fatalf("project.yml not written: %v", err)
+	}
+}
+
+func TestBareCommandsAreNonInteractiveWithoutTTY(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "project", "create", "p"); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"app"}, {"project"}, {"environment"}} {
+		full := append([]string{"--config-dir", dir}, args...)
+		if err := execute(full...); err != nil {
+			t.Fatalf("%v should fall back to help without a TTY: %v", args, err)
+		}
 	}
 }
 

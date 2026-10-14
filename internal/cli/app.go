@@ -26,7 +26,43 @@ func requireProdConfirmation(cfg *config.Config, environment string, yes bool) e
 }
 
 func newAppCommand(app *App) *cobra.Command {
-	cmd := &cobra.Command{Use: "app", Short: "Manage app definitions"}
+	var project, environment string
+	cmd := &cobra.Command{
+		Use:   "app [name]",
+		Short: "Manage app definitions (interactive when run without a subcommand)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p := newPrompter()
+			proj := project
+			if proj == "" {
+				if !p.enabled {
+					return cmd.Help()
+				}
+				var err error
+				if proj, err = selectProject(app, p); err != nil {
+					return err
+				}
+			}
+			name := ""
+			if len(args) > 0 {
+				name = args[0]
+			} else {
+				if !p.enabled {
+					return cmd.Help()
+				}
+				var err error
+				if name, err = selectApp(app, p, proj); err != nil {
+					return err
+				}
+			}
+			if !p.enabled {
+				return cmd.Help()
+			}
+			return appMenu(cmd.Context(), app, p, proj, name, environment)
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project name")
+	cmd.Flags().StringVar(&environment, "environment", "", "environment for the action menu")
 	cmd.AddCommand(appCreate(app), appEdit(app), appList(app), appDeploy(app), appLogs(app), appRollback(app), appDelete(app), appScale(app))
 	return cmd
 }

@@ -142,6 +142,18 @@ Other runtime behavior worth knowing:
 - For a machine with no published release, install a locally built binary with
   `MENINA_LOCAL_BINARY=/path/to/menina sh scripts/install.sh`.
 
+## CLI
+
+The full command surface — including the interactive shortcuts (`menina create`,
+bare `menina app` / `project` / `environment`) — is documented in
+[docs/CLI.md](docs/CLI.md). Quick start:
+
+```bash
+menina create my-app          # create a project (prompts for details)
+menina app --project my-app   # pick an app → Deploy / Scale / Logs / ...
+menina app scale api --project my-app --min 2 --max 10
+```
+
 ## Configuration
 
 ```text

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
 	"github.com/moureau-dev/menina/internal/config"
@@ -21,12 +22,8 @@ type prompter struct {
 }
 
 func newPrompter() *prompter {
-	stdin := os.Stdin
-	enabled := false
-	if info, err := stdin.Stat(); err == nil {
-		enabled = info.Mode()&os.ModeCharDevice != 0
-	}
-	return &prompter{reader: bufio.NewReader(stdin), enabled: enabled}
+	enabled := term.IsTerminal(int(os.Stdin.Fd()))
+	return &prompter{reader: bufio.NewReader(os.Stdin), enabled: enabled}
 }
 
 func (p *prompter) Ask(label, def string) string {

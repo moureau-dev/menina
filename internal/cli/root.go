@@ -48,7 +48,12 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&app.Opts.JSON, "json", false, "output machine-readable JSON")
 	root.PersistentFlags().BoolVar(&app.Opts.Verbose, "verbose", false, "verbose logging")
 
+	info := version.Get()
+	root.Version = info.Version
+	root.SetVersionTemplate(fmt.Sprintf("menina %s (commit %s, built %s, %s)\n", info.Version, info.Commit, info.Date, info.GoVersion))
+
 	root.AddCommand(
+		newCreateCommand(app),
 		newSetupCommand(app),
 		newDeployCommand(app),
 		newStatusCommand(app),

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 )
 
@@ -42,7 +43,7 @@ func confirmDestructive(app *App, prompt string, yes bool) bool {
 	if yes {
 		return true
 	}
-	if info, err := os.Stdin.Stat(); err == nil && info.Mode()&os.ModeCharDevice == 0 {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		app.Infof("%s\nrefusing in non-interactive mode; re-run with --yes to confirm", prompt)
 		return false
 	}

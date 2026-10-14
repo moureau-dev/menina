@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -11,9 +13,82 @@ import (
 )
 
 func newEnvironmentCommand(app *App) *cobra.Command {
-	cmd := &cobra.Command{Use: "environment", Short: "Manage project environments"}
+	var project string
+	cmd := &cobra.Command{
+		Use:   "environment [name]",
+		Short: "Manage project environments (interactive without a subcommand)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p := newPrompter()
+			proj := project
+			if proj == "" {
+				if !p.enabled {
+					return cmd.Help()
+				}
+				var err error
+				if proj, err = selectProject(app, p); err != nil {
+					return err
+				}
+			}
+			name := ""
+			if len(args) > 0 {
+				name = args[0]
+			} else {
+				if !p.enabled {
+					return cmd.Help()
+				}
+				var err error
+				if name, err = selectEnvironmentInteractive(app, p, proj); err != nil {
+					return err
+				}
+			}
+			return showEnvironment(app, proj, name)
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.AddCommand(environmentCreate(app), environmentList(app), environmentDelete(app))
 	return cmd
+}
+
+func showEnvironment(app *App, project, name string) error {
+	cfg, err := app.LoadConfig()
+	if err != nil {
+		return err
+	}
+	resolved, err := resolvedConfig(app, cfg)
+	if err != nil {
+		return err
+	}
+	rp, ok := resolved.Projects[project]
+	if !ok {
+		return fmt.Errorf("project %q not found", project)
+	}
+	re, ok := rp.Environments[name]
+	if !ok {
+		return fmt.Errorf("environment %q not found in project %q", name, project)
+	}
+	namespace := ""
+	names := make([]string, 0, len(re.Apps))
+	for n := range re.Apps {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	app.Infof("Environment %q (project %q)", name, project)
+	if len(names) == 0 {
+		app.Infof("  (no apps)")
+		return nil
+	}
+	for _, n := range names {
+		a := re.Apps[n]
+		namespace = a.Namespace
+		hosts := ""
+		if a.Exposure.Enabled {
+			hosts = " hosts=" + strings.Join(a.Exposure.Hosts, ",")
+		}
+		app.Infof("  %-16s enabled=%-5v tag=%-12s image=%s%s", n, a.Enabled, a.Tag, a.Image(), hosts)
+	}
+	app.Infof("  namespace: %s", namespace)
+	return nil
 }
 
 func environmentDelete(app *App) *cobra.Command {
