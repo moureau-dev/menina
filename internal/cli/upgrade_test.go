@@ -19,7 +19,7 @@ func TestDownloadVerifiedAcceptsMatchingChecksum(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	path, err := downloadVerified(context.Background(), srv.URL, hex.EncodeToString(sum[:]))
+	path, err := downloadVerified(context.Background(), srv.URL, hex.EncodeToString(sum[:]), t.TempDir())
 	if err != nil {
 		t.Fatalf("downloadVerified: %v", err)
 	}
@@ -27,6 +27,9 @@ func TestDownloadVerifiedAcceptsMatchingChecksum(t *testing.T) {
 	got, _ := os.ReadFile(path)
 	if string(got) != string(payload) {
 		t.Fatalf("downloaded content mismatch")
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm()&0o100 == 0 {
+		t.Fatalf("downloaded binary must be executable: mode=%v err=%v", info.Mode().Perm(), err)
 	}
 }
 
@@ -36,7 +39,7 @@ func TestDownloadVerifiedRejectsMismatchedChecksum(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := downloadVerified(context.Background(), srv.URL, "deadbeef"); err == nil {
+	if _, err := downloadVerified(context.Background(), srv.URL, "deadbeef", t.TempDir()); err == nil {
 		t.Fatal("downloadVerified must reject a checksum mismatch")
 	}
 }

@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- `menina upgrade`: the downloaded binary was staged without the executable bit
+  (and under `/tmp`), so the pre-install verification failed with
+  `...: permission denied`. It is now staged in the install directory with mode
+  `0755` (also avoiding `noexec /tmp`).
+
 ## [0.0.3] - 2026-10-14
 
 A setup UX polish release.

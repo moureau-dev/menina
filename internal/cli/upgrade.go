@@ -71,17 +71,17 @@ func newUpgradeCommand(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tmp, err := downloadVerified(ctx, assetURL, expected)
+			exe, err := os.Executable()
+			if err != nil {
+				return err
+			}
+			tmp, err := downloadVerified(ctx, assetURL, expected, filepath.Dir(exe))
 			if err != nil {
 				return err
 			}
 			defer os.Remove(tmp)
 			if err := verifyExecutable(ctx, tmp); err != nil {
 				return fmt.Errorf("downloaded binary failed to execute; refusing to install: %w", err)
-			}
-			exe, err := os.Executable()
-			if err != nil {
-				return err
 			}
 			if err := replaceBinary(tmp, exe); err != nil {
 				return err
@@ -154,7 +154,7 @@ func fetchChecksum(ctx context.Context, sumsURL, assetName string) (string, erro
 	return "", fmt.Errorf("checksum for %s not found", assetName)
 }
 
-func downloadVerified(ctx context.Context, url, expected string) (string, error) {
+func downloadVerified(ctx context.Context, url, expected, dir string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
@@ -167,16 +167,29 @@ func downloadVerified(ctx context.Context, url, expected string) (string, error)
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download %s: %s", url, resp.Status)
 	}
-	tmp, err := os.CreateTemp("", "menina-upgrade-*")
+	// Stage in the destination directory so the verification exec and the final
+	// rename happen where the binary will live (avoids noexec /tmp and
+	// cross-filesystem renames).
+	tmp, err := os.CreateTemp(dir, ".menina-download-*")
 	if err != nil {
 		return "", err
 	}
 	h := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(tmp, h), resp.Body); err != nil {
 		tmp.Close()
+		os.Remove(tmp.Name())
 		return "", err
 	}
-	tmp.Close()
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return "", err
+	}
+	// The verified-but-untrusted binary is exec'd before being installed, so it
+	// must be executable.
+	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
+		os.Remove(tmp.Name())
+		return "", err
+	}
 	got := hex.EncodeToString(h.Sum(nil))
 	if !strings.EqualFold(got, expected) {
 		os.Remove(tmp.Name())
