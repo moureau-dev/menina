@@ -80,6 +80,7 @@ func newDoctorCommand(app *App) *cobra.Command {
 
 			results = append(results, checkProxyTunnel(ctx, cfg))
 			results = append(results, checkTLS(ctx, cfg, resolved)...)
+			results = append(results, checkBackends(ctx, app, cfg)...)
 
 			failed := 0
 			for _, r := range results {
@@ -139,6 +140,38 @@ func checkRegistryRoute(ctx context.Context, app *App, cfg *config.Config) check
 		}
 	}
 	return check("registry route", fmt.Errorf("no proxy route for %s yet; run `menina deploy` (Zot must have a ClusterIP)", cfg.Registry.Domain))
+}
+
+// checkBackends verifies the host can actually reach every resolved route
+// backend (ClusterIP:port) over TCP. ICMP is deliberately not used: kube-proxy
+// programs DNAT for TCP/UDP, so ping to a ClusterIP fails even when routing works.
+func checkBackends(ctx context.Context, app *App, cfg *config.Config) []checkResult {
+	client, err := app.Control(cfg)
+	if err != nil {
+		return nil
+	}
+	snap, err := client.Snapshot(ctx)
+	if err != nil {
+		return nil
+	}
+	var out []checkResult
+	for _, route := range snap.Routes {
+		out = append(out, check("backend "+route.Host, tcpReachable(ctx, route.Backend)))
+	}
+	if len(snap.Routes) == 0 {
+		out = append(out, check("route backends", nil))
+	}
+	return out
+}
+
+func tcpReachable(ctx context.Context, addr string) error {
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("cannot reach backend %s from the host (kube-proxy ClusterIP routing): %w", addr, err)
+	}
+	_ = conn.Close()
+	return nil
 }
 
 func checkTLS(ctx context.Context, cfg *config.Config, resolved *config.ResolvedConfig) []checkResult {

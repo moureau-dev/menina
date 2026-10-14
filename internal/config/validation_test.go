@@ -13,6 +13,32 @@ func TestValidatePlatformRejectsCertManagerTermination(t *testing.T) {
 	}
 }
 
+func TestValidatePlatformRejectsACMEBehindTunnel(t *testing.T) {
+	cfg := Default()
+	cfg.Host.ConfigDir = "/etc/menina"
+	cfg.Host.DataDir = "/var/lib/menina"
+	cfg.Networking.Mode = NetworkingCloudflareTunnel
+	cfg.Networking.Cloudflare.OriginURL = "http://127.0.0.1:80"
+	cfg.TLS.Terminate = true
+	cfg.TLS.Mode = TLSModeACME
+	if err := ValidatePlatform(&cfg); err == nil {
+		t.Fatal("expected ACME behind a Cloudflare tunnel to be rejected")
+	}
+}
+
+func TestValidatePlatformRejectsTunnelOriginProtoMismatch(t *testing.T) {
+	cfg := Default()
+	cfg.Host.ConfigDir = "/etc/menina"
+	cfg.Host.DataDir = "/var/lib/menina"
+	cfg.Networking.Mode = NetworkingCloudflareTunnel
+	cfg.Networking.Cloudflare.OriginURL = "http://127.0.0.1:80"
+	cfg.Networking.Cloudflare.OriginProto = "https"
+	cfg.TLS.Terminate = false
+	if err := ValidatePlatform(&cfg); err == nil {
+		t.Fatal("expected originProto/terminate mismatch to be rejected")
+	}
+}
+
 func TestValidateResolvedRejectsDuplicateHosts(t *testing.T) {
 	rc := &ResolvedConfig{
 		Projects: map[string]*ResolvedProject{

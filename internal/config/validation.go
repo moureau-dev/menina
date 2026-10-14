@@ -35,6 +35,22 @@ func ValidatePlatform(cfg *Config) error {
 	if cfg.TLS.Terminate && cfg.TLS.Mode == TLSModeCertManager {
 		errs = append(errs, "tls.mode cert-manager cannot terminate TLS in a host-level proxy; use manual or acme, or disable termination")
 	}
+	if cfg.Networking.Mode == NetworkingCloudflareTunnel {
+		if cfg.TLS.Terminate && cfg.TLS.Mode == TLSModeACME {
+			errs = append(errs, "cloudflare tunnel mode terminates public TLS at Cloudflare; disable tls.terminate (or use manual certificates at the origin)")
+		}
+		if cfg.Networking.Cloudflare.OriginURL == "" {
+			errs = append(errs, "networking.cloudflare.originUrl is required for tunnel mode")
+		} else {
+			wantProto := "http"
+			if cfg.TLS.Terminate {
+				wantProto = "https"
+			}
+			if cfg.Networking.Cloudflare.OriginProto != "" && cfg.Networking.Cloudflare.OriginProto != wantProto {
+				errs = append(errs, fmt.Sprintf("networking.cloudflare.originProto %q does not match tls.terminate=%v (expected %q)", cfg.Networking.Cloudflare.OriginProto, cfg.TLS.Terminate, wantProto))
+			}
+		}
+	}
 	if cfg.Registry.Enabled {
 		if cfg.Registry.Domain == "" {
 			errs = append(errs, "registry.domain is required when registry is enabled")

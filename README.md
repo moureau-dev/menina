@@ -226,9 +226,47 @@ integrates rather than evicting it.
 The host proxy forwards to Kubernetes **ClusterIPs** (watched from `Service`
 objects) so Kubernetes keeps ownership of backend selection, readiness
 filtering and balancing. `menina serve` resolves each exposed app to its
-Service ClusterIP:port and publishes it in the routing snapshot. Host-to-
-ClusterIP connectivity is a tested prerequisite of the supported single-node
-k3s configuration.
+Service ClusterIP:port and publishes it in the routing snapshot. The registry
+domain is routed the same way to Zot's Service.
+
+On the supported single-node k3s setup, kube-proxy programs DNAT rules in the
+host/node network namespace, so a host process (the proxy) can reach a
+`ClusterIP:port` directly. Important: **reachability must be tested with TCP,
+not ICMP** — kube-proxy handles TCP/UDP, so `ping <ClusterIP>` fails even when
+routing works. `menina doctor` performs this TCP check per route.
+
+Routing is robust across pod replacement and rollouts because the ClusterIP is
+stable and kube-proxy updates endpoints automatically; during a rollout there
+can be a brief window with no ready endpoints (a `502`), after which routing
+recovers without any route change. The routing snapshot is **rebuilt on a
+timer** (in addition to config changes and startup), so if a Service was missing
+at start-up or its ClusterIP changed, routes are refreshed and republished
+automatically.
+
+Reproduce/verify the full path with a real k3s:
+
+```bash
+scripts/k3s-net-e2e.sh   # starts k3s in Docker and runs the host->ClusterIP e2e test inside the node netns
+```
+
+The proxy unit runs in the host network namespace (no `PrivateNetwork`), which
+is required for ClusterIP routing.
+
+### Networking modes and TLS layers
+
+| Mode | Client → public TLS | Origin | Proxy → backend |
+| --- | --- | --- | --- |
+| Public VPS ingress (Menina terminates TLS) | Menina proxy `:443` (ACME) | — | plain HTTP to `ClusterIP:port` |
+| Public VPS ingress (TLS upstream) | Cloudflare/load balancer | proxy `:80` | plain HTTP to `ClusterIP:port` |
+| Cloudflare Tunnel | Cloudflare | `cloudflared` → local origin (`http://127.0.0.1:80` by default) | plain HTTP to `ClusterIP:port` |
+
+In **Cloudflare Tunnel** mode Cloudflare terminates public TLS, so Menina must
+**not** also run ACME at the origin; `setup` forces `tls.terminate: false` and
+`menina deploy` refuses an ACME+tunnel combination. The configured
+`networking.cloudflare.originUrl`/`originProto` must match whether the proxy
+serves plain HTTP or TLS, and this is validated. `cloudflared` itself is
+installed and configured by the operator (Menina prints the origin to use), not
+by `menina deploy`.
 
 ## Automatic deployment on push
 

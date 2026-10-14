@@ -160,6 +160,16 @@ func newSetupCommand(app *App) *cobra.Command {
 			} else {
 				cfg.TLS.Mode = config.TLSModeNone
 			}
+			if cfg.Networking.Mode == config.NetworkingCloudflareTunnel {
+				if cfg.TLS.Terminate {
+					app.Infof("    Cloudflare Tunnel terminates public TLS; Menina will not terminate TLS at the origin.")
+					cfg.TLS.Terminate = false
+					cfg.TLS.Mode = config.TLSModeNone
+				}
+				if cfg.Networking.Cloudflare.OriginProto == "" {
+					cfg.Networking.Cloudflare.OriginProto = "http"
+				}
+			}
 
 			app.Infof("")
 			cfg.Host.ConfigDir = p.Ask("  Configuration directory", app.Opts.ConfigDir)

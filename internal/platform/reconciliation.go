@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/moureau-dev/menina/internal/config"
@@ -21,6 +24,8 @@ type Reconciler struct {
 	cfg       *config.Config
 	log       *slog.Logger
 	onPublish func(*proxy.Snapshot)
+	mu        sync.Mutex
+	lastSig   string
 }
 
 const (
@@ -140,10 +145,43 @@ func (r *Reconciler) Publish(ctx context.Context, rc *config.ResolvedConfig) err
 	if err != nil {
 		return err
 	}
-	if r.onPublish != nil {
+	r.publishSnapshot(snap)
+	return nil
+}
+
+func (r *Reconciler) publishSnapshot(snap *proxy.Snapshot) {
+	r.mu.Lock()
+	sig := routeSignature(snap.Routes)
+	changed := sig != r.lastSig
+	r.lastSig = sig
+	r.mu.Unlock()
+	if changed && r.onPublish != nil {
 		r.onPublish(snap)
 	}
-	return nil
+}
+
+func routeSignature(routes []proxy.Route) string {
+	parts := make([]string, 0, len(routes))
+	for _, r := range routes {
+		parts = append(parts, fmt.Sprintf("%s|%s|%s", r.Host, r.PathPrefix, r.Backend))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ";")
+}
+
+// ReconcileAll rebuilds the routing snapshot (refreshing ClusterIPs and
+// recovering routes that were degraded when a Service did not yet exist) and
+// then reconciles image tags. It runs on the periodic ticker so routing does
+// not silently drift while only configuration-triggered reloads would fix it.
+func (r *Reconciler) ReconcileAll(ctx context.Context) {
+	rc := r.snapshot()
+	if rc == nil {
+		return
+	}
+	if err := r.Publish(ctx, rc); err != nil {
+		r.log.Warn("route reconciliation failed", "error", err)
+	}
+	r.ReconcileTags(ctx)
 }
 
 func (r *Reconciler) Run(ctx context.Context, interval time.Duration) {
@@ -152,13 +190,13 @@ func (r *Reconciler) Run(ctx context.Context, interval time.Duration) {
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	r.ReconcileTags(ctx)
+	r.ReconcileAll(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			r.ReconcileTags(ctx)
+			r.ReconcileAll(ctx)
 		}
 	}
 }

@@ -43,6 +43,33 @@ func TestBuildSnapshotResolvesClusterIPRoutes(t *testing.T) {
 	}
 }
 
+func TestReconcileAllRepublishesOnClusterIPDrift(t *testing.T) {
+	db := testDB(t)
+	cluster := &fakeCluster{clusterIP: "10.0.0.1"}
+	cfg := config.Default()
+	cfg.TLS.Terminate = true
+	rec := NewReconciler(db, cluster, deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger()), resolvedFunc(), &cfg, testLogger())
+	var published []*proxy.Snapshot
+	rec.OnPublish(func(s *proxy.Snapshot) { published = append(published, s) })
+
+	rec.ReconcileAll(context.Background())
+	if len(published) != 1 {
+		t.Fatalf("expected one publish, got %d", len(published))
+	}
+	rec.ReconcileAll(context.Background())
+	if len(published) != 1 {
+		t.Fatalf("unchanged routes must not republish, got %d", len(published))
+	}
+	cluster.clusterIP = "10.0.0.2"
+	rec.ReconcileAll(context.Background())
+	if len(published) != 2 {
+		t.Fatalf("ClusterIP drift must republish routes, got %d", len(published))
+	}
+	if backend := published[1].Routes[0].Backend; backend != "10.0.0.2:8080" && backend != "10.0.0.2:5000" {
+		t.Fatalf("republished backend = %q, want the new ClusterIP", backend)
+	}
+}
+
 func TestBuildSnapshotSkipsDegradedService(t *testing.T) {
 	db := testDB(t)
 	cluster := &fakeCluster{clusterIP: ""}
