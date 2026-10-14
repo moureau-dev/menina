@@ -37,13 +37,6 @@ const (
 	defaultRegistryNS    = "menina-registry"
 )
 
-func platformNamespace(cfg *config.Config) string {
-	if cfg.Platform.Namespace != "" {
-		return cfg.Platform.Namespace
-	}
-	return defaultPlatformNS
-}
-
 func zotNamespace(cfg *config.Config) string {
 	if cfg.Registry.Namespace != "" {
 		return cfg.Registry.Namespace
@@ -249,9 +242,9 @@ func ensureZotAuthSecret(ctx context.Context, cluster deployment.Cluster, cfg *c
 	return zotSecretName, zotAuthMount, nil
 }
 
-func zotEventEndpoint(ctx context.Context, app *App, cfg *config.Config) string {
+func zotEventEndpoint(ctx context.Context, app *App, cfg *config.Config) (string, error) {
 	if cfg.Registry.Notifications.Endpoint != "" {
-		return cfg.Registry.Notifications.Endpoint
+		return cfg.Registry.Notifications.Endpoint, nil
 	}
 	path := orDefault(cfg.Registry.Notifications.Path, "/v2/events")
 	port := "9000"
@@ -259,13 +252,15 @@ func zotEventEndpoint(ctx context.Context, app *App, cfg *config.Config) string 
 		port = p
 	}
 	if ip, err := deployment.NodeInternalIP(ctx, cfg.Kubernetes.Kubeconfig); err == nil && ip != "" {
-		return fmt.Sprintf("http://%s:%s%s", ip, port, path)
+		return fmt.Sprintf("http://%s:%s%s", ip, port, path), nil
 	}
-	app.Log.Warn("could not detect a node address for the Zot event sink; falling back to the in-cluster service name")
-	return fmt.Sprintf("http://menina-serve.%s.svc:%s%s", platformNamespace(cfg), port, path)
+	return "", fmt.Errorf("could not determine a node address for the Zot event sink; set registry.notifications.endpoint explicitly (the cluster must be able to reach Menina's registry listener)")
 }
 
 func deployZot(ctx context.Context, app *App, cfg *config.Config) error {
+	if err := registry.ValidateAgainstZotVersion(cfg.Registry.ZotVersion); err != nil {
+		return err
+	}
 	cluster, err := deployment.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
 	if err != nil {
 		return fmt.Errorf("connect to Kubernetes to deploy Zot: %w", err)
@@ -277,10 +272,14 @@ func deployZot(ctx context.Context, app *App, cfg *config.Config) error {
 	if err := cluster.EnsureNamespace(ctx, ns); err != nil {
 		return err
 	}
+	eventEndpoint, err := zotEventEndpoint(ctx, app, cfg)
+	if err != nil {
+		return err
+	}
 	params := registry.ZotParams{
 		RootDirectory:  zotRootDir,
 		ContainerPort:  zotContainerPort,
-		EventAddress:   zotEventEndpoint(ctx, app, cfg),
+		EventAddress:   eventEndpoint,
 		KeepRecentTags: cfg.Registry.Retention.KeepRecentTags,
 	}
 	if cfg.Registry.Notifications.TokenRef != "" {

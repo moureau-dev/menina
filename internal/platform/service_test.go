@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -54,6 +55,29 @@ func TestRegistryWebhookRequiresToken(t *testing.T) {
 				t.Fatalf("status = %d, want %d (body %q)", rr.Code, c.want, rr.Body.String())
 			}
 		})
+	}
+}
+
+func TestRegistryWebhookAcceptsZotCloudEvent(t *testing.T) {
+	svc := serviceWithNotifyToken(t, "tok")
+	// Shape captured from a real Zot v2.1.22 push event (binary CloudEvents).
+	body := `{"digest":"sha256:365bc2546d43809f951b08e1370dd1a150366273dd9bfb168ee3ccd4593c0adb","mediaType":"application/vnd.docker.distribution.manifest.v2+json","name":"my-platform/api","reference":"production"}`
+	req := httptest.NewRequest(http.MethodPost, "/v2/events", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer tok")
+	req.Header.Set("Ce-Type", "zotregistry.image.updated")
+	req.Header.Set("Ce-Id", "ce-1")
+	req.Header.Set("Ce-Source", "zotregistry.dev")
+	rr := httptest.NewRecorder()
+	svc.handleRegistryEvent(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202 (body %q)", rr.Code, rr.Body.String())
+	}
+	events, err := svc.db.PendingEvents(context.Background(), 10)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("event was not durably persisted: %+v err=%v", events, err)
+	}
+	if events[0].Repository != "my-platform/api" || events[0].Tag != "production" {
+		t.Fatalf("persisted event = %+v", events[0])
 	}
 }
 

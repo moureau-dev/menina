@@ -238,7 +238,7 @@ func (s *Service) handleRegistryEvent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	events, err := registry.ParseNotification(r.Body)
+	events, err := registry.ParseNotification(r.Header, r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

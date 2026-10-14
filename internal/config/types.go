@@ -153,7 +153,7 @@ func Default() Config {
 			Domain:     "registry.moureau.dev",
 			StorageDir: "/var/lib/menina/registry",
 			ZotImage:   "ghcr.io/project-zot/zot",
-			ZotVersion: "v2.1.2",
+			ZotVersion: "v2.1.22",
 			Namespace:  "menina-registry",
 			PVCSize:    "10Gi",
 			Retention:  Retention{Enabled: true, KeepRecentTags: 3},

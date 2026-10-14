@@ -99,28 +99,6 @@ func (e *Engine) Deploy(ctx context.Context, app *config.ResolvedApp) (*Result, 
 	return e.DeployResolved(ctx, app, digest)
 }
 
-func (e *Engine) Rollback(ctx context.Context, project, environment, app, digest string) (*Result, error) {
-	if digest == "" {
-		return nil, fmt.Errorf("rollback requires a recorded image digest")
-	}
-	releases, err := e.db.Releases(ctx, project, environment, app)
-	if err != nil {
-		return nil, err
-	}
-	found := false
-	for _, r := range releases {
-		if r.Digest == digest {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return nil, fmt.Errorf("digest %s has no recorded release for %s/%s/%s", digest, project, environment, app)
-	}
-	res := &Result{Project: project, Environment: environment, App: app, Digest: digest, RolledOut: true, NoOp: false}
-	return res, nil
-}
-
 func (e *Engine) buildWorkload(app *config.ResolvedApp, digest string) Workload {
 	image := app.Repository
 	if digest != "" {

@@ -42,7 +42,10 @@ const (
 	JobStatusProcessing = "processing"
 	JobStatusDone       = "done"
 	JobStatusFailed     = "failed"
+	JobStatusSuperseded = "superseded"
 )
+
+const maxJobAttempts = 10
 
 func (db *DB) IngestRegistryEvent(ctx context.Context, e *Event, jobs []Job) (bool, error) {
 	tx, err := db.BeginTx(ctx, nil)
@@ -109,7 +112,17 @@ func (db *DB) PendingEvents(ctx context.Context, limit int) ([]Event, error) {
 
 func (db *DB) PendingJobs(ctx context.Context, limit int) ([]Job, error) {
 	rows, err := db.QueryContext(ctx, `SELECT id, dedup_key, kind, project, environment, app, repository, tag, desired_digest, status, attempts, last_error, created_at, updated_at
-		FROM jobs WHERE status = ? AND `+activeWhere+` ORDER BY created_at ASC LIMIT ?`, JobStatusPending, limit)
+		FROM jobs WHERE status = ? AND next_attempt_at <= unixepoch() AND `+activeWhere+` ORDER BY created_at ASC LIMIT ?`, JobStatusPending, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanJobs(rows)
+}
+
+func (db *DB) JobsByStatus(ctx context.Context, status string) ([]Job, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, dedup_key, kind, project, environment, app, repository, tag, desired_digest, status, attempts, last_error, created_at, updated_at
+		FROM jobs WHERE status = ? AND `+activeWhere+` ORDER BY created_at ASC`, status)
 	if err != nil {
 		return nil, err
 	}
@@ -133,14 +146,40 @@ func (db *DB) CompleteJob(ctx context.Context, id string, digest string) error {
 	return err
 }
 
+// FailJob requeues a failed job with exponential backoff, and dead-letters it
+// after maxJobAttempts so a permanently broken deployment cannot hot-loop.
 func (db *DB) FailJob(ctx context.Context, id string, errmsg string) error {
-	_, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, attempts = attempts + 1, last_error = ?, updated_at = unixepoch() WHERE id = ?`,
-		JobStatusPending, errmsg, id)
+	var attempts int
+	if err := db.QueryRowContext(ctx, `SELECT attempts FROM jobs WHERE id = ?`, id).Scan(&attempts); err != nil {
+		return err
+	}
+	next := attempts + 1
+	if next >= maxJobAttempts {
+		_, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, attempts = ?, last_error = ?, updated_at = unixepoch() WHERE id = ?`,
+			JobStatusFailed, next, errmsg, id)
+		return err
+	}
+	_, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, attempts = ?, last_error = ?, next_attempt_at = unixepoch() + ?, updated_at = unixepoch() WHERE id = ?`,
+		JobStatusPending, next, errmsg, jobBackoffSeconds(next), id)
 	return err
 }
 
+func jobBackoffSeconds(attempt int) int {
+	secs := 30
+	for i := 1; i < attempt; i++ {
+		if secs >= 3600 {
+			break
+		}
+		secs *= 2
+	}
+	if secs > 3600 {
+		secs = 3600
+	}
+	return secs
+}
+
 func (db *DB) RequeueProcessingJobs(ctx context.Context) (int64, error) {
-	res, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, updated_at = unixepoch() WHERE status = ?`,
+	res, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, next_attempt_at = 0, updated_at = unixepoch() WHERE status = ?`,
 		JobStatusPending, JobStatusProcessing)
 	if err != nil {
 		return 0, err

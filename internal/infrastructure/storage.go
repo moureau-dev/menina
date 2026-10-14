@@ -1,7 +1,6 @@
 package infrastructure
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -71,9 +70,4 @@ func CopyFile(src, dst string) error {
 		return err
 	}
 	return out.Sync()
-}
-
-func (s *Storage) BackupDatabase(ctx context.Context, backupPath string) error {
-	_ = ctx
-	return nil
 }

@@ -3,39 +3,40 @@
   "storage": {
     "rootDirectory": "/var/lib/registry",
     "dedupe": true,
-    "gc": true
+    "gc": true,
+    "retention": {
+      "policies": [
+        {
+          "repositories": ["**"],
+          "keepTags": [
+            { "patterns": [".*"], "mostRecentlyPushedCount": 3 }
+          ]
+        }
+      ]
+    }
   },
   "http": {
     "address": "0.0.0.0",
-    "port": "5000"
+    "port": "5000",
+    "compat": ["docker2s2"]
   },
   "log": {
     "level": "info"
   },
   "extensions": {
-    "retention": {
-      "policy": {
-        "repositories": [
-          {
-            "patterns": ["**"],
-            "policies": [
-              { "match": [{ "tag": ".*" }], "retain": 3 }
-            ]
-          }
-        ],
-        "deleteUntagged": false
-      }
-    },
     "events": {
+      "enable": true,
       "sinks": [
         {
           "type": "http",
           "address": "http://serve:9000/v2/events",
           "headers": {
             "Content-Type": "application/json"
-          }
+          },
+          "timeout": "10s"
         }
       ]
     }
   }
 }
+

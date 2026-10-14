@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 )
 
@@ -46,11 +47,67 @@ type PushEvent struct {
 	Action     string
 }
 
-func ParseNotification(body io.Reader) ([]PushEvent, error) {
+// ParseNotification understands both the CloudEvents format emitted by Zot's
+// events extension (v2.1.3+, binary or structured mode) and the OCI
+// distribution "events" array for compatibility.
+func ParseNotification(headers http.Header, body io.Reader) ([]PushEvent, error) {
 	data, err := io.ReadAll(body)
 	if err != nil {
 		return nil, err
 	}
+	contentType := strings.ToLower(headers.Get("Content-Type"))
+	if strings.Contains(contentType, "application/cloudevents+json") {
+		return parseStructuredCloudEvent(data)
+	}
+	if ceType := headers.Get("Ce-Type"); ceType != "" {
+		return cloudEventToPush(headers.Get("Ce-Id"), ceType, data)
+	}
+	return parseOCI(data)
+}
+
+type cloudEvent struct {
+	ID   string          `json:"id"`
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
+}
+
+type zotImageData struct {
+	Name      string `json:"name"`
+	Reference string `json:"reference"`
+	Digest    string `json:"digest"`
+}
+
+func parseStructuredCloudEvent(data []byte) ([]PushEvent, error) {
+	var ce cloudEvent
+	if err := json.Unmarshal(data, &ce); err != nil {
+		return nil, fmt.Errorf("parse cloudevent: %w", err)
+	}
+	return cloudEventToPush(ce.ID, ce.Type, ce.Data)
+}
+
+func cloudEventToPush(id, eventType string, data []byte) ([]PushEvent, error) {
+	if !strings.HasSuffix(strings.ToLower(eventType), "image.updated") {
+		return nil, nil
+	}
+	var d zotImageData
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &d); err != nil {
+			return nil, fmt.Errorf("parse zot image event: %w", err)
+		}
+	}
+	if d.Name == "" {
+		return nil, fmt.Errorf("zot image event has no repository name")
+	}
+	return []PushEvent{{
+		DeliveryID: id,
+		Repository: d.Name,
+		Tag:        d.Reference,
+		Digest:     d.Digest,
+		Action:     "push",
+	}}, nil
+}
+
+func parseOCI(data []byte) ([]PushEvent, error) {
 	var n Notification
 	if err := json.Unmarshal(data, &n); err == nil && len(n.Events) > 0 {
 		return normalize(n.Events), nil

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"time"
 )
@@ -44,7 +45,7 @@ func NewClient(baseURL, username, password string, insecure bool) *Client {
 }
 
 func (c *Client) ResolveTag(ctx context.Context, repository, tag string) (string, error) {
-	url := fmt.Sprintf("%s/v2/%s/manifests/%s", c.BaseURL, strings.TrimPrefix(repository, "/"), tag)
+	url := fmt.Sprintf("%s/v2/%s/manifests/%s", c.BaseURL, c.repoPath(repository), tag)
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	if err != nil {
 		return "", err
@@ -78,7 +79,7 @@ func (c *Client) ResolveTag(ctx context.Context, repository, tag string) (string
 }
 
 func (c *Client) ListTags(ctx context.Context, repository string) ([]string, error) {
-	url := fmt.Sprintf("%s/v2/%s/tags/list", c.BaseURL, strings.TrimPrefix(repository, "/"))
+	url := fmt.Sprintf("%s/v2/%s/tags/list", c.BaseURL, c.repoPath(repository))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -120,6 +121,18 @@ func (c *Client) Ping(ctx context.Context) error {
 		return fmt.Errorf("registry ping: unexpected status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// repoPath strips a leading registry host from a configured repository so that
+// "registry.example.com/project/api" becomes "project/api" for the /v2 API.
+func (c *Client) repoPath(repository string) string {
+	repo := strings.TrimPrefix(strings.TrimSpace(repository), "/")
+	if c.BaseURL != "" {
+		if u, err := neturl.Parse(c.BaseURL); err == nil && u.Host != "" {
+			repo = strings.TrimPrefix(repo, u.Host+"/")
+		}
+	}
+	return repo
 }
 
 func digestFromBody(body []byte, contentType string) string {

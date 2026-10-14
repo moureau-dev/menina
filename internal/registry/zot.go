@@ -3,15 +3,31 @@ package registry
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/moureau-dev/menina/internal/config"
 )
 
 type ZotStorage struct {
-	RootDirectory string `json:"rootDirectory"`
-	Dedupe        bool   `json:"dedupe"`
-	GC            bool   `json:"gc"`
+	RootDirectory string        `json:"rootDirectory"`
+	Dedupe        bool          `json:"dedupe,omitempty"`
+	GC            bool          `json:"gc,omitempty"`
+	Retention     *ZotRetention `json:"retention,omitempty"`
+}
+
+type ZotRetention struct {
+	Policies []ZotRetentionPolicy `json:"policies"`
+}
+
+type ZotRetentionPolicy struct {
+	Repositories []string            `json:"repositories,omitempty"`
+	KeepTags     []ZotKeepTagsPolicy `json:"keepTags,omitempty"`
+}
+
+type ZotKeepTagsPolicy struct {
+	Patterns                []string `json:"patterns,omitempty"`
+	MostRecentlyPushedCount int      `json:"mostRecentlyPushedCount,omitempty"`
 }
 
 type ZotAuthHtpasswd struct {
@@ -23,9 +39,10 @@ type ZotAuth struct {
 }
 
 type ZotHTTP struct {
-	Address string  `json:"address"`
-	Port    string  `json:"port"`
-	Auth    ZotAuth `json:"auth"`
+	Address string   `json:"address"`
+	Port    string   `json:"port"`
+	Auth    ZotAuth  `json:"auth"`
+	Compat  []string `json:"compat,omitempty"`
 }
 
 type ZotLog struct {
@@ -36,34 +53,16 @@ type ZotEventSink struct {
 	Type    string            `json:"type"`
 	Address string            `json:"address"`
 	Headers map[string]string `json:"headers,omitempty"`
+	Timeout string            `json:"timeout,omitempty"`
 }
 
 type ZotEvents struct {
-	Sinks []ZotEventSink `json:"sinks"`
-}
-
-type ZotRetainPolicy struct {
-	Match  []map[string]string `json:"match"`
-	Retain int                 `json:"retain"`
-}
-
-type ZotRepositoryPolicy struct {
-	Patterns []string          `json:"patterns"`
-	Policies []ZotRetainPolicy `json:"policies"`
-}
-
-type ZotRetentionPolicy struct {
-	Repositories   []ZotRepositoryPolicy `json:"repositories"`
-	DeleteUntagged bool                  `json:"deleteUntagged"`
-}
-
-type ZotRetention struct {
-	Policy ZotRetentionPolicy `json:"policy"`
+	Enable bool           `json:"enable"`
+	Sinks  []ZotEventSink `json:"sinks,omitempty"`
 }
 
 type ZotExtensions struct {
-	Retention ZotRetention `json:"retention"`
-	Events    ZotEvents    `json:"events"`
+	Events *ZotEvents `json:"events,omitempty"`
 }
 
 type ZotConfig struct {
@@ -101,46 +100,77 @@ func BuildZotConfig(p ZotParams) ([]byte, error) {
 		HTTP: ZotHTTP{
 			Address: "0.0.0.0",
 			Port:    p.ContainerPort,
+			Auth:    ZotAuth{Htpasswd: ZotAuthHtpasswd{Path: p.HtpasswdPath}},
+			Compat:  []string{"docker2s2"},
 		},
 		Log: ZotLog{Level: "info"},
 	}
-	if p.HtpasswdPath != "" {
-		cfg.HTTP.Auth = ZotAuth{Htpasswd: ZotAuthHtpasswd{Path: p.HtpasswdPath}}
+	if p.KeepRecentTags > 0 {
+		cfg.Storage.Retention = &ZotRetention{
+			Policies: []ZotRetentionPolicy{{
+				Repositories: []string{"**"},
+				KeepTags: []ZotKeepTagsPolicy{{
+					Patterns:                []string{".*"},
+					MostRecentlyPushedCount: p.KeepRecentTags,
+				}},
+			}},
+		}
 	}
 	if p.EventAddress != "" {
 		headers := map[string]string{"Content-Type": "application/json"}
 		if p.EventToken != "" {
 			headers["Authorization"] = "Bearer " + p.EventToken
 		}
-		cfg.Extensions.Events.Sinks = []ZotEventSink{{
-			Type:    "http",
-			Address: p.EventAddress,
-			Headers: headers,
-		}}
-	}
-	if p.KeepRecentTags > 0 {
-		policies := []ZotRetainPolicy{{Match: []map[string]string{{"tag": ".*"}}, Retain: p.KeepRecentTags}}
-		cfg.Extensions.Retention = ZotRetention{
-			Policy: ZotRetentionPolicy{
-				Repositories: []ZotRepositoryPolicy{{
-					Patterns: []string{"**"},
-					Policies: policies,
-				}},
-				DeleteUntagged: false,
-			},
+		cfg.Extensions.Events = &ZotEvents{
+			Enable: true,
+			Sinks: []ZotEventSink{{
+				Type:    "http",
+				Address: p.EventAddress,
+				Headers: headers,
+				Timeout: "10s",
+			}},
 		}
 	}
 	return json.MarshalIndent(cfg, "", "  ")
 }
 
+// ValidateAgainstZotVersion ensures the pinned Zot version supports the
+// configuration Menina emits. The CloudEvents-based events extension was added
+// in v2.1.3; earlier versions reject `extensions.events`.
 func ValidateAgainstZotVersion(version string) error {
-	if version == "" {
-		return nil
+	major, minor, patch, err := parseZotVersion(version)
+	if err != nil {
+		return err
 	}
-	if !strings.HasPrefix(version, "v2.") {
-		return fmt.Errorf("unsupported Zot version %q: Menina emits v2 retention/events configuration", version)
+	if major != 2 {
+		return fmt.Errorf("unsupported Zot version %q: Menina targets the Zot v2 configuration schema", version)
+	}
+	if minor < 1 || (minor == 1 && patch < 3) {
+		return fmt.Errorf("unsupported Zot version %q: image-push events require Zot >= v2.1.3", version)
 	}
 	return nil
+}
+
+func parseZotVersion(version string) (major, minor, patch int, err error) {
+	v := strings.TrimPrefix(strings.TrimSpace(version), "v")
+	parts := strings.Split(v, ".")
+	if len(parts) < 2 {
+		return 0, 0, 0, fmt.Errorf("invalid Zot version %q", version)
+	}
+	if major, err = strconv.Atoi(parts[0]); err != nil {
+		return 0, 0, 0, fmt.Errorf("invalid Zot version %q", version)
+	}
+	if minor, err = strconv.Atoi(parts[1]); err != nil {
+		return 0, 0, 0, fmt.Errorf("invalid Zot version %q", version)
+	}
+	if len(parts) >= 3 {
+		patchPart := parts[2]
+		if i := strings.IndexAny(patchPart, "-+"); i >= 0 {
+			patchPart = patchPart[:i]
+		}
+		patch, _ = strconv.Atoi(patchPart)
+	}
+	return major, minor, patch, nil
 }
 
 func TranslateRetention(cfg config.Registry, protectedDigests []string) (int, []string, error) {

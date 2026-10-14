@@ -270,13 +270,22 @@ by `menina deploy`.
 
 ## Automatic deployment on push
 
-CI pushes an image; Zot emits a notification; Menina **durably persists the
-event and jobs (committed to SQLite) before acknowledging the webhook**. Events
-and jobs carry stable deduplication keys and re-applying a desired digest is a
-no-op. The tag is resolved to an immutable digest when the job is processed so
-the platform converges on the latest published image. Periodic reconciliation
-re-resolves configured tags and detects drift, comparing the resolved digest
-against the workload's image before triggering a rollout.
+CI pushes an image; Zot emits an event; Menina **durably persists the event and
+jobs (committed to SQLite) before acknowledging the webhook**. Events and jobs
+carry stable deduplication keys and re-applying a desired digest is a no-op. The
+tag is resolved to an immutable digest when the job is processed so the platform
+converges on the latest published image. Periodic reconciliation re-resolves
+configured tags and detects drift, comparing the resolved digest against the
+workload's image before triggering a rollout.
+
+Zot's events extension publishes **CloudEvents** (the `zotregistry.image.updated`
+event carries `name`/`reference`/`digest`), delivered over the HTTP sink with an
+optional `Authorization: Bearer` header that Menina's listener verifies. This
+extension exists since Zot **v2.1.3**, so Menina pins v2.1.22; the generated Zot
+config (`extensions.events.sinks`, `storage.retention.policies`) is validated
+against that schema. Menina's listener accepts both CloudEvents (binary and
+structured) and the legacy OCI `events` array.
+
 
 ## Reverse proxy
 

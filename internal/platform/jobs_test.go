@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/deployment"
 	"github.com/moureau-dev/menina/internal/registry"
 )
@@ -123,9 +124,9 @@ func TestProcessJobFailureRequeues(t *testing.T) {
 	if err := jobs.ProcessJob(context.Background(), pending[0]); err == nil {
 		t.Fatal("expected process error")
 	}
-	pending, _ = db.PendingJobs(context.Background(), 10)
-	if len(pending) != 1 || pending[0].Attempts != 1 {
-		t.Fatalf("expected requeued job with attempts=1, got %+v", pending)
+	requeued, _ := db.JobsByStatus(context.Background(), database.JobStatusPending)
+	if len(requeued) != 1 || requeued[0].Attempts != 1 {
+		t.Fatalf("expected requeued job with attempts=1, got %+v", requeued)
 	}
 }
 
@@ -133,4 +134,49 @@ type errResolver struct{}
 
 func (errResolver) ResolveTag(context.Context, string, string) (string, error) {
 	return "", errors.New("registry down")
+}
+
+func TestProcessJobDeploysRollbackDigest(t *testing.T) {
+	db := testDB(t)
+	cluster := &fakeCluster{status: &deployment.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "old"}}
+	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:latest"}, testLogger())
+	jobs := NewJobs(db, engine, cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
+	if _, err := db.IngestRegistryEvent(context.Background(), &database.Event{DedupKey: "r1", Registry: "r", Repository: "x"}, []database.Job{{
+		DedupKey: "rj1", Kind: "rollback", Project: "my-platform", Environment: "production", App: "api", DesiredDigest: "sha256:old",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	pending, _ := db.PendingJobs(context.Background(), 10)
+	if err := jobs.ProcessJob(context.Background(), pending[0]); err != nil {
+		t.Fatal(err)
+	}
+	if len(cluster.applied) == 0 || cluster.applied[0].Image != "registry.moureau.dev/my-platform/api@sha256:old" {
+		t.Fatalf("rollback must deploy the explicit digest, got %+v", cluster.applied)
+	}
+}
+
+func TestRapidPushesCoalescePendingJobs(t *testing.T) {
+	db := testDB(t)
+	cluster := &fakeCluster{status: &deployment.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "old"}}
+	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:new"}, testLogger())
+	jobs := NewJobs(db, engine, cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
+	for _, delivery := range []string{"d1", "d2", "d3"} {
+		if _, _, err := jobs.Ingest(context.Background(), registry.PushEvent{Repository: "my-platform/api", Tag: "production", DeliveryID: delivery}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pending, _ := db.PendingJobs(context.Background(), 10)
+	if len(pending) != 3 {
+		t.Fatalf("expected 3 pending jobs, got %d", len(pending))
+	}
+	if err := jobs.ProcessJob(context.Background(), pending[0]); err != nil {
+		t.Fatal(err)
+	}
+	superseded, _ := db.JobsByStatus(context.Background(), database.JobStatusSuperseded)
+	if len(superseded) != 2 {
+		t.Fatalf("expected 2 coalesced jobs, got %d", len(superseded))
+	}
+	if len(cluster.applied) == 0 || cluster.applied[0].Image != "registry.moureau.dev/my-platform/api@sha256:new" {
+		t.Fatalf("coalesced processing must deploy the latest resolved digest: %+v", cluster.applied)
+	}
 }

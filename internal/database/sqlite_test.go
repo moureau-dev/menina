@@ -121,9 +121,32 @@ func TestFailJobRequeues(t *testing.T) {
 	if err := db.FailJob(ctx, pending[0].ID, "boom"); err != nil {
 		t.Fatal(err)
 	}
-	pending, _ = db.PendingJobs(ctx, 10)
-	if len(pending) != 1 || pending[0].Attempts != 1 || pending[0].LastError != "boom" {
-		t.Fatalf("failed job requeue = %+v", pending)
+	requeued, _ := db.JobsByStatus(ctx, JobStatusPending)
+	if len(requeued) != 1 || requeued[0].Attempts != 1 || requeued[0].LastError != "boom" {
+		t.Fatalf("failed job requeue = %+v", requeued)
+	}
+	// The job is backed off, so it is not due for immediate retry.
+	if due, _ := db.PendingJobs(ctx, 10); len(due) != 0 {
+		t.Fatalf("backed-off job must not be immediately due: %+v", due)
+	}
+}
+
+func TestFailJobDeadLettersAfterMaxAttempts(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	_, _ = db.IngestRegistryEvent(ctx, &Event{DedupKey: "d5"}, []Job{{DedupKey: "j5", Kind: "deploy", App: "api"}})
+	pending, _ := db.PendingJobs(ctx, 10)
+	id := pending[0].ID
+	for i := 0; i < maxJobAttempts; i++ {
+		_, _ = db.ClaimJob(ctx, id)
+		_ = db.FailJob(ctx, id, "boom")
+	}
+	failed, _ := db.JobsByStatus(ctx, JobStatusFailed)
+	if len(failed) != 1 {
+		t.Fatalf("expected a dead-lettered job, got %+v", failed)
+	}
+	if due, _ := db.PendingJobs(ctx, 10); len(due) != 0 {
+		t.Fatalf("dead-lettered job must not be pending: %+v", due)
 	}
 }
 
