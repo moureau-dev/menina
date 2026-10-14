@@ -6,6 +6,9 @@ Kubernetes Service, streams responses, and hot-reloads its routing table without
 restarts. It is a plain Go `net/http` server built on `httputil.ReverseProxy` —
 no Lua, no config-language runtime, no dynamic code evaluation.
 
+See [KUBERNETES.md](KUBERNETES.md) for the cluster side (how routes are produced
+from Service ClusterIPs) and the [CLI reference](CLI.md) for commands.
+
 Run it with `menina proxy`. In production it is a systemd service (installed by
 `menina deploy`) so it starts with the host.
 

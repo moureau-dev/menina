@@ -265,7 +265,8 @@ menina deploy --dry-run  # print the plan
 `menina deploy` is idempotent. When Menina owns public ingress it installs k3s
 with the packaged Traefik ingress controller and ServiceLB disabled, and asserts
 `:80`/`:443` are free; if an ingress controller already owns those ports, Menina
-integrates rather than evicting it.
+integrates rather than evicting it. See [docs/KUBERNETES.md](docs/KUBERNETES.md)
+for how Menina provisions and uses k3s (namespaces, RBAC, workloads, registry).
 
 ### Ingress ownership and host ports
 
