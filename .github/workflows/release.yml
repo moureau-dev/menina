@@ -43,6 +43,7 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -50,8 +51,22 @@ jobs:
       - name: checksums
         working-directory: dist
         run: sha256sum menina-linux-* > checksums.txt
+      - name: extract release notes from CHANGELOG.md
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          awk -v v="$V" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && index($0, "## [") == 1 { exit }
+            on { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "Release $GITHUB_REF_NAME" > RELEASE_NOTES.md
+          fi
+          echo "----- notes -----"; cat RELEASE_NOTES.md
       - uses: softprops/action-gh-release@v2
         with:
+          name: Menina ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
           files: |
             dist/menina-linux-*
             dist/checksums.txt
