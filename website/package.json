@@ -1,0 +1,14 @@
+{
+  "name": "menina-website",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "sync": "bun run scripts/sync-docs.ts",
+    "start": "bun run sync && newstack start",
+    "build": "bun run sync && newstack build",
+    "build:ssg": "bun run sync && newstack build --mode=ssg"
+  },
+  "dependencies": {
+    "@moureau/newstack": "latest"
+  }
+}

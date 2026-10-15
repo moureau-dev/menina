@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# Raw copies of the docs; the canonical source is the GitHub repository.
+Disallow: /docs/
+
+Sitemap: https://menina.moureau.dev/sitemap.xml
