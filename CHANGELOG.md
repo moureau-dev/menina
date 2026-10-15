@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-10-15
+
+### Added
+- Per-app environment overrides: `environments/<env>/<app>.yml` (one file per
+  app) so several repositories can contribute apps to the same project and
+  environment without ever writing the same file. Directory overrides win over
+  an inline `apps:` map, and `menina app scale -e <env>` writes a single per-app
+  file instead of rewriting the whole environment file.
+- `source: {repo, revision}` on an app records the repository that owns it;
+  `SourceSpec.ConflictsWith` supports ownership collision checks (blank/omitted
+  means locally owned).
+- App secrets: `secrets: {ENV_VAR: ref}` on an app or environment override,
+  resolved at deploy time into a Kubernetes Secret named `<app>-secrets` and
+  injected as environment variables via `valueFrom.secretKeyRef`. Only the
+  reference is stored in configuration; values never enter the config tree, the
+  resolved snapshot, or `--json` output.
+- `menina secret set|list|remove` stores app secret values on the host
+  (`secrets/<project>/<environment>/<name>`, group-writable, outside the config
+  tree). Values are read from stdin — hidden on a terminal — or `--file`, never
+  from arguments, and are never printed.
+
 ## [0.0.7] - 2026-10-15
 
 ### Added
