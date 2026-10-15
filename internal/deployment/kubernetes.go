@@ -504,6 +504,21 @@ func (k *KubernetesCluster) buildDeployment(w Workload) *kube.Deployment {
 	for _, key := range keys {
 		container.Env = append(container.Env, kube.EnvVar{Name: key, Value: w.Env[key]})
 	}
+	if w.SecretEnvName != "" {
+		secretKeys := make([]string, 0, len(w.SecretEnv))
+		for envName := range w.SecretEnv {
+			secretKeys = append(secretKeys, envName)
+		}
+		sort.Strings(secretKeys)
+		for _, envName := range secretKeys {
+			container.Env = append(container.Env, kube.EnvVar{
+				Name: envName,
+				ValueFrom: &kube.EnvVarSource{
+					SecretKeyRef: &kube.SecretKeySelector{Name: w.SecretEnvName, Key: w.SecretEnv[envName]},
+				},
+			})
+		}
+	}
 	if w.CPU != "" || w.Memory != "" {
 		req := map[string]string{}
 		lim := map[string]string{}

@@ -42,7 +42,8 @@ flags (see "Automation: SSH and CI").
   projects/<project>/
     project.yml                 # name, namespace, description
     apps/<app>.yml              # shared app definition
-    environments/<env>.yml      # per-env overrides + exposure
+    environments/<env>.yml      # environment definition (optional)
+    environments/<env>/<app>.yml  # per-app override (one file per app)
 /var/lib/menina/                # menina.db, certs/, releases/, backups/
 ```
 
@@ -50,6 +51,7 @@ flags (see "Automation: SSH and CI").
 
 ```yaml
 name: api
+source: { repo: github.com/acme/api }                    # owning repo; blank/omitted = locally owned
 image: { repository: registry.example.com/my-app/api }   # repository is immutable (per app)
 workload: { type: service, port: 8080 }                  # type: service|worker; command/args optional
 resources: { cpu: 250m, memory: 256Mi }                  # requests == limits
@@ -57,14 +59,19 @@ replicas: 1                                              # or {min: 2, max: 10, 
 storage: { enabled: true, size: 1Gi, mountPath: /data }  # PVC <app>-data
 health: { readiness: /healthz }                          # HTTP probes
 env: { RUST_LOG: info }
+secrets: { DATABASE_URL: "file:/etc/menina/secrets/db" } # env var -> secret ref (never plaintext)
 ```
 
 `menina app create` defaults `image.repository` to the bundled registry as
 `registry.<domain>/<project>/<app>`; `--repository` overrides it.
 
-## Environment (`environments/<env>.yml`)
+## Environment (`environments/<env>.yml` + `environments/<env>/<app>.yml`)
 
-Only this file opts a host in (exposure is environment-level). `image.repository`
+Only config here opts a host in (exposure is environment-level). An environment
+may be declared by a definition file (`<env>.yml`) and/or a directory of
+per-app override files (`<env>/<app>.yml`, one app per file); directory
+overrides win over an inline `apps:` map. Splitting per app lets several repos
+contribute to one environment without writing the same file. `image.repository`
 cannot be overridden; other fields merge (override wins).
 
 ```yaml

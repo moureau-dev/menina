@@ -1,0 +1,7 @@
+enabled: true
+image:
+  tag: production
+exposure:
+  enabled: true
+  hosts:
+    - api.demo.example.com

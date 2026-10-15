@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -113,9 +114,20 @@ func LoadEnvironments(projectsDir, project string) (map[string]*EnvironmentFile,
 		return nil, nil, err
 	}
 	envs := map[string]*EnvironmentFile{}
-	var order []string
+	// An environment may be declared by a definition file (<env>.yml), a
+	// per-app override directory (<env>/), or both.
 	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".yml" {
+		name := trimYAMLExt(e.Name())
+		if strings.HasPrefix(name, ".") {
+			continue // e.g. .trash
+		}
+		if e.IsDir() {
+			if envs[name] == nil {
+				envs[name] = &EnvironmentFile{Name: name, Apps: map[string]*AppOverride{}}
+			}
+			continue
+		}
+		if filepath.Ext(e.Name()) != ".yml" {
 			continue
 		}
 		env, err := readYAML[EnvironmentFile](filepath.Join(dir, e.Name()))
@@ -123,13 +135,25 @@ func LoadEnvironments(projectsDir, project string) (map[string]*EnvironmentFile,
 			return nil, nil, err
 		}
 		if env.Name == "" {
-			env.Name = trimYAMLExt(e.Name())
+			env.Name = name
 		}
 		if env.Apps == nil {
 			env.Apps = map[string]*AppOverride{}
 		}
 		envs[env.Name] = &env
-		order = append(order, env.Name)
+	}
+	for name, env := range envs {
+		overrides, err := loadAppOverrides(filepath.Join(dir, name))
+		if err != nil {
+			return nil, nil, err
+		}
+		for app, ov := range overrides {
+			env.Apps[app] = ov
+		}
+	}
+	var order []string
+	for name := range envs {
+		order = append(order, name)
 	}
 	sort.Strings(order)
 	return envs, order, nil

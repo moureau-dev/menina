@@ -89,6 +89,64 @@ func TestDeployDisabledAppRejected(t *testing.T) {
 	}
 }
 
+func TestApplyResolvesAppSecretsIntoSecretAndEnv(t *testing.T) {
+	cluster := &stubCluster{}
+	engine := NewEngine(cluster, nil, nil, deployLogger())
+	app := &config.ResolvedApp{
+		Project: "p", Environment: "prod", Name: "api", Namespace: "ns", Enabled: true,
+		Repository: "registry/api", Tag: "prod", Replicas: config.ReplicasSpec{Min: 1, Max: 1},
+		Workload: config.WorkloadSpec{Type: config.WorkloadService, Port: 80},
+		Secrets:  map[string]string{"DATABASE_URL": "literal:postgres://x"},
+	}
+	if _, err := engine.Apply(context.Background(), app, "registry/api:prod"); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(cluster.secretApplied) != 1 {
+		t.Fatalf("expected one secret apply, got %d", len(cluster.secretApplied))
+	}
+	got := cluster.secretApplied[0]
+	if got.Name != "api-secrets" || string(got.Data["DATABASE_URL"]) != "postgres://x" {
+		t.Fatalf("secret = %+v", got)
+	}
+	if len(cluster.applied) != 1 {
+		t.Fatalf("workload not applied: %d", len(cluster.applied))
+	}
+	w := cluster.applied[0]
+	if w.SecretEnvName != "api-secrets" || w.SecretEnv["DATABASE_URL"] != "DATABASE_URL" {
+		t.Fatalf("workload secret env = %+v / %q", w.SecretEnv, w.SecretEnvName)
+	}
+}
+
+func TestApplyFailsOnUnresolvableSecret(t *testing.T) {
+	cluster := &stubCluster{}
+	engine := NewEngine(cluster, nil, nil, deployLogger())
+	app := &config.ResolvedApp{
+		Project: "p", Environment: "prod", Name: "api", Namespace: "ns", Enabled: true,
+		Repository: "registry/api", Tag: "prod", Replicas: config.ReplicasSpec{Min: 1, Max: 1},
+		Workload: config.WorkloadSpec{Type: config.WorkloadService, Port: 80},
+		Secrets:  map[string]string{"DATABASE_URL": "file:/does/not/exist"},
+	}
+	if _, err := engine.Apply(context.Background(), app, "registry/api:prod"); err == nil {
+		t.Fatal("expected an error for an unresolvable secret reference")
+	}
+}
+
+func TestApplyWithoutSecretsSkipsSecret(t *testing.T) {
+	cluster := &stubCluster{}
+	engine := NewEngine(cluster, nil, nil, deployLogger())
+	app := &config.ResolvedApp{
+		Project: "p", Environment: "prod", Name: "api", Namespace: "ns", Enabled: true,
+		Repository: "registry/api", Tag: "prod", Replicas: config.ReplicasSpec{Min: 1, Max: 1},
+		Workload: config.WorkloadSpec{Type: config.WorkloadService, Port: 80},
+	}
+	if _, err := engine.Apply(context.Background(), app, "registry/api:prod"); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(cluster.secretApplied) != 0 {
+		t.Fatalf("no secret expected, got %+v", cluster.secretApplied)
+	}
+}
+
 func TestSanitizeName(t *testing.T) {
 	cases := map[string]string{"My_App.1": "my-app-1", "  ": "app", "API": "api"}
 	for in, want := range cases {

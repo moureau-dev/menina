@@ -1,5 +1,10 @@
 name: api
 
+# Which repository owns this app. Blank/omitted means locally owned.
+source:
+  repo: github.com/moureau-dev/menina-demo
+  revision: 9f3c2a1
+
 image:
   repository: registry.moureau.dev/demo/api
 
@@ -13,3 +18,9 @@ resources:
 
 exposure:
   enabled: false
+
+# Secrets are injected as environment variables via a Kubernetes Secret named
+# <app>-secrets. Only references live in configuration; values never do.
+# secrets:
+#   DATABASE_URL: file:/etc/menina/secrets/demo/production/database-url
+#   STRIPE_KEY: env:STRIPE_KEY

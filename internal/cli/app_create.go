@@ -210,10 +210,9 @@ func applyEnvironmentScale(app *App, project, environment, name string, spec *co
 	ov := env.Apps[name]
 	if ov == nil {
 		ov = &config.AppOverride{}
-		env.Apps[name] = ov
 	}
 	ov.Replicas = spec
-	if err := config.SaveEnvironment(app.Opts.ConfigDir, project, env); err != nil {
+	if err := config.SaveAppOverride(app.Opts.ConfigDir, project, environment, name, ov); err != nil {
 		return err
 	}
 	app.Infof("Scaled %q in environment %q: %s", name, environment, describeReplicas(spec))

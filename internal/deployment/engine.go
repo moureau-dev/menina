@@ -8,6 +8,7 @@ import (
 
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/database"
+	"github.com/moureau-dev/menina/internal/secrets"
 )
 
 type DigestResolver interface {
@@ -75,6 +76,17 @@ func (e *Engine) applyResolved(ctx context.Context, app *config.ResolvedApp, ima
 	if err := e.cluster.EnsureNamespace(ctx, app.Namespace); err != nil {
 		return nil, fmt.Errorf("ensure namespace %q: %w", app.Namespace, err)
 	}
+	if len(app.Secrets) > 0 {
+		secretName, err := e.ensureAppSecret(ctx, app)
+		if err != nil {
+			return nil, err
+		}
+		w.SecretEnvName = secretName
+		w.SecretEnv = map[string]string{}
+		for name := range app.Secrets {
+			w.SecretEnv[name] = name
+		}
+	}
 	if app.Storage != nil && app.Storage.Enabled {
 		size := app.Storage.Size
 		if size == "" {
@@ -101,6 +113,26 @@ func (e *Engine) applyResolved(ctx context.Context, app *config.ResolvedApp, ima
 		Image:       w.Image,
 		RolledOut:   true,
 	}, nil
+}
+
+// ensureAppSecret resolves an app's secret references to values, projects them
+// into a Kubernetes Secret, and returns the Secret's name. Only references are
+// ever stored in configuration; resolved values stay out of the config tree.
+func (e *Engine) ensureAppSecret(ctx context.Context, app *config.ResolvedApp) (string, error) {
+	name := app.Name + "-secrets"
+	resolver := secrets.NewResolver()
+	data := make(map[string][]byte, len(app.Secrets))
+	for envName, ref := range app.Secrets {
+		value, err := resolver.Resolve(ref)
+		if err != nil {
+			return "", fmt.Errorf("resolve secret %q for %s/%s: %w", envName, app.Namespace, app.Name, err)
+		}
+		data[envName] = []byte(value)
+	}
+	if err := e.cluster.EnsureSecret(ctx, app.Namespace, name, data); err != nil {
+		return "", fmt.Errorf("ensure secret for %s/%s: %w", app.Namespace, app.Name, err)
+	}
+	return name, nil
 }
 
 func (e *Engine) buildWorkload(app *config.ResolvedApp, digest string) Workload {

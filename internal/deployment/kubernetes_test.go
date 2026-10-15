@@ -137,6 +137,31 @@ func TestBuildDeploymentMountsStorageConfigAndSecret(t *testing.T) {
 	}
 }
 
+func TestBuildDeploymentInjectsSecretEnv(t *testing.T) {
+	c := newFakeAPI(t).cluster(t)
+	w := Workload{
+		App: "api", Name: "api", Namespace: "ns", Image: "img:1", Port: 8080,
+		Env:           map[string]string{"LOG_LEVEL": "info"},
+		SecretEnvName: "api-secrets",
+		SecretEnv:     map[string]string{"DATABASE_URL": "DATABASE_URL"},
+	}
+	d := c.buildDeployment(w)
+	env := d.Spec.Template.Spec.Containers[0].Env
+	var secretEnv *kube.EnvVar
+	for i := range env {
+		if env[i].Name == "DATABASE_URL" {
+			secretEnv = &env[i]
+		}
+	}
+	if secretEnv == nil || secretEnv.ValueFrom == nil || secretEnv.ValueFrom.SecretKeyRef == nil {
+		t.Fatalf("secret env missing or malformed: %+v", env)
+	}
+	ref := secretEnv.ValueFrom.SecretKeyRef
+	if ref.Name != "api-secrets" || ref.Key != "DATABASE_URL" {
+		t.Fatalf("secret key ref = %+v", ref)
+	}
+}
+
 func TestBuildDeploymentHostPortsL4(t *testing.T) {
 	c := newFakeAPI(t).cluster(t)
 	w := Workload{

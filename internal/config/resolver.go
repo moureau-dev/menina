@@ -84,6 +84,7 @@ func (r *Resolver) resolveApp(p *Project, env *EnvironmentFile, app *AppFile, ov
 		Name:        app.Name,
 		Namespace:   namespace,
 		Enabled:     true,
+		Source:      app.Source,
 		Repository:  app.Image.Repository,
 		Tag:         app.Image.Tag,
 		PullPolicy:  app.Image.PullPolicy,
@@ -94,6 +95,7 @@ func (r *Resolver) resolveApp(p *Project, env *EnvironmentFile, app *AppFile, ov
 		Replicas:    cloneReplicas(app.Replicas),
 		Health:      cloneHealth(app.Health),
 		Env:         cloneEnv(app.Env),
+		Secrets:     cloneEnv(app.Secrets),
 		Webhook:     webhook,
 	}
 	if ra.Workload.Type == "" {
@@ -138,6 +140,9 @@ func (r *Resolver) resolveApp(p *Project, env *EnvironmentFile, app *AppFile, ov
 		}
 		for k, v := range override.Env {
 			ra.Env[k] = v
+		}
+		for k, v := range override.Secrets {
+			ra.Secrets[k] = v
 		}
 	}
 	if ra.Exposure.Enabled && len(ra.Exposure.Hosts) == 0 {

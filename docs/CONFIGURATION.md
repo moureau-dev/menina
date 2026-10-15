@@ -17,7 +17,11 @@ the registry, [REGISTRY.md](REGISTRY.md); for k3s/RBAC,
     └── my-platform/
         ├── project.yml
         ├── apps/{frontend,api,worker}.yml
-        └── environments/{development,staging,production}.yml
+        └── environments/
+            ├── production.yml          # environment definition (optional)
+            └── production/             # per-app overrides (one file per app)
+                ├── api.yml
+                └── web.yml
 
 /var/lib/menina/
 ├── menina.db
@@ -51,10 +55,41 @@ The resolver combines a shared app definition with per-environment overrides:
 | `health` | Environment override replaces the app's health block |
 | `replicas` | Environment override wins; else the app value; else platform default. Fixed count (`3`) or range (`{min, max, targetCPU}`), realized as an HPA |
 | `env` | Merged; environment keys win |
+| `secrets` | Merged; environment keys win. Values are secret references, never plaintext (see [Secret references](#secret-references)) |
 
 The resolved configuration is validated as a whole **before any cluster
 change**. If a file is invalid, the last valid resolved snapshot is retained and
 the error is reported rather than deploying a partial update.
+
+### Environment definition and per-app overrides
+
+An environment may be declared two ways, and they combine:
+
+- `environments/<env>.yml` — the environment definition (`name`, `namespace`,
+  and optionally an inline `apps:` map).
+- `environments/<env>/<app>.yml` — a single app's override (`enabled`,
+  `image.tag`, `resources`, `replicas`, `exposure`, `env`, `secrets`, …).
+  The environment's name is the directory name; the definition file is optional.
+
+Overrides in the directory **win** over an inline `apps:` map. Splitting each
+app's override into its own file lets several repositories contribute to the
+same environment without ever writing the same file — the shared
+`environments/<env>.yml` cannot do that safely. `menina app scale -e <env>`
+writes the per-app file.
+
+An app may declare a `source` recording the repository that owns it:
+
+```yaml
+# apps/api.yml
+name: api
+source:
+  repo: github.com/acme/api      # blank/omitted = locally owned
+  revision: 9f3c2a1              # informational
+```
+
+A blank `source` is locally/human-owned. Two non-blank `source.repo` values that
+differ are a conflict: a deploying repository must refuse to overwrite an app it
+does not own rather than clobbering another repository's definition.
 
 ## Scaling
 
@@ -149,6 +184,26 @@ listener (`menina_snapshot_version`, `menina_routes`, `menina_jobs{status="…"}
 Credentials are always secret references — `env:VAR`, `file:/path`, or
 `literal:value` — never plaintext in `config.yml`, and they are never written
 into app definitions or logged.
+
+Apps may inject secrets as environment variables via `secrets:` (on the app
+baseline or an environment override). Each entry maps an environment variable
+name to a **reference**; Menina resolves it at deploy time and projects the
+values into a Kubernetes Secret named `<app>-secrets`, injected with
+`valueFrom.secretKeyRef`:
+
+```yaml
+# apps/api.yml
+name: api
+env:
+  LOG_LEVEL: info
+secrets:
+  DATABASE_URL: file:/etc/menina/secrets/my-platform/production/database-url
+  STRIPE_KEY: env:STRIPE_KEY
+```
+
+Only the reference lives in configuration; the resolved value never enters the
+config tree, the resolved snapshot, or `--json` output. A missing or unreadable
+reference fails the deploy rather than starting the app with an empty value.
 
 ## Config reference
 

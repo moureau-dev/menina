@@ -62,6 +62,21 @@ type ProjectWebhooks struct {
 	Deploy *DeployWebhook `yaml:"deploy"`
 }
 
+// SourceSpec records which repository owns an app definition. A blank Repo
+// means the app is locally/human-owned (it is never claimed or pruned by a
+// deploying repository). It lets multiple repositories contribute apps to the
+// same project without overwriting each other.
+type SourceSpec struct {
+	Repo     string `yaml:"repo,omitempty"`
+	Revision string `yaml:"revision,omitempty"`
+}
+
+// ConflictsWith reports whether two sources are distinct repositories. A blank
+// source on either side never conflicts (local ownership is compatible).
+func (s SourceSpec) ConflictsWith(other SourceSpec) bool {
+	return s.Repo != "" && other.Repo != "" && s.Repo != other.Repo
+}
+
 type ImageSpec struct {
 	Repository string `yaml:"repository"`
 	Tag        string `yaml:"tag"`
@@ -113,6 +128,7 @@ type HealthSpec struct {
 
 type AppFile struct {
 	Name      string            `yaml:"name"`
+	Source    SourceSpec        `yaml:"source,omitempty"`
 	Image     ImageSpec         `yaml:"image"`
 	Workload  WorkloadSpec      `yaml:"workload"`
 	Resources ResourceSpec      `yaml:"resources"`
@@ -121,6 +137,10 @@ type AppFile struct {
 	Replicas  *ReplicasSpec     `yaml:"replicas"`
 	Health    *HealthSpec       `yaml:"health"`
 	Env       map[string]string `yaml:"env"`
+	// Secrets maps an environment variable name to a secret reference
+	// (file:..., env:..., literal:...). Only the reference is stored in
+	// configuration; the resolved value never enters the config tree.
+	Secrets map[string]string `yaml:"secrets,omitempty"`
 }
 
 type AppOverride struct {
@@ -133,6 +153,7 @@ type AppOverride struct {
 	Replicas  *ReplicasSpec     `yaml:"replicas"`
 	Health    *HealthSpec       `yaml:"health"`
 	Env       map[string]string `yaml:"env"`
+	Secrets   map[string]string `yaml:"secrets,omitempty"`
 }
 
 type EnvironmentFile struct {
@@ -171,6 +192,7 @@ type ResolvedApp struct {
 	Name          string
 	Namespace     string
 	Enabled       bool
+	Source        SourceSpec
 	Repository    string
 	Tag           string
 	PullPolicy    string
@@ -182,7 +204,9 @@ type ResolvedApp struct {
 	Replicas      ReplicasSpec
 	Health        *HealthSpec
 	Env           map[string]string
-	Webhook       *DeployWebhook
+	// Secrets holds secret references (never resolved values).
+	Secrets map[string]string
+	Webhook *DeployWebhook
 }
 
 func (a *ResolvedApp) Image() string {

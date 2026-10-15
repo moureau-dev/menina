@@ -42,6 +42,11 @@ type Workload struct {
 	ContainerPort int
 	SecretName    string
 	SecretMount   string
+	// SecretEnvName is a Kubernetes Secret whose keys are injected into the
+	// container as environment variables via valueFrom.secretKeyRef.
+	// SecretEnv maps an environment variable name to the key within that Secret.
+	SecretEnvName string
+	SecretEnv     map[string]string
 	Ports         []PortMapping
 }
 

@@ -9,13 +9,20 @@ import (
 	"time"
 )
 
+type secretApply struct {
+	Namespace string
+	Name      string
+	Data      map[string][]byte
+}
+
 type stubCluster struct {
-	mu      sync.Mutex
-	status  *WorkloadStatus
-	err     error
-	calls   int
-	failN   int
-	applied []Workload
+	mu            sync.Mutex
+	status        *WorkloadStatus
+	err           error
+	calls         int
+	failN         int
+	applied       []Workload
+	secretApplied []secretApply
 }
 
 func (s *stubCluster) statusNow() (*WorkloadStatus, error) {
@@ -59,7 +66,10 @@ func (s *stubCluster) ListServices(context.Context) ([]ServiceRef, error) { retu
 func (s *stubCluster) PodLogs(context.Context, string, string, LogOptions) (io.ReadCloser, error) {
 	return io.NopCloser(nil), nil
 }
-func (s *stubCluster) EnsureSecret(context.Context, string, string, map[string][]byte) error {
+func (s *stubCluster) EnsureSecret(_ context.Context, namespace, name string, data map[string][]byte) error {
+	s.mu.Lock()
+	s.secretApplied = append(s.secretApplied, secretApply{Namespace: namespace, Name: name, Data: data})
+	s.mu.Unlock()
 	return nil
 }
 func (s *stubCluster) EnsureConfigMap(context.Context, string, string, map[string]string) error {
