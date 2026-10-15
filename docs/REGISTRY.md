@@ -46,7 +46,7 @@ Menina builds `config.json` from `internal/registry/zot.go`:
   `config.yml` as `registry.auth.passwordSecretRef: file:...`. The password is
   bcrypt-hashed into the `zot-htpasswd` Secret — Zot never sees the plaintext.
 - `menina registry credential` prints the current username/password (for
-  `docker login`).
+  `docker login`). `--username`/`--password` print just that field (for scripts).
 - `menina registry credential --regenerate` generates a new random password,
   stores it, updates `config.yml`, and **applies it everywhere**: the Zot
   htpasswd Secret, the k3s containerd `registries.yaml`, then restarts k3s so
@@ -137,6 +137,8 @@ instead.
 | --- | --- |
 | `menina registry status` | Zot health (`/v2/`) |
 | `menina registry credential` | Print push username/password |
+| `menina registry credential --username` | Print only the username (for scripts) |
+| `menina registry credential --password` | Print only the password (for scripts) |
 | `menina registry credential --regenerate` | Rotate and apply a new password |
 | `menina deploy` | (Re)deploy Zot, config, secret, route and k3s credentials |
 | `menina doctor` | Diagnose registry reachability alongside other checks |

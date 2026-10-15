@@ -47,16 +47,23 @@ func newRegistryCommand(app *App) *cobra.Command {
 }
 
 func registryCredentialCommand(app *App) *cobra.Command {
-	var regenerate bool
-	var username, password string
+	var regenerate, passwordOnly, usernameOnly bool
+	var newUsername, newPassword string
 	cmd := &cobra.Command{
 		Use:   "credential",
 		Short: "Show or regenerate the registry push credential",
 		Long: "Prints the username and password used to push images to Zot.\n" +
+			"With --username or --password, only that field is printed (for scripts).\n" +
 			"With --regenerate, a new random password is generated, stored with 0600\n" +
 			"permissions, written to config.yml as a secret reference, and applied to\n" +
 			"Zot and the k3s containerd credentials (rolling managed workloads).",
+		Example: "  menina registry credential\n" +
+			"  menina registry credential --password\n" +
+			"  menina registry credential --regenerate",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if newPassword != "" || newUsername != "" {
+				regenerate = true
+			}
 			cfg, err := app.LoadConfig()
 			if err != nil {
 				return err
@@ -72,15 +79,26 @@ func registryCredentialCommand(app *App) *cobra.Command {
 				if app.Opts.JSON {
 					return app.PrintJSON(map[string]string{"domain": cfg.Registry.Domain, "username": user, "password": pass})
 				}
-				app.Infof("Registry:  %s", cfg.Registry.Domain)
-				app.Infof("Username:  %s", user)
-				app.Infof("Password:  %s", pass)
+				switch {
+				case usernameOnly && passwordOnly:
+					app.Infof("%s\n%s", user, pass)
+				case usernameOnly:
+					app.Infof("%s", user)
+				case passwordOnly:
+					app.Infof("%s", pass)
+				default:
+					app.Infof("Registry:  %s", cfg.Registry.Domain)
+					app.Infof("Username:  %s", user)
+					app.Infof("Password:  %s", pass)
+				}
 				return nil
 			}
 
+			username := newUsername
 			if username == "" {
 				username = orDefault(cfg.Registry.Auth.Username, "menina")
 			}
+			password := newPassword
 			if password == "" {
 				password, err = secrets.GeneratePassword(32)
 				if err != nil {
@@ -114,8 +132,10 @@ func registryCredentialCommand(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&regenerate, "regenerate", false, "generate and apply a new random password")
-	cmd.Flags().StringVar(&username, "username", "", "registry username (default: current or \"menina\")")
-	cmd.Flags().StringVar(&password, "password", "", "explicit password instead of a generated one")
+	cmd.Flags().BoolVar(&passwordOnly, "password", false, "print only the password (for scripts)")
+	cmd.Flags().BoolVar(&usernameOnly, "username", false, "print only the username (for scripts)")
+	cmd.Flags().StringVar(&newUsername, "new-username", "", "explicit username to set when regenerating")
+	cmd.Flags().StringVar(&newPassword, "new-password", "", "explicit password to set when regenerating")
 	return cmd
 }
 
