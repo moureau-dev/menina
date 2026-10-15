@@ -18,6 +18,42 @@ import (
 // as a clean exit.
 var errExit = errors.New("cancelled")
 
+// errBack signals that a flow should return to its parent menu.
+var errBack = errors.New("back")
+
+// backSignal is panicked by the prompter when the user aborts a prompt with
+// Esc / Shift+Tab: inline flows recover it (withBack) and unwind to their menu.
+type backSignal struct{}
+
+// withBack runs fn, turning a back signal into errBack.
+func withBack(fn func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if _, ok := r.(backSignal); ok {
+				err = errBack
+				return
+			}
+			panic(r)
+		}
+	}()
+	return fn()
+}
+
+// withBackValue runs fn, turning a back signal into errBack.
+func withBackValue[T any](fn func() (T, error)) (v T, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if _, ok := r.(backSignal); ok {
+				var zero T
+				v, err = zero, errBack
+				return
+			}
+			panic(r)
+		}
+	}()
+	return fn()
+}
+
 // promptCtx is cancelled on SIGINT/SIGTERM so a prompt can abandon a blocking
 // read. It is nil outside Execute (e.g. in tests), in which case prompts never
 // self-cancel.
@@ -36,7 +72,16 @@ func promptCancelled() <-chan struct{} {
 // can intercept it.
 var promptExit = os.Exit
 
-func runChild(ctx context.Context, c *cobra.Command, flags map[string]string, args ...string) error {
+func runChild(ctx context.Context, c *cobra.Command, flags map[string]string, args ...string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if _, ok := r.(backSignal); ok {
+				err = errBack
+				return
+			}
+			panic(r)
+		}
+	}()
 	c.SetContext(ctx)
 	for k, v := range flags {
 		if f := c.Flags().Lookup(k); f != nil {
@@ -239,43 +284,61 @@ func resolveEnvironmentNames(p *prompter, flag string, interactive bool) []strin
 }
 
 func selectProject(app *App, p *prompter) (string, error) {
-	names, err := config.ListProjects(config.ProjectsDir(app.Opts.ConfigDir))
-	if err != nil {
-		return "", err
-	}
-	options := append([]string{"+ create a new project"}, names...)
-	options = append(options, "Exit")
-	idx := p.Choose("Select a project", options, 0)
-	switch {
-	case idx == 0:
-		return createProjectInline(app, p)
-	case idx == len(options)-1:
-		return "", errExit
-	default:
-		return names[idx-1], nil
+	for {
+		names, err := config.ListProjects(config.ProjectsDir(app.Opts.ConfigDir))
+		if err != nil {
+			return "", err
+		}
+		options := append([]string{"+ create a new project"}, names...)
+		options = append(options, "Exit")
+		idx, ok := p.MenuChoose("Select a project", options, 0)
+		if !ok {
+			return "", errBack
+		}
+		switch {
+		case idx == 0:
+			name, err := withBackValue(func() (string, error) { return createProjectInline(app, p) })
+			if errors.Is(err, errBack) {
+				continue
+			}
+			return name, err
+		case idx == len(options)-1:
+			return "", errExit
+		default:
+			return names[idx-1], nil
+		}
 	}
 }
 
 func selectApp(app *App, p *prompter, project string) (string, error) {
-	apps, err := config.LoadApps(config.ProjectsDir(app.Opts.ConfigDir), project)
-	if err != nil {
-		return "", err
-	}
-	names := make([]string, 0, len(apps))
-	for n := range apps {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	options := append([]string{"+ create a new app"}, names...)
-	options = append(options, "Exit")
-	idx := p.Choose(fmt.Sprintf("Apps in project %q", project), options, 0)
-	switch {
-	case idx == 0:
-		return createAppInline(app, p, project)
-	case idx == len(options)-1:
-		return "", errExit
-	default:
-		return names[idx-1], nil
+	for {
+		apps, err := config.LoadApps(config.ProjectsDir(app.Opts.ConfigDir), project)
+		if err != nil {
+			return "", err
+		}
+		names := make([]string, 0, len(apps))
+		for n := range apps {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		options := append([]string{"+ create a new app"}, names...)
+		options = append(options, "Exit")
+		idx, ok := p.MenuChoose(fmt.Sprintf("Apps in project %q", project), options, 0)
+		if !ok {
+			return "", errBack
+		}
+		switch {
+		case idx == 0:
+			name, err := withBackValue(func() (string, error) { return createAppInline(app, p, project) })
+			if errors.Is(err, errBack) {
+				continue
+			}
+			return name, err
+		case idx == len(options)-1:
+			return "", errExit
+		default:
+			return names[idx-1], nil
+		}
 	}
 }
 
@@ -291,7 +354,10 @@ func selectEnvironment(app *App, p *prompter, project string) (string, error) {
 		return order[0], nil
 	}
 	options := append(append([]string{}, order...), "Exit")
-	idx := p.Choose("Select an environment", options, 0)
+	idx, ok := p.MenuChoose("Select an environment", options, 0)
+	if !ok {
+		return "", errBack
+	}
 	if idx == len(options)-1 {
 		return "", errExit
 	}
@@ -299,20 +365,29 @@ func selectEnvironment(app *App, p *prompter, project string) (string, error) {
 }
 
 func selectEnvironmentInteractive(app *App, p *prompter, project string) (string, error) {
-	_, order, err := config.LoadEnvironments(config.ProjectsDir(app.Opts.ConfigDir), project)
-	if err != nil {
-		return "", err
-	}
-	options := append([]string{"+ create a new environment"}, order...)
-	options = append(options, "Exit")
-	idx := p.Choose(fmt.Sprintf("Environments in project %q", project), options, 0)
-	switch {
-	case idx == 0:
-		return createEnvironmentInline(app, p, project)
-	case idx == len(options)-1:
-		return "", errExit
-	default:
-		return order[idx-1], nil
+	for {
+		_, order, err := config.LoadEnvironments(config.ProjectsDir(app.Opts.ConfigDir), project)
+		if err != nil {
+			return "", err
+		}
+		options := append([]string{"+ create a new environment"}, order...)
+		options = append(options, "Exit")
+		idx, ok := p.MenuChoose(fmt.Sprintf("Environments in project %q", project), options, 0)
+		if !ok {
+			return "", errBack
+		}
+		switch {
+		case idx == 0:
+			name, err := withBackValue(func() (string, error) { return createEnvironmentInline(app, p, project) })
+			if errors.Is(err, errBack) {
+				continue
+			}
+			return name, err
+		case idx == len(options)-1:
+			return "", errExit
+		default:
+			return order[idx-1], nil
+		}
 	}
 }
 
@@ -323,44 +398,52 @@ func appMenu(ctx context.Context, app *App, p *prompter, project, name, defaultE
 		}
 		return selectEnvironment(app, p, project)
 	}
+	actions := []string{"Deploy", "Scale", "Edit", "Logs", "Rollback", "Delete", "Back"}
 	for {
-		actions := []string{"Deploy", "Scale", "Edit", "Logs", "Rollback", "Delete", "Back"}
-		idx := p.Choose(fmt.Sprintf("%s / %s", project, name), actions, 0)
-		var err error
-		switch idx {
-		case 0:
-			if env, e := pickEnv(); e != nil {
-				err = e
-			} else {
-				err = runChild(ctx, appDeploy(app), map[string]string{"project": project, "environment": env}, name)
-			}
-		case 1:
-			err = scaleInline(ctx, app, p, project, name, defaultEnv)
-		case 2:
-			err = runChild(ctx, appEdit(app), map[string]string{"project": project}, name)
-		case 3:
-			if env, e := pickEnv(); e != nil {
-				err = e
-			} else {
-				err = runChild(ctx, appLogs(app), map[string]string{"project": project, "environment": env}, name)
-			}
-		case 4:
-			if env, e := pickEnv(); e != nil {
-				err = e
-			} else {
-				err = runChild(ctx, appRollback(app), map[string]string{"project": project, "environment": env}, name)
-			}
-		case 5:
-			if p.Confirm(fmt.Sprintf("Soft-delete app %q? (stops it; config kept for restore)", name), false) {
-				err = runChild(ctx, appDelete(app), map[string]string{"project": project, "yes": "true"}, name)
-			}
-		default:
+		idx, ok := p.MenuChoose(fmt.Sprintf("%s / %s", project, name), actions, 0)
+		if !ok {
+			return errBack
+		}
+		if idx == len(actions)-1 { // Back
 			return nil
 		}
-		if err != nil {
-			if errors.Is(err, errExit) {
-				return errExit
+		err := withBack(func() error {
+			switch idx {
+			case 0:
+				env, e := pickEnv()
+				if e != nil {
+					return e
+				}
+				return runChild(ctx, appDeploy(app), map[string]string{"project": project, "environment": env}, name)
+			case 1:
+				return scaleInline(ctx, app, p, project, name, defaultEnv)
+			case 2:
+				return runChild(ctx, appEdit(app), map[string]string{"project": project}, name)
+			case 3:
+				env, e := pickEnv()
+				if e != nil {
+					return e
+				}
+				return runChild(ctx, appLogs(app), map[string]string{"project": project, "environment": env}, name)
+			case 4:
+				env, e := pickEnv()
+				if e != nil {
+					return e
+				}
+				return runChild(ctx, appRollback(app), map[string]string{"project": project, "environment": env}, name)
+			case 5:
+				if p.Confirm(fmt.Sprintf("Soft-delete app %q? (stops it; config kept for restore)", name), false) {
+					return runChild(ctx, appDelete(app), map[string]string{"project": project, "yes": "true"}, name)
+				}
 			}
+			return nil
+		})
+		switch {
+		case errors.Is(err, errBack):
+			continue
+		case errors.Is(err, errExit):
+			return errExit
+		case err != nil:
 			app.Infof("error: %v", err)
 		}
 	}

@@ -31,18 +31,24 @@ type App struct {
 
 func NewRootCommand() *cobra.Command {
 	app := &App{}
+	var showAll bool
 	root := &cobra.Command{
 		Use:   "menina",
 		Short: "Menina is a self-hosted application platform",
 		Long:  "Menina deploys applications from pushed container images to k3s, routing public hostnames through its own reverse proxy.",
-		Example: "  menina setup                     # configure the host (root)\n" +
+		Example: "  menina                           # open the interactive menu\n" +
+			"  menina setup                     # configure the host (root)\n" +
 			"  menina deploy                    # provision k3s, registry, services\n" +
 			"  menina create my-app             # create a project (interactive)\n" +
 			"  menina app --project my-app      # pick an app, then Deploy/Scale/Logs\n" +
 			"  menina serve                     # run the control plane\n" +
 			"  menina proxy                     # run the reverse proxy",
+		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runMainMenu(cmd, app, showAll)
+		},
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			level := slog.LevelInfo
 			if app.Opts.Verbose {
@@ -51,6 +57,7 @@ func NewRootCommand() *cobra.Command {
 			app.Log = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 		},
 	}
+	root.Flags().BoolVar(&showAll, "show-all", false, "show one-time setup/deploy actions in the interactive menu")
 	root.PersistentFlags().StringVar(&app.Opts.ConfigDir, "config-dir", envOr("MENINA_CONFIG_DIR", "/etc/menina"), "configuration directory")
 	root.PersistentFlags().BoolVar(&app.Opts.JSON, "json", false, "output machine-readable JSON")
 	root.PersistentFlags().BoolVar(&app.Opts.Verbose, "verbose", false, "verbose logging")
@@ -101,8 +108,20 @@ func Execute() int {
 
 	root := NewRootCommand()
 	root.SetContext(ctx)
-	if err := root.Execute(); err != nil {
-		if errors.Is(err, errExit) {
+	err := func() (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				if _, ok := r.(backSignal); ok {
+					err = errBack
+					return
+				}
+				panic(r)
+			}
+		}()
+		return root.Execute()
+	}()
+	if err != nil {
+		if errors.Is(err, errExit) || errors.Is(err, errBack) {
 			return 0
 		}
 		fmt.Fprintln(os.Stderr, "error:", err)

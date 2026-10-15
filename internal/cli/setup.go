@@ -14,16 +14,18 @@ import (
 
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/secrets"
+	"github.com/moureau-dev/menina/internal/tui"
 )
 
 type prompter struct {
 	reader  *bufio.Reader
 	enabled bool
+	tui     bool
 }
 
 func newPrompter() *prompter {
 	enabled := term.IsTerminal(int(os.Stdin.Fd()))
-	return &prompter{reader: bufio.NewReader(os.Stdin), enabled: enabled}
+	return &prompter{reader: bufio.NewReader(os.Stdin), enabled: enabled, tui: enabled}
 }
 
 // readLine reads a line, abandoning the read (and exiting) if the process is
@@ -49,6 +51,17 @@ func (p *prompter) Ask(label, def string) string {
 	if !p.enabled {
 		return def
 	}
+	if p.tui {
+		v, action := tui.Input(label, def)
+		switch action {
+		case tui.ActionBack:
+			panic(backSignal{})
+		case tui.ActionSelected:
+			return v
+		default:
+			promptExit(130)
+		}
+	}
 	if def != "" {
 		fmt.Printf("%s [%s]: ", label, def)
 	} else {
@@ -64,6 +77,17 @@ func (p *prompter) Ask(label, def string) string {
 func (p *prompter) Confirm(label string, def bool) bool {
 	if !p.enabled {
 		return def
+	}
+	if p.tui {
+		v, action := tui.Confirm(label, def)
+		switch action {
+		case tui.ActionBack:
+			panic(backSignal{})
+		case tui.ActionSelected:
+			return v
+		default:
+			promptExit(130)
+		}
 	}
 	hint := "[Y/n]"
 	if !def {
@@ -95,6 +119,17 @@ func (p *prompter) Select(label string, options []Option, def int) int {
 	if !p.enabled {
 		return def
 	}
+	if p.tui {
+		idx, action := tui.Select(label, tuiOptions(options), def, false)
+		switch action {
+		case tui.ActionSelected:
+			return idx
+		case tui.ActionBack:
+			panic(backSignal{})
+		default:
+			promptExit(130)
+		}
+	}
 	fmt.Println(label)
 	for i, o := range options {
 		fmt.Printf("  %d. %s\n", i+1, o.Label)
@@ -125,6 +160,44 @@ func (p *prompter) Select(label string, options []Option, def int) int {
 		}
 	}
 	return def
+}
+
+// Menu is like Select but exposes "back" (Esc / Shift+Tab) so a menu can
+// return to its parent screen instead of exiting. Ctrl+C still exits.
+func (p *prompter) Menu(label string, options []Option, def int) (int, bool) {
+	if !p.enabled {
+		return def, true
+	}
+	if p.tui {
+		idx, action := tui.Select(label, tuiOptions(options), def, true)
+		switch action {
+		case tui.ActionSelected:
+			return idx, true
+		case tui.ActionBack:
+			return def, false
+		default:
+			promptExit(130)
+			return def, false
+		}
+	}
+	return p.Select(label, options, def), true
+}
+
+// MenuChoose is Menu for a list of plain strings.
+func (p *prompter) MenuChoose(label string, options []string, def int) (int, bool) {
+	opts := make([]Option, len(options))
+	for i, o := range options {
+		opts[i] = Option{Label: o}
+	}
+	return p.Menu(label, opts, def)
+}
+
+func tuiOptions(options []Option) []tui.Option {
+	opts := make([]tui.Option, len(options))
+	for i, o := range options {
+		opts[i] = tui.Option{Label: o.Label, Description: o.Description}
+	}
+	return opts
 }
 
 // yesNo is a Select with Yes/No options and descriptions.
