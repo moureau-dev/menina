@@ -138,6 +138,11 @@ menina app scale api --project <p> -e production --replicas 4    # one environme
 menina app delete api --project <p>            # soft: stop + keep config; --hard removes+prunes
 menina app restore api --project <p>
 
+# secrets (values read from stdin, never printed)
+printf '%s' "$DATABASE_URL" | menina secret set DATABASE_URL --project <p> --environment <env>
+menina secret list --project <p> --environment <env>      # names only
+menina secret remove DATABASE_URL --project <p> --environment <env> --yes
+
 # observe / infra
 menina status [--json]               # includes the registry host
 menina routes [--json]               # HTTP routes + L4 TCP/UDP exposures

@@ -102,6 +102,27 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
 `Deploy · Scale · Edit · Logs · Rollback · Delete · Back`. Deploy/Logs/Rollback
 prompt for the environment (auto-selected when the project has exactly one).
 
+## Secrets
+
+| Command | Purpose |
+| --- | --- |
+| `menina secret set <name> --project P --environment E [--file F]` | Store a secret value at `secrets/P/E/<name>` (read from stdin — hidden on a terminal — or `--file`). Prints the `file:` reference to use in `apps/*.yml` |
+| `menina secret list --project P --environment E [--json]` | List secret names (values are never shown) |
+| `menina secret remove <name> --project P --environment E [--yes]` | Delete a stored secret value |
+
+Values are never taken from arguments, printed, or written into configuration;
+apps reference them by name:
+
+```bash
+printf '%s' "$DATABASE_URL" | menina secret set DATABASE_URL --project my-app --environment production
+# then in projects/my-app/apps/api.yml (or an env override):
+#   secrets: { DATABASE_URL: "file:/etc/menina/secrets/my-app/production/DATABASE_URL" }
+```
+
+At deploy time Menina resolves the reference and projects it into a Kubernetes
+Secret named `<app>-secrets`, injected as env vars via `valueFrom.secretKeyRef`.
+See [CONFIGURATION.md](CONFIGURATION.md#secret-references).
+
 ## Environments & scaling
 
 An **environment** is a deployment target (`production`, `staging`, …). It starts
