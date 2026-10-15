@@ -15,12 +15,12 @@ the bundled registry.
 curl -fsSL https://menina.moureau.dev/install.sh | sudo sh   # installs binary + systemd units (does not provision)
 sudo menina setup            # write config.yml (interactive; --non-interactive for defaults)
 sudo menina deploy           # provision k3s, registry, control plane, proxy (idempotent)
-menina registry credential   # username/password for `docker login`
 ```
 
 Root is needed for `install`, `setup`, `deploy`, `upgrade`, and
 `backup --with-volumes/--with-images`. Day-to-day commands run as any user in
-the `menina` group.
+the `menina` group. Interactive menus/prompts need a TTY; automation must use
+flags (see "Automation: SSH and CI").
 
 ## Concepts
 
@@ -28,10 +28,11 @@ the `menina` group.
   `menina-apps`).
 - **Environment** — a deployment target (`production`, `staging`, ...). Each env
   gets its own namespace `<project-ns>-<env>` unless overridden. Holds per-app
-  overrides.
+  overrides and exposure.
 - **App** — a container image + workload (service or worker) + scaling/storage.
 - **Registry** — bundled Zot at `registry.<domain>`; pushing an image triggers
-  an automatic deploy of matching apps.
+  an automatic deploy of matching apps. There is **one shared push/pull
+  credential** (k3s pulls with the same username/password).
 
 ## Config layout
 
@@ -49,7 +50,7 @@ the `menina` group.
 
 ```yaml
 name: api
-image: { repository: registry.example.com/my-app/api }   # repository is immutable
+image: { repository: registry.example.com/my-app/api }   # repository is immutable (per app)
 workload: { type: service, port: 8080 }                  # type: service|worker; command/args optional
 resources: { cpu: 250m, memory: 256Mi }                  # requests == limits
 replicas: 1                                              # or {min: 2, max: 10, targetCPU: 70} -> HPA
@@ -57,6 +58,9 @@ storage: { enabled: true, size: 1Gi, mountPath: /data }  # PVC <app>-data
 health: { readiness: /healthz }                          # HTTP probes
 env: { RUST_LOG: info }
 ```
+
+`menina app create` defaults `image.repository` to the bundled registry as
+`registry.<domain>/<project>/<app>`; `--repository` overrides it.
 
 ## Environment (`environments/<env>.yml`)
 
@@ -82,6 +86,30 @@ apps:
       ports: { tcp: [25565], udp: [19132] }   # raw L4 ports (bypass proxy)
 ```
 
+An app is only reachable when its env override sets `enabled: true` **and**
+`exposure.hosts` (or `exposure.ports`); then run `menina app deploy <app>
+--project <p> --environment <env>`.
+
+## Common tasks
+
+```bash
+# Create a project (+ environments), then an app, then make it public
+menina create my-app --yes --environments production,staging   # or bare `menina` menu
+menina app create api --project my-app --port 8080 --yes       # repository defaults to the registry
+# edit my-app/environments/production.yml: api.enabled=true, api.exposure.hosts=[api.example.com]
+menina app deploy api --project my-app --environment production --yes
+
+# Get everything CI needs (registry host + push username/password)
+menina registry credential --json          # {"domain","username","password"}
+
+# Push an image -> auto-deploys matching enabled apps
+HOST=registry.<domain>
+USER=$(menina registry credential --username)
+menina registry credential --password | docker login "$HOST" -u "$USER" --password-stdin
+docker build -t "$HOST/my-app/api:production" .
+docker push  "$HOST/my-app/api:production"
+```
+
 ## CLI
 
 ```bash
@@ -104,20 +132,66 @@ menina app delete api --project <p>            # soft: stop + keep config; --har
 menina app restore api --project <p>
 
 # observe / infra
-menina status [--json]
+menina status [--json]               # includes the registry host
 menina routes [--json]               # HTTP routes + L4 TCP/UDP exposures
 menina doctor                        # config, k8s, registry, routes, TLS checks
-menina registry status | menina registry credential [--regenerate]
+menina registry status
+menina registry credential [--username | --password | --regenerate]
 menina notify list | menina notify test [--project <p>]
 menina backup [--out f.tgz --with-secrets --with-volumes --with-images --consistent --passphrase]
 menina restore <f.tgz> --force [--with-volumes --with-images]
 menina upgrade [--check]
 ```
 
-Interactive shortcuts (TTY only): bare `menina app` / `project` / `environment`
-open project → app → action menus (`Deploy · Scale · Edit · Logs · Rollback ·
-Delete · Back`); selectors have an `Exit`. Scaffolding prompts only on a TTY;
-`--yes`/pipes use flags only. `Ctrl+C` always exits.
+Most list/status commands accept `--json` for machine-readable output.
+`menina registry credential --username`/`--password` print just that field;
+`--regenerate` rotates the shared credential (and re-applies it to Zot and k3s);
+`--new-username`/`--new-password` set explicit values when regenerating.
+
+## Automation: SSH and CI
+
+**SSH / remote VPS.** Menina runs on the host; drive it over SSH. Interactive
+flows need a real TTY (`ssh -t`); a command without `-t` gets no TTY and falls
+back to flags/help, so scripts must pass flags. Use `--json` instead of parsing
+tables, and `sudo` for root-only commands.
+
+```bash
+ssh host sudo menina deploy                  # root-only, non-interactive
+ssh host menina status --json                # machine-readable; includes "registry"
+ssh -t host menina                           # interactive menu (needs a TTY)
+```
+
+**CI (build & push only).** CI needs no Menina binary, no `/etc/menina`, no root
+and no TTY — just the registry host plus the username/password. Discover them
+once on the host and store them as CI secrets:
+
+```bash
+menina registry credential --json   # {"domain":"registry.<domain>","username":"...","password":"..."}
+```
+
+Then the job is plain Docker:
+
+```bash
+echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
+docker build -t "$REGISTRY_HOST/$PROJECT/$APP:$TAG" .
+docker push  "$REGISTRY_HOST/$PROJECT/$APP:$TAG"     # triggers a deploy of matching apps
+```
+
+For the push to deploy, the app's `image.repository` must equal
+`$REGISTRY_HOST/$PROJECT/$APP` and `image.tag` must equal `$TAG` (tag defaults to
+the environment name). If the registry serves **HTTP** (`tls.mode: none`), the
+CI Docker daemon must list `$REGISTRY_HOST` in `insecure-registries`.
+
+## Interactive (TTY only)
+
+Bare `menina` opens a full-screen menu (Setup / Deploy / apps / status / ...).
+`menina app` / `project` / `environment` open project → app → action menus
+(`Deploy · Scale · Edit · Logs · Rollback · Delete · Back`); selectors include
+`Exit`. Arrow keys move **one row at a time**, `/` filters, `Enter` selects,
+`Shift+Tab`/`Esc` goes **back** (menus step up; inline flows like "new app name"
+return to their list), and **`Ctrl+C` must be pressed twice** to quit. Once the
+platform is ready the one-time Setup/Deploy entries are hidden unless
+`--show-all` is passed. Non-TTY/pipes and `--yes` use flags only.
 
 ## Deploy pipeline
 
@@ -140,7 +214,8 @@ Delete · Back`); selectors have an `Exit`. Scaffolding prompts only on a TTY;
 - `tls.terminate: true` + `tls.mode: acme` ⇒ Menina issues a **per-hostname**
   Let's Encrypt cert automatically for every routed host and **auto-renews**
   (`httpRedirect: false` serves `:80` and `:443` with no forced redirect/HSTS).
-- `tls.mode: none` ⇒ HTTP only (e.g. behind a proxy).
+- `tls.mode: none` ⇒ HTTP only (e.g. behind a proxy). Pushing to an HTTP registry
+  requires `insecure-registries` on the client.
 - Wildcards are **not** supported (ACME is HTTP-01/TLS-ALPN-01, not DNS-01).
 - Cloudflare: orange cloud + **Flexible** if the origin is HTTP-only; or run
   origin ACME and use **Full (strict)**. Keep `registry.<domain>` **DNS-only
@@ -165,7 +240,8 @@ per-pod). gRPC works over the HTTP proxy via `exposure.h2c: true`.
 
 No HTTP/3/QUIC, no ACME wildcards, no built-in auth/rate-limiting/WAF, no
 multi-node k3s or HA control plane (SQLite is a single writer; `local-path`
-volumes are node-local), no canary/blue-green strategies, no cron/one-off jobs.
+volumes are node-local), no canary/blue-green strategies, no cron/one-off jobs,
+and no per-user registry credentials (one shared push/pull credential).
 
 ## Docs
 
