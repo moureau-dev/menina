@@ -109,7 +109,7 @@ function Footer() {
         </div>
         <div class="footer-cols">
           <div class="footer-col">
-            <h4>Project</h4>
+            <h2>Project</h2>
             <a href={GITHUB} target="_blank">
               GitHub
             </a>
@@ -124,7 +124,7 @@ function Footer() {
             </a>
           </div>
           <div class="footer-col">
-            <h4>Built by</h4>
+            <h2>Built by</h2>
             <a href={MOUREAU} target="_blank">
               Moureau.dev
             </a>
