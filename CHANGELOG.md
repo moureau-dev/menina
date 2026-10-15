@@ -6,6 +6,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-10-15
+
+### Added
+- Interactive terminal UI (Bubble Tea). Bare `menina` opens a full-screen menu
+  (context-aware: only Setup/Deploy before the platform is ready, hidden behind
+  `--show-all` afterwards), and every prompt — text, select and confirm — plus a
+  file picker for `restore` are TUI widgets. Output from menu actions is shown in
+  a titled box above the menu. Arrow keys scroll one row at a time, `/` filters,
+  `Shift+Tab`/`Esc` goes back (menus step up; inline flows return to their list)
+  and `Ctrl+C` must be pressed twice to quit. Non-TTY keeps the line-based
+  prompter.
+- App repository now defaults to the bundled registry
+  (`registry.<domain>/<project>/<app>`) when the registry is enabled, and `y`/`n`
+  are accepted as aliases on Yes/No select menus.
+
+### Fixed
+- `menina registry credential --username` / `--password` now print just that
+  field. They were previously an input flag for regeneration, so running
+  `--password` on its own errored with "flag needs an argument"; the explicit
+  regeneration inputs are now `--new-username` / `--new-password`.
+
+### Docs
+- `llms.txt`: SSH and CI automation (TTY vs flags, `--json`, a CI build-and-push
+  recipe), the registry push→deploy mapping and the single shared push/pull
+  credential.
+
 ## [0.0.6] - 2026-10-14
 
 ### Added
