@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-10-16
+
 ### Added
 - `menina app deploy`/`rollback` accept `--no-wait` (queue and return) and
   `--timeout`; the success message now includes the job id and the config
