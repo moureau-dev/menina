@@ -74,7 +74,61 @@ func newAppCommand(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment for the action menu")
-	cmd.AddCommand(appCreate(app), appEdit(app), appList(app), appDeploy(app), appLogs(app), appRollback(app), appDelete(app), appRestore(app), appScale(app))
+	cmd.AddCommand(appCreate(app), appEdit(app), appList(app), appStatus(app), appDeploy(app), appLogs(app), appRollback(app), appDelete(app), appRestore(app), appScale(app), appResetVolume(app))
+	return cmd
+}
+
+func appStatus(app *App) *cobra.Command {
+	var project, environment string
+	cmd := &cobra.Command{
+		Use:   "status <name>",
+		Short: "Show an app's deployment status (last job, digest, phase)",
+		Long: "Show the most recent deployment job, release digest and observed status for\n" +
+			"an app. Requires the control plane (`menina serve`).",
+		Example: "  menina app status api --project my-app --environment production",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := app.LoadConfig()
+			if err != nil {
+				return err
+			}
+			client, err := app.Control(cfg)
+			if err != nil {
+				return fmt.Errorf("control plane not reachable (%v); start it with `menina serve`", err)
+			}
+			path := fmt.Sprintf("/job-status?project=%s&environment=%s&app=%s",
+				url.QueryEscape(project), url.QueryEscape(environment), url.QueryEscape(args[0]))
+			var resp map[string]any
+			if err := client.GetJSON(cmd.Context(), path, &resp); err != nil {
+				return err
+			}
+			if app.Opts.JSON {
+				return app.PrintJSON(resp)
+			}
+			app.Infof("App %s/%s/%s", project, environment, args[0])
+			if job, ok := resp["job"].(map[string]any); ok {
+				app.Infof("  last job:    %v (%v)", job["Status"], job["Kind"])
+				if e, _ := job["LastError"].(string); e != "" {
+					app.Infof("  last error:  %s", e)
+				}
+			} else {
+				app.Infof("  last job:    (none)")
+			}
+			if rel, ok := resp["latestRelease"].(map[string]any); ok {
+				app.Infof("  release:     %v", rel["Digest"])
+			}
+			if obs, ok := resp["observed"].(map[string]any); ok {
+				app.Infof("  phase:       %v", obs["Status"])
+				app.Infof("  observed:    %v", obs["ObservedDigest"])
+				app.Infof("  image:       %v", obs["Image"])
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project name")
+	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
+	_ = cmd.MarkFlagRequired("project")
+	_ = cmd.MarkFlagRequired("environment")
 	return cmd
 }
 
@@ -220,15 +274,18 @@ func appList(app *App) *cobra.Command {
 
 func appDeploy(app *App) *cobra.Command {
 	var project, environment string
-	var yes bool
+	var yes, noWait bool
+	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:   "deploy <name>",
 		Short: "Deploy an app into an environment",
 		Long: "Queue a deployment and wait for the rollout. The control plane must be\n" +
 			"running (`menina serve`). Deploying to \"production\" requires --yes\n" +
-			"(security.enforceProdPolicy).",
-		Example: "  menina app deploy api --project my-app --environment production --yes",
-		Args:    cobra.ExactArgs(1),
+			"(security.enforceProdPolicy). Use --no-wait to queue and return immediately\n" +
+			"(track it with `menina job list` / `menina app status`).",
+		Example: "  menina app deploy api --project my-app --environment production --yes\n" +
+			"  menina app deploy api --project my-app --environment staging --no-wait",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := app.LoadConfig()
 			if err != nil {
@@ -243,13 +300,19 @@ func appDeploy(app *App) *cobra.Command {
 			}
 			body := fmt.Sprintf(`{"project":%q,"environment":%q,"app":%q,"confirm":%t}`, project, environment, args[0], yes)
 			var res struct {
-				JobID string `json:"jobId"`
+				JobID           string `json:"jobId"`
+				SnapshotVersion int64  `json:"snapshotVersion"`
 			}
 			if err := client.PostJSONDecode(cmd.Context(), "/deploy", []byte(body), &res); err != nil {
 				return err
 			}
-			app.Infof("Deployment of %s/%s/%s queued; waiting for the rollout...", project, environment, args[0])
-			if err := waitForDeploy(cmd.Context(), client, res.JobID, 5*time.Minute); err != nil {
+			app.Infof("Deployment of %s/%s/%s queued (job %s, config snapshot v%d)", project, environment, args[0], res.JobID, res.SnapshotVersion)
+			if noWait {
+				app.Infof("Not waiting (--no-wait). Track it with `menina app status %s --project %s --environment %s`.", args[0], project, environment)
+				return nil
+			}
+			app.Infof("Waiting for the rollout...")
+			if err := waitForDeploy(cmd.Context(), client, res.JobID, timeout); err != nil {
 				return err
 			}
 			app.Infof("Deployment of %s/%s/%s succeeded", project, environment, args[0])
@@ -259,6 +322,95 @@ func appDeploy(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm a production deployment")
+	cmd.Flags().BoolVar(&noWait, "no-wait", false, "queue the deployment and return without waiting for the rollout")
+	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "how long to wait for the rollout")
+	_ = cmd.MarkFlagRequired("project")
+	_ = cmd.MarkFlagRequired("environment")
+	return cmd
+}
+
+func appResetVolume(app *App) *cobra.Command {
+	var project, environment string
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "reset-volume <name>",
+		Short: "Delete and recreate an app's persistent volume (data is lost)",
+		Long: "Scale the app to zero, delete its PersistentVolumeClaim, and queue a\n" +
+			"deployment so the volume is recreated empty and the app comes back up.\n" +
+			"This destroys the volume's data. The scale-to-zero wait ensures the\n" +
+			"running pod has released the volume before it is deleted.",
+		Example: "  menina app reset-volume api --project my-app --environment production --yes",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := app.LoadConfig()
+			if err != nil {
+				return err
+			}
+			projects, err := config.LoadAllProjects(config.ProjectsDir(app.Opts.ConfigDir))
+			if err != nil {
+				return err
+			}
+			resolved, err := config.NewResolver(cfg).Resolve(projects, 0)
+			if err != nil {
+				return err
+			}
+			resolvedApp, err := resolved.FindApp(project, environment, args[0])
+			if err != nil {
+				return err
+			}
+			if resolvedApp.Storage == nil || !resolvedApp.Storage.Enabled {
+				return fmt.Errorf("app %q has no persistent storage to reset", args[0])
+			}
+			prompt := fmt.Sprintf("Delete and recreate the volume for %s/%s/%s? All of its data will be LOST.", project, environment, args[0])
+			if !confirmDestructive(app, prompt, yes) {
+				return fmt.Errorf("aborted")
+			}
+			cluster, err := deployment.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
+			if err != nil {
+				return err
+			}
+			if err := cluster.ScaleWorkload(cmd.Context(), resolvedApp.Namespace, args[0], 0); err != nil {
+				return err
+			}
+			deadline := time.Now().Add(2 * time.Minute)
+			for {
+				st, err := cluster.WorkloadStatus(cmd.Context(), resolvedApp.Namespace, args[0])
+				if err == nil && st.Replicas == 0 {
+					break
+				}
+				if time.Now().After(deadline) {
+					return fmt.Errorf("timed out waiting for %s to scale down before resetting the volume", args[0])
+				}
+				select {
+				case <-cmd.Context().Done():
+					return cmd.Context().Err()
+				case <-time.After(2 * time.Second):
+				}
+			}
+			if err := cluster.DeletePVC(cmd.Context(), resolvedApp.Namespace, args[0]+"-data"); err != nil {
+				return err
+			}
+			app.Infof("Deleted volume %s/%s-data", resolvedApp.Namespace, args[0])
+			if client, err := app.Control(cfg); err == nil {
+				body := fmt.Sprintf(`{"project":%q,"environment":%q,"app":%q,"confirm":%t}`, project, environment, args[0], yes)
+				var res struct {
+					JobID string `json:"jobId"`
+				}
+				if err := client.PostJSONDecode(cmd.Context(), "/deploy", []byte(body), &res); err != nil {
+					app.Infof("Volume deleted, but queueing the redeploy failed: %v", err)
+					app.Infof("Run `menina app deploy %s --project %s --environment %s` to bring it back.", args[0], project, environment)
+					return nil
+				}
+				app.Infof("Redeploy queued (job %s); the volume will be recreated empty.", res.JobID)
+				return nil
+			}
+			app.Infof("Volume deleted. Reconciliation will recreate it; or run `menina app deploy %s --project %s --environment %s`.", args[0], project, environment)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project name")
+	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm the reset without prompting")
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("environment")
 	return cmd
@@ -317,7 +469,8 @@ func appLogs(app *App) *cobra.Command {
 
 func appRollback(app *App) *cobra.Command {
 	var project, environment, digest string
-	var yes bool
+	var yes, noWait bool
+	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:   "rollback <name>",
 		Short: "Restore a previously recorded immutable image digest",
@@ -356,8 +509,13 @@ func appRollback(app *App) *cobra.Command {
 			if err := client.PostJSONDecode(cmd.Context(), "/rollback", []byte(body), &res); err != nil {
 				return err
 			}
-			app.Infof("Rollback of %s/%s/%s to %s requested; waiting for the rollout...", project, environment, args[0], digest)
-			if err := waitForDeploy(cmd.Context(), client, res.JobID, 5*time.Minute); err != nil {
+			app.Infof("Rollback of %s/%s/%s to %s requested (job %s)", project, environment, args[0], digest, res.JobID)
+			if noWait {
+				app.Infof("Not waiting (--no-wait). Track it with `menina job list`.")
+				return nil
+			}
+			app.Infof("Waiting for the rollout...")
+			if err := waitForDeploy(cmd.Context(), client, res.JobID, timeout); err != nil {
 				return err
 			}
 			app.Infof("Rollback complete: %s is running %s", args[0], digest)
@@ -368,6 +526,8 @@ func appRollback(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
 	cmd.Flags().StringVar(&digest, "digest", "", "image digest to restore")
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm a production rollback")
+	cmd.Flags().BoolVar(&noWait, "no-wait", false, "queue the rollback and return without waiting for the rollout")
+	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "how long to wait for the rollout")
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("environment")
 	return cmd

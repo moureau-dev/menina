@@ -51,6 +51,10 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
 | `menina doctor` | Diagnose config, Kubernetes, registry, webhook and TLS |
 | `menina registry status` | Zot health |
 | `menina registry credential [--regenerate]` | Show or rotate the registry push credential |
+| `menina app status <name> --project P --environment E [--json]` | Last deployment job, release digest and observed phase for an app |
+| `menina job list [--status S] [--limit N] [--json]` | List deployment jobs, newest first |
+| `menina job cancel <id>` | Cancel a pending or processing deployment job |
+| `menina config validate [--json]` | Resolve the whole config tree and validate it without applying (non-zero exit when invalid) |
 | `menina notify list` | Configured deploy webhooks |
 | `menina notify test [--project P] [--event E]` | Send a test deploy notification |
 
@@ -61,6 +65,7 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
 | `menina create [project-name] [--namespace] [--description] [--environments a,b,c] [--yes]` | Create a project. Prompts the name, then asks **“Do you account for multiple environments?”** — *No* creates only `production`; *Yes* opens an editable list where you add names (shown on each step) and rename them. Then optionally offers to create an app. |
 | `menina project` | Interactive: pick a project → run the app menu |
 | `menina project create <name> [--namespace] [--description] [--environments a,b,c]` | Create a project and its environments (`production` by default; `--environments none` for none) |
+| `menina project get <name> [--json]` | Show a project's namespace, apps and environments |
 | `menina project list [--json]` | List projects |
 | `menina project delete <name> [--hard] [--yes]` | Soft-delete (default): workloads stop (scaled to zero), config kept for restore. `--hard`: remove config and prune workloads. PVCs/history retained either way |
 | `menina project restore <name>` | Restore a soft-deleted project |
@@ -85,9 +90,11 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
 | `menina app <name> --project P [--environment E]` | Interactive: app menu for that app |
 | `menina app create <name> [flags]` | Create an app (interactive without `--yes`) |
 | `menina app list --project P [--json]` | List apps |
-| `menina app deploy <name> --project P --environment E [--yes]` | Deploy and wait for the rollout |
+| `menina app deploy <name> --project P --environment E [--yes] [--no-wait] [--timeout D]` | Deploy and wait for the rollout (print job id + config snapshot version). `--no-wait` queues and returns; track with `menina job list` / `app status` |
+| `menina app status <name> --project P --environment E [--json]` | Last job, release digest and observed status |
+| `menina app reset-volume <name> --project P --environment E [--yes]` | Scale to zero, delete the PVC, and redeploy so the volume is recreated empty (data is lost) |
 | `menina app logs <name> --project P --environment E [--follow] [--tail N]` | Stream workload logs |
-| `menina app rollback <name> --project P --environment E [--digest D] [--yes]` | Restore a recorded digest |
+| `menina app rollback <name> --project P --environment E [--digest D] [--yes] [--no-wait] [--timeout D]` | Restore a recorded digest |
 | `menina app scale <name> --project P [--environment/-e E \| --baseline] (--replicas N \| --min M --max X [--target-cpu C] \| --reset)` | Change scaling. `-e E` writes that environment's override; `--baseline` writes the shared baseline; on a terminal with more than one environment and neither given, it prompts. Non-interactive with neither ⇒ baseline |
 | `menina app edit <name> --project P` | Edit the app YAML in `$EDITOR` |
 | `menina app delete <name> --project P [--hard] [--yes]` | Soft-delete (default): stop the workload (scale to zero), keep config for restore. `--hard`: remove config and prune the Deployment/Service/routes. PVCs/history retained |

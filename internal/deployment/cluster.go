@@ -99,5 +99,6 @@ type Cluster interface {
 	EnsureSecret(ctx context.Context, namespace, name string, data map[string][]byte) error
 	EnsureConfigMap(ctx context.Context, namespace, name string, data map[string]string) error
 	EnsurePVC(ctx context.Context, namespace, name, size, storageClass string) error
+	DeletePVC(ctx context.Context, namespace, name string) error
 	Ping(ctx context.Context) error
 }

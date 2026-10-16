@@ -115,6 +115,25 @@ func TestEnsureConfigMapSecretAndPVC(t *testing.T) {
 	}
 }
 
+func TestDeletePVCIsIdempotent(t *testing.T) {
+	f := newFakeAPI(t)
+	c := f.cluster(t)
+	ctx := context.Background()
+	_ = c.EnsureNamespace(ctx, "menina-apps")
+	if err := c.EnsurePVC(ctx, "menina-apps", "api-data", "1Gi", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeletePVC(ctx, "menina-apps", "api-data"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if f.object("/api/v1/namespaces/menina-apps/persistentvolumeclaims", "api-data") != nil {
+		t.Fatal("pvc still present after delete")
+	}
+	if err := c.DeletePVC(ctx, "menina-apps", "api-data"); err != nil {
+		t.Fatalf("deleting a missing pvc must be a no-op: %v", err)
+	}
+}
+
 func TestBuildDeploymentMountsStorageConfigAndSecret(t *testing.T) {
 	c := newFakeAPI(t).cluster(t)
 	w := Workload{

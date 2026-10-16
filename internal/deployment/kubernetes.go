@@ -459,6 +459,14 @@ func (k *KubernetesCluster) EnsurePVC(ctx context.Context, namespace, name, size
 	return err
 }
 
+func (k *KubernetesCluster) DeletePVC(ctx context.Context, namespace, name string) error {
+	err := k.client.Delete(ctx, nsResource(coreV1, namespace, "persistentvolumeclaims")+"/"+name)
+	if kube.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
 func (k *KubernetesCluster) buildDeployment(w Workload) *kube.Deployment {
 	replicas := int32(w.Replicas)
 	if w.Type == "worker" && replicas == 0 {

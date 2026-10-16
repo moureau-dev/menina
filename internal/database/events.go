@@ -43,6 +43,7 @@ const (
 	JobStatusDone       = "done"
 	JobStatusFailed     = "failed"
 	JobStatusSuperseded = "superseded"
+	JobStatusCancelled  = "cancelled"
 )
 
 const maxJobAttempts = 10
@@ -123,6 +124,42 @@ func (db *DB) JobsByStatus(ctx context.Context, status string) ([]Job, error) {
 	}
 	defer rows.Close()
 	return scanJobs(rows)
+}
+
+// ListJobs returns jobs, newest first. An empty status returns all active
+// jobs; a non-empty status filters to that status.
+func (db *DB) ListJobs(ctx context.Context, status string, limit int) ([]Job, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	query := `SELECT id, dedup_key, kind, project, environment, app, repository, tag, desired_digest, status, attempts, last_error, created_at, updated_at
+		FROM jobs WHERE ` + activeWhere
+	args := []any{}
+	if status != "" {
+		query += ` AND status = ?`
+		args = append(args, status)
+	}
+	query += ` ORDER BY created_at DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanJobs(rows)
+}
+
+// CancelJob marks a pending or processing job as cancelled. It returns false
+// when the job is not in a cancellable state (or does not exist).
+func (db *DB) CancelJob(ctx context.Context, id string) (bool, error) {
+	res, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, updated_at = unixepoch()
+		WHERE id = ? AND status IN (?, ?)`,
+		JobStatusCancelled, id, JobStatusPending, JobStatusProcessing)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 func (db *DB) LatestJobByTarget(ctx context.Context, project, environment, app string) (Job, bool, error) {

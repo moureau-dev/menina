@@ -32,7 +32,10 @@ flags (see "Automation: SSH and CI").
 - **App** — a container image + workload (service or worker) + scaling/storage.
 - **Registry** — bundled Zot at `registry.<domain>`; pushing an image triggers
   an automatic deploy of matching apps. There is **one shared push/pull
-  credential** (k3s pulls with the same username/password).
+  credential** (k3s pulls with the same username/password). Digests are resolved
+  only for bundled-registry images; apps pointing at another registry (e.g.
+  `docker.io/library/redis`) deploy by tag, with no digest pinning, release
+  history, or push-event auto-deploy.
 
 ## Config layout
 
@@ -131,8 +134,11 @@ menina app edit api --project <p>            # $EDITOR
 
 # deploy / operate
 menina app deploy api --project <p> --environment <env> --yes   # waits for rollout
+menina app deploy api --project <p> --environment <env> --no-wait   # queue + return (track below)
+menina app status api --project <p> --environment <env>         # last job, digest, phase
 menina app logs api --project <p> --environment <env> --follow
 menina app rollback api --project <p> --environment <env> [--digest sha256:...]
+menina app reset-volume api --project <p> --environment <env> --yes   # wipe app PVC (data lost)
 menina app scale api --project <p> --min 2 --max 10              # baseline (all envs)
 menina app scale api --project <p> -e production --replicas 4    # one environment
 menina app delete api --project <p>            # soft: stop + keep config; --hard removes+prunes
@@ -146,6 +152,8 @@ menina secret remove DATABASE_URL --project <p> --environment <env> --yes
 # observe / infra
 menina status [--json]               # includes the registry host
 menina routes [--json]               # HTTP routes + L4 TCP/UDP exposures
+menina job list [--status S] [--json] | menina job cancel <id>   # deployment queue
+menina config validate [--json]      # resolve+validate the config tree (non-zero if invalid)
 menina doctor                        # config, k8s, registry, routes, TLS checks
 menina registry status
 menina registry credential [--username | --password | --regenerate]

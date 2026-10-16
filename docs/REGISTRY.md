@@ -127,6 +127,12 @@ then only consumes images; the **push-event auto-deploy** depends on Zot's
 events extension, so with an external registry use `menina app deploy` or CI
 instead.
 
+Individual apps can also point at a public image (e.g. `docker.io/library/redis`)
+while the bundled registry is enabled. Menina resolves digests **only** for
+images hosted by the bundled registry; images from any other registry deploy by
+**tag** (no digest pinning, no release history for rollback, and no push-event
+auto-deploy). Use `image.tag` for those apps and deploy with `menina app deploy`.
+
 > Note: Zot's **registry notifications** (Zot → Menina, this doc) are distinct
 > from Menina's outbound **deploy notifications** (`webhooks.deploy`,
 > `menina notify …`), which POST deploy outcomes to Slack/Discord/etc.

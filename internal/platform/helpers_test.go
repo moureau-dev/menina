@@ -91,6 +91,7 @@ func (f *fakeCluster) EnsureConfigMap(context.Context, string, string, map[strin
 	return nil
 }
 func (f *fakeCluster) EnsurePVC(context.Context, string, string, string, string) error { return nil }
+func (f *fakeCluster) DeletePVC(context.Context, string, string) error                 { return nil }
 func (f *fakeCluster) Ping(context.Context) error                                      { return nil }
 
 type stubResolver struct{ digest string }

@@ -76,6 +76,7 @@ func (s *stubCluster) EnsureConfigMap(context.Context, string, string, map[strin
 	return nil
 }
 func (s *stubCluster) EnsurePVC(context.Context, string, string, string, string) error { return nil }
+func (s *stubCluster) DeletePVC(context.Context, string, string) error                 { return nil }
 func (s *stubCluster) Ping(context.Context) error                                      { return nil }
 
 func TestWaitForRolloutSucceeds(t *testing.T) {

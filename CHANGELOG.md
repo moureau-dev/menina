@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `menina app deploy`/`rollback` accept `--no-wait` (queue and return) and
+  `--timeout`; the success message now includes the job id and the config
+  snapshot version used.
+- `menina app status` — last deployment job, release digest and observed phase.
+- `menina job list` / `menina job cancel <id>` — inspect and cancel deployment
+  jobs (control-plane `/jobs` and `/jobs/cancel` endpoints).
+- `menina project get <name>` — show a project's namespace, apps and environments.
+- `menina config validate` — resolve and validate the whole config tree without
+  applying; exits non-zero when invalid.
+- `menina app reset-volume` — scale to zero, delete the app's PVC and redeploy so
+  the volume is recreated empty.
+
+### Fixed
+- Apps pointing at an external registry (e.g. `redis:alpine`) no longer fail
+  digest resolution against the bundled Zot: digests are resolved only for
+  bundled-registry images, and other images deploy by tag.
+
 ## [0.0.8] - 2026-10-15
 
 ### Added

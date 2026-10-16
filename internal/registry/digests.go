@@ -44,6 +44,45 @@ func NewClient(baseURL, username, password string, insecure bool) *Client {
 	}
 }
 
+// Handles reports whether repository is hosted by this (bundled) registry. A
+// repository without an explicit host (e.g. "project/app") is assumed bundled;
+// one whose host differs (e.g. "docker.io/library/redis") is not.
+func (c *Client) Handles(repository string) bool {
+	repo := strings.TrimPrefix(strings.TrimSpace(repository), "/")
+	slash := strings.IndexByte(repo, '/')
+	if slash < 0 {
+		return true // bare name, no host
+	}
+	host := repo[:slash]
+	if !strings.ContainsAny(host, ".:") {
+		return true // first segment is a namespace, not a registry host
+	}
+	if c.BaseURL != "" {
+		hostOnly := host
+		if i := strings.LastIndex(host, ":"); i >= 0 {
+			hostOnly = host[:i]
+		}
+		if u, err := neturl.Parse(c.BaseURL); err == nil && (u.Host == host || u.Hostname() == hostOnly) {
+			return true
+		}
+	}
+	return false
+}
+
+// BundledResolver resolves tags only for images in the bundled registry. Images
+// from other registries are passed through unresolved (an empty digest) so they
+// deploy by tag rather than failing digest resolution against the bundled Zot.
+type BundledResolver struct {
+	Client *Client
+}
+
+func (b BundledResolver) ResolveTag(ctx context.Context, repository, tag string) (string, error) {
+	if b.Client == nil || !b.Client.Handles(repository) {
+		return "", nil
+	}
+	return b.Client.ResolveTag(ctx, repository, tag)
+}
+
 func (c *Client) ResolveTag(ctx context.Context, repository, tag string) (string, error) {
 	url := fmt.Sprintf("%s/v2/%s/manifests/%s", c.BaseURL, c.repoPath(repository), tag)
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)

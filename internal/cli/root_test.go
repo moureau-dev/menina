@@ -24,7 +24,7 @@ func execute(args ...string) error {
 
 func TestRootRegistersAllCommands(t *testing.T) {
 	root := NewRootCommand()
-	want := []string{"setup", "deploy", "status", "project", "environment", "app", "routes", "registry", "secret", "doctor", "serve", "proxy", "upgrade", "version", "install"}
+	want := []string{"setup", "deploy", "status", "project", "environment", "app", "routes", "registry", "secret", "job", "config", "doctor", "serve", "proxy", "upgrade", "version", "install"}
 	for _, name := range want {
 		if _, _, err := root.Find([]string{name}); err != nil {
 			t.Errorf("command %q not registered: %v", name, err)

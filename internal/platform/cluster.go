@@ -167,6 +167,14 @@ func (d *deferredCluster) EnsurePVC(ctx context.Context, namespace, name, size, 
 	return c.EnsurePVC(ctx, namespace, name, size, storageClass)
 }
 
+func (d *deferredCluster) DeletePVC(ctx context.Context, namespace, name string) error {
+	c, err := d.get()
+	if err != nil {
+		return err
+	}
+	return c.DeletePVC(ctx, namespace, name)
+}
+
 func (d *deferredCluster) EnsureConfigMap(ctx context.Context, namespace, name string, data map[string]string) error {
 	c, err := d.get()
 	if err != nil {

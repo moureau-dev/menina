@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -328,9 +329,55 @@ func (s *Service) controlMux() http.Handler {
 	})
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/job-status", s.handleJobStatus)
+	mux.HandleFunc("/jobs", s.handleJobs)
+	mux.HandleFunc("/jobs/cancel", s.handleJobCancel)
 	mux.HandleFunc("/deploy", s.handleDeploy)
 	mux.HandleFunc("/rollback", s.handleRollback)
 	return mux
+}
+
+func (s *Service) handleJobs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	q := r.URL.Query()
+	limit := 100
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	jobs, err := s.db.ListJobs(r.Context(), q.Get("status"), limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"jobs": jobs})
+}
+
+func (s *Service) handleJobCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.ID == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	cancelled, err := s.db.CancelJob(r.Context(), req.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": req.ID, "cancelled": cancelled})
 }
 
 func (s *Service) handleStream(w http.ResponseWriter, r *http.Request) {
@@ -452,7 +499,7 @@ func (s *Service) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	id, _, _ := s.db.JobIDByDedupKey(r.Context(), dedup)
 	s.jobs.EmitDeploy(app, notify.Event{Event: "deploy.queued", Action: "deploy", Status: "queued", Actor: "manual", Message: fmt.Sprintf("%s/%s/%s deploy queued", req.Project, req.Environment, req.App)})
-	writeJSON(w, http.StatusAccepted, map[string]any{"queued": true, "jobId": id})
+	writeJSON(w, http.StatusAccepted, map[string]any{"queued": true, "jobId": id, "snapshotVersion": snap.Version})
 }
 
 type rollbackRequest struct {

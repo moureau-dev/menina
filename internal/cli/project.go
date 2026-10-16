@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -37,7 +38,40 @@ func newProjectCommand(app *App) *cobra.Command {
 			return appMenu(cmd.Context(), app, p, project, name, "")
 		},
 	}
-	cmd.AddCommand(projectCreate(app), projectList(app), projectDelete(app), projectRestore(app))
+	cmd.AddCommand(projectGet(app), projectCreate(app), projectList(app), projectDelete(app), projectRestore(app))
+	return cmd
+}
+
+func projectGet(app *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "get <name>",
+		Short:   "Show a project and its environments",
+		Example: "  menina project get my-app\n  menina project get my-app --json",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p, err := config.LoadProject(config.ProjectsDir(app.Opts.ConfigDir), args[0])
+			if err != nil {
+				return err
+			}
+			if app.Opts.JSON {
+				return app.PrintJSON(map[string]any{
+					"name":         p.Name,
+					"namespace":    p.Namespace,
+					"description":  p.Description,
+					"apps":         len(p.Apps),
+					"environments": p.EnvOrder,
+				})
+			}
+			app.Infof("Project %q", p.Name)
+			app.Infof("  namespace:    %s", p.Namespace)
+			if p.Description != "" {
+				app.Infof("  description:  %s", p.Description)
+			}
+			app.Infof("  apps:         %d", len(p.Apps))
+			app.Infof("  environments: %s", strings.Join(p.EnvOrder, ", "))
+			return nil
+		},
+	}
 	return cmd
 }
 

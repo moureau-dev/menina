@@ -5,6 +5,7 @@ import (
 
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/platform"
+	"github.com/moureau-dev/menina/internal/registry"
 )
 
 func newServeCommand(app *App) *cobra.Command {
@@ -27,7 +28,9 @@ func newServeCommand(app *App) *cobra.Command {
 			}
 			if cfg.Registry.Enabled {
 				if rc, err := registryClient(cfg); err == nil {
-					svc.SetDigestResolver(rc)
+					// Only the bundled registry is digest-resolved; images from
+					// other registries deploy by tag (no push→auto-deploy).
+					svc.SetDigestResolver(registry.BundledResolver{Client: rc})
 				} else {
 					app.Log.Warn("registry digest resolver unavailable", "error", err)
 				}

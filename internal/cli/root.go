@@ -77,6 +77,8 @@ func NewRootCommand() *cobra.Command {
 		newRoutesCommand(app),
 		newRegistryCommand(app),
 		newSecretCommand(app),
+		newJobCommand(app),
+		newConfigCommand(app),
 		newDoctorCommand(app),
 		newBackupCommand(app),
 		newRestoreCommand(app),

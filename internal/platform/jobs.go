@@ -203,7 +203,7 @@ func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
 		}
 	}
 	current, err := j.cluster.WorkloadStatus(ctx, app.Namespace, app.Name)
-	if err == nil && current != nil {
+	if digest != "" && err == nil && current != nil {
 		desiredImage := app.Repository + "@" + digest
 		if current.Image == desiredImage && current.ReadyReplicas >= current.Replicas && current.Replicas >= app.Replicas.Min {
 			j.log.Info("workload already at desired digest; no-op", "app", app.Name, "digest", digest)
@@ -238,16 +238,20 @@ func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
 		return fmt.Errorf("rollout: %w", err)
 	}
 	// Record the release only after the rollout succeeds, so history never
-	// claims a deployment that is not actually running in Kubernetes.
-	_ = j.db.RecordRelease(ctx, database.Release{
-		Project:     app.Project,
-		Environment: app.Environment,
-		App:         app.Name,
-		Repository:  app.Repository,
-		Tag:         app.Tag,
-		Digest:      digest,
-		Status:      "deployed",
-	})
+	// claims a deployment that is not actually running in Kubernetes. Images
+	// from external registries deploy by tag and have no digest; there is
+	// nothing immutable to record, so rollback history is not kept for them.
+	if digest != "" {
+		_ = j.db.RecordRelease(ctx, database.Release{
+			Project:     app.Project,
+			Environment: app.Environment,
+			App:         app.Name,
+			Repository:  app.Repository,
+			Tag:         app.Tag,
+			Digest:      digest,
+			Status:      "deployed",
+		})
+	}
 	_ = j.db.UpsertObserved(ctx, database.Observed{
 		Project:        app.Project,
 		Environment:    app.Environment,
