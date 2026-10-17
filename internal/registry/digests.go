@@ -51,7 +51,11 @@ func (c *Client) Handles(repository string) bool {
 	repo := strings.TrimPrefix(strings.TrimSpace(repository), "/")
 	slash := strings.IndexByte(repo, '/')
 	if slash < 0 {
-		return true // bare name, no host
+		// A bare name such as "redis" (from image: redis:alpine) is an external
+		// Docker Hub image, not a bundled registry repository. Assuming it was
+		// bundled made digest resolution request /v2/redis/manifests/alpine
+		// from Zot and fail with 404.
+		return false
 	}
 	host := repo[:slash]
 	if !strings.ContainsAny(host, ".:") {
