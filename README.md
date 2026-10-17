@@ -67,6 +67,24 @@ sudo menina deploy
 Installing Menina does **not** require Docker: k3s ships its own containerd
 runtime.
 
+### Client (laptop or CI)
+
+The client builds on Linux, macOS and Windows and only needs the manifest
+commands (`init`, `validate`, `apply`, `build`, `push`). It is included in the
+host binary, or install the standalone client:
+
+```bash
+# Linux / macOS
+curl -fsSL https://menina.moureau.dev/install-client.sh | sh
+
+# Windows (PowerShell)
+irm https://menina.moureau.dev/install-client.ps1 | iex
+```
+
+The installers verify the release checksum and add `menina-client` to your
+`PATH` (user-level on Windows). `menina-client apply --host user@vps` sends the
+manifest over SSH; build/push use the local Docker daemon.
+
 **Prerequisites for a clean Ubuntu Server VPS**: `amd64` or `arm64`, systemd,
 `curl`, network access to `get.k3s.io` / GitHub Releases / `ghcr.io` /
 Let's Encrypt, and ports `80` and `443` reachable from the internet (plus `9000`

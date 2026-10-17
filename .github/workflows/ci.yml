@@ -20,3 +20,10 @@ jobs:
         run: go test -race ./...
       - name: build
         run: CGO_ENABLED=0 go build -trimpath -o bin/menina ./cmd/menina
+      - name: build client (all platforms)
+        run: |
+          mkdir -p bin
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 \
+              go build -trimpath -o "bin/menina-client-${target%/*}-${target#*/}" ./cmd/menina-client
+          done

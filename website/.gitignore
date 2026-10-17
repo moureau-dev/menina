@@ -7,3 +7,5 @@ dist/
 public/llms.txt
 public/docs/
 public/install.sh
+public/install-client.sh
+public/install-client.ps1

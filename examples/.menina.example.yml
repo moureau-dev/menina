@@ -1,3 +1,4 @@
+version: 1
 project: demo
 environment: production
 
@@ -14,11 +15,13 @@ vars:
 defaults:
   context: .
   tag: ${ENVIRONMENT}            # default tag; matches defaults.imageTagStrategy
+  registry: registry.example.com # used by the client to derive built image repositories
 
 # Persistent storage definitions.
 # Each storage has a name, size, path, and access mode.
 # The path is the mount point inside the container.
-# The access mode can be single-writer (default) or multi-writer.
+# single-writer (the default) keeps replica count at 1. multi-writer needs a
+# ReadWriteMany storage class, which Menina does not configure yet.
 storages:
   pgdata:
     size: 2Gi
@@ -29,10 +32,14 @@ storages:
     size: 1Gi
     path:  ${MOUNT_BASE}/sqlite/data
 
+  jobsdata:
+    size: 1Gi
+    path: ${MOUNT_BASE}/jobs/data
+
   reports:
     size: 1Gi
     path: ${MOUNT_BASE}/reports
-    access: multi-writer
+    access: single-writer
 
 # Application definitions.
 # Each app has a dockerfile or an image, a port, and optional environment variables,
@@ -42,7 +49,7 @@ apps:
     dockerfile: apps/api/Dockerfile
     port: 8080
     host: api.${DOMAIN}
-    env: { REDIS_URL: "redis://redis:6379", DB_PATH: "${MOUNT_BASE}/sqlite" } # environment variables merged in the container
+    env: { REDIS_URL: "redis://redis:6379", DB_PATH: "${MOUNT_BASE}/sqlite/data" } # environment variables merged in the container
     storage: [sqlite] # list of storage names, or a single name, or an object with the name and overrides ({ use: sqlite, path: /data }) or list of such objects
     replicas: 1 # optional, defaults to 1. can be a single number or an object with min and max values
 
@@ -70,11 +77,12 @@ workers:
     from: api
     command: ["/app/worker"]
     replicas: 1
-    env: { QUEUE: default }
+    storage: [jobsdata]               # workers do not inherit storage from `from`
+    env: { QUEUE: default, DB_PATH: "${MOUNT_BASE}/jobs/data" }
 
   report:
     dockerfile: apps/report/Dockerfile   # own image
-    replicas: { min: 2, max: 5    }
+    replicas: 1                          # reports is single-writer
     storage: [reports]
     secrets: [DATABASE_URL]
     env: { 

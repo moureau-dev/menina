@@ -1,4 +1,4 @@
-package cli
+package clientcli
 
 import (
 	"bytes"
@@ -108,7 +108,7 @@ func newInitCommand(app *App) *cobra.Command {
 			if err := os.WriteFile(file, data, 0o644); err != nil {
 				return err
 			}
-			app.Infof("Created %s (project %q, environment %q)", file, project, environment)
+			app.infof("Created %s (project %q, environment %q)", file, project, environment)
 			return nil
 		},
 	}
@@ -176,7 +176,7 @@ func newValidateCommand(app *App) *cobra.Command {
 				return err
 			}
 			r, err := f.Render(manifest.RenderOptions{
-				ConfigDir: app.Opts.ConfigDir,
+				ConfigDir: app.configDir(),
 				Registry:  firstNonEmpty(o.Registry, f.Defaults.Registry),
 				Tag:       o.Tag,
 			})
@@ -186,8 +186,8 @@ func newValidateCommand(app *App) *cobra.Command {
 			if err := validateRendered(app, r, false); err != nil {
 				return err
 			}
-			if app.Opts.JSON {
-				return app.PrintJSON(manifestSummary(r))
+			if app.jsonOutput() {
+				return app.printJSON(manifestSummary(r))
 			}
 			printManifestSummary(app, r)
 			return nil
@@ -235,12 +235,12 @@ func newApplyCommand(app *App) *cobra.Command {
 				registry = f.Defaults.Registry
 			}
 			if registry == "" {
-				if cfg, err := app.LoadConfig(); err == nil {
+				if cfg, err := app.loadConfig(); err == nil {
 					registry = cfg.Registry.Domain
 				}
 			}
 			r, err := f.Render(manifest.RenderOptions{
-				ConfigDir: app.Opts.ConfigDir,
+				ConfigDir: app.configDir(),
 				Registry:  registry,
 				Tag:       o.Tag,
 			})
@@ -251,25 +251,25 @@ func newApplyCommand(app *App) *cobra.Command {
 				return err
 			}
 			if check {
-				if app.Opts.JSON {
+				if app.jsonOutput() {
 					summary := manifestSummary(r)
 					summary["applied"] = false
-					return app.PrintJSON(summary)
+					return app.printJSON(summary)
 				}
 				printManifestSummary(app, r)
-				app.Infof("Manifest OK (not written)")
+				app.infof("Manifest OK (not written)")
 				return nil
 			}
-			if err := r.Write(app.Opts.ConfigDir); err != nil {
+			if err := r.Write(app.configDir()); err != nil {
 				return err
 			}
-			if app.Opts.JSON {
+			if app.jsonOutput() {
 				summary := manifestSummary(r)
 				summary["applied"] = true
-				return app.PrintJSON(summary)
+				return app.printJSON(summary)
 			}
 			printManifestSummary(app, r)
-			app.Infof("Applied. Push images to deploy, or run `menina app deploy <app> --project %s --environment %s`.", r.Project.Name, r.Environment.Name)
+			app.infof("Applied. Push images to deploy, or run `menina app deploy <app> --project %s --environment %s`.", r.Project.Name, r.Environment.Name)
 			return nil
 		},
 	}
@@ -346,12 +346,12 @@ func runManifestBuild(cmd *cobra.Command, app *App, o *manifestOptions, filter s
 		registry = f.Defaults.Registry
 	}
 	if registry == "" {
-		if cfg, err := app.LoadConfig(); err == nil {
+		if cfg, err := app.loadConfig(); err == nil {
 			registry = cfg.Registry.Domain
 		}
 	}
 	r, err := f.Render(manifest.RenderOptions{
-		ConfigDir: app.Opts.ConfigDir,
+		ConfigDir: app.configDir(),
 		Registry:  registry,
 		Tag:       o.Tag,
 	})
@@ -363,10 +363,10 @@ func runManifestBuild(cmd *cobra.Command, app *App, o *manifestOptions, filter s
 		return err
 	}
 	if len(targets) == 0 {
-		if app.Opts.JSON {
-			return app.PrintJSON(map[string]any{"images": []string{}})
+		if app.jsonOutput() {
+			return app.printJSON(map[string]any{"images": []string{}})
 		}
-		app.Infof("No buildable apps selected")
+		app.infof("No buildable apps selected")
 		return nil
 	}
 
@@ -378,22 +378,22 @@ func runManifestBuild(cmd *cobra.Command, app *App, o *manifestOptions, filter s
 				args = append(args, "-f", t.Dockerfile)
 			}
 			args = append(args, t.Context)
-			if err := runDocker(cmd, dryRun, app.Opts.JSON, args...); err != nil {
+			if err := runDocker(cmd, dryRun, app.jsonOutput(), args...); err != nil {
 				return err
 			}
 		}
 		if push {
-			if err := runDocker(cmd, dryRun, app.Opts.JSON, "push", t.Image()); err != nil {
+			if err := runDocker(cmd, dryRun, app.jsonOutput(), "push", t.Image()); err != nil {
 				return err
 			}
 		}
 	}
-	if app.Opts.JSON {
+	if app.jsonOutput() {
 		images := make([]string, 0, len(targets))
 		for _, t := range targets {
 			images = append(images, t.Image())
 		}
-		return app.PrintJSON(map[string]any{"images": images})
+		return app.printJSON(map[string]any{"images": images})
 	}
 	return nil
 }
@@ -452,24 +452,24 @@ func printManifestSummary(app *App, r *manifest.Rendered) {
 			apps++
 		}
 	}
-	app.Infof("Manifest: project %q, environment %q (%d app(s), %d worker(s), %d image(s))",
+	app.infof("Manifest: project %q, environment %q (%d app(s), %d worker(s), %d image(s))",
 		r.Project.Name, r.Environment.Name, apps, workers, len(r.Targets))
 	for _, warning := range r.Warnings {
-		app.Infof("warning: %s", warning)
+		app.infof("warning: %s", warning)
 	}
 }
 
 // validateRendered resolves the rendered project with the host configuration
 // when available. When required is true, a missing config.yml is an error.
 func validateRendered(app *App, r *manifest.Rendered, required bool) error {
-	cfg, err := app.LoadConfig()
+	cfg, err := app.loadConfig()
 	if err != nil {
 		if required {
 			return fmt.Errorf("load platform config: %w", err)
 		}
 		return nil
 	}
-	projects, err := config.LoadAllProjects(config.ProjectsDir(app.Opts.ConfigDir))
+	projects, err := config.LoadAllProjects(config.ProjectsDir(app.configDir()))
 	if err != nil {
 		return err
 	}
@@ -581,7 +581,7 @@ func sshApply(ctx context.Context, app *App, host string, data []byte, o *manife
 	if check {
 		args = append(args, "--check")
 	}
-	if app.Opts.JSON {
+	if app.jsonOutput() {
 		args = append(args, "--json")
 	}
 	c := exec.CommandContext(ctx, "ssh", args...)

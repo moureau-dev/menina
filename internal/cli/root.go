@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/moureau-dev/menina/internal/clientcli"
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/platform"
@@ -68,11 +69,6 @@ func NewRootCommand() *cobra.Command {
 
 	root.AddCommand(
 		newCreateCommand(app),
-		newInitCommand(app),
-		newValidateCommand(app),
-		newApplyCommand(app),
-		newBuildCommand(app),
-		newPushCommand(app),
 		newSetupCommand(app),
 		newDeployCommand(app),
 		newStatusCommand(app),
@@ -94,6 +90,10 @@ func NewRootCommand() *cobra.Command {
 		newVersionCommand(app),
 		newInstallCommand(app),
 	)
+	root.AddCommand(clientcli.NewCommands(clientcli.Options{
+		ConfigDir: &app.Opts.ConfigDir,
+		JSON:      &app.Opts.JSON,
+	})...)
 	return root
 }
 

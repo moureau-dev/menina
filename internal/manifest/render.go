@@ -3,6 +3,7 @@ package manifest
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -157,9 +158,9 @@ func (f *File) renderWorkload(name string, w Workload, worker bool, tag, registr
 		if w.Resources == nil {
 			base.Resources = src.Resources
 		}
-		// Storage is deliberately not inherited: a worker mounting its parent
-		// app's SQLite volume would be a second writer.
-		base.Storage = nil
+		// Storage is deliberately not inherited from the source app: a worker
+		// mounting its parent app's SQLite volume would be a second writer.
+		// An explicit worker storage block is kept.
 	}
 
 	kind := config.WorkloadService
@@ -209,7 +210,7 @@ func (f *File) renderWorkload(name string, w Workload, worker bool, tag, registr
 		if !secretNameRe.MatchString(secret) {
 			return nil, nil, nil, nil, fmt.Errorf("%q: invalid secret name %q", name, secret)
 		}
-		secrets[secret] = "file:" + filepath.Join(configDir, "secrets", f.Project, f.Environment, secret)
+		secrets[secret] = "file:" + path.Join(configDir, "secrets", f.Project, f.Environment, secret)
 	}
 
 	app := &config.AppFile{

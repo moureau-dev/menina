@@ -40,8 +40,47 @@ jobs:
           name: menina-linux-${{ matrix.goarch }}
           path: dist/menina-linux-${{ matrix.goarch }}
 
+  client-release:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: build client
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          EXT=""
+          if [ "${GOOS}" = "windows" ]; then EXT=".exe"; fi
+          NAME="menina-client-${GOOS}-${GOARCH}${EXT}"
+          mkdir -p dist
+          CGO_ENABLED=0 go build -trimpath \
+            -ldflags "-s -w \
+              -X github.com/moureau-dev/menina/internal/version.Version=${VERSION} \
+              -X github.com/moureau-dev/menina/internal/version.Commit=${COMMIT} \
+              -X github.com/moureau-dev/menina/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o "dist/${NAME}" ./cmd/menina-client
+      - uses: actions/upload-artifact@v4
+        with:
+          name: menina-client-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/menina-client-${{ matrix.goos }}-${{ matrix.goarch }}*
+
   publish:
-    needs: release
+    needs: [release, client-release]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +90,7 @@ jobs:
           merge-multiple: true
       - name: checksums
         working-directory: dist
-        run: sha256sum menina-linux-* > checksums.txt
+        run: sha256sum menina-* > checksums.txt
       - name: extract release notes from CHANGELOG.md
         run: |
           V="${GITHUB_REF_NAME#v}"
@@ -70,4 +109,5 @@ jobs:
           body_path: RELEASE_NOTES.md
           files: |
             dist/menina-linux-*
+            dist/menina-client-*
             dist/checksums.txt

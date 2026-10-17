@@ -225,6 +225,38 @@ func TestWriteCreatesConfigAndPreservesProjectMetadata(t *testing.T) {
 	}
 }
 
+func TestWorkerKeepsExplicitStorageAndDoesNotInherit(t *testing.T) {
+	doc := `project: demo
+environment: production
+storages:
+  appdata: { size: 1Gi, path: /app }
+  jobdata: { size: 1Gi, path: /job }
+apps:
+  api:
+    dockerfile: Dockerfile
+    port: 8080
+    storage: [appdata]
+workers:
+  jobs:
+    from: api
+    storage: [jobdata]
+`
+	f, err := Load([]byte(doc), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := f.Render(RenderOptions{ConfigDir: "/etc/menina", Registry: "registry.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Apps["api"].Storage; got == nil || got.MountPath != "/app" {
+		t.Fatalf("api storage = %+v", got)
+	}
+	if got := r.Apps["jobs"].Storage; got == nil || got.MountPath != "/job" {
+		t.Fatalf("worker storage = %+v, want its explicit volume", got)
+	}
+}
+
 func TestWithEnvironmentRewritesPlaceholders(t *testing.T) {
 	data, err := WithEnvironment([]byte(sample), "staging")
 	if err != nil {
