@@ -3,7 +3,25 @@ name: ci
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'website/**'
+      - 'llms.txt'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.dockerignore'
+      - 'examples/**'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'website/**'
+      - 'llms.txt'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.dockerignore'
+      - 'examples/**'
 
 jobs:
   build-test:
