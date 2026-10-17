@@ -52,7 +52,8 @@ apps:
   pg:
     image: postgres:15-alpine
     port: 5432
-    env: { POSTGRES_PASSWORD: secret }
+    env: { POSTGRES_DB: demo, POSTGRES_USER: demo }   # non-sensitive
+    secrets: [POSTGRES_PASSWORD]                      # value lives on the host
     storage: [pgdata]
 
 # Worker definitions.
