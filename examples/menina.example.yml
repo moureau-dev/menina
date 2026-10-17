@@ -10,12 +10,17 @@ storages:
   pgdata:
     size: 1Gi
     path: /var/lib/postgresql/data
-    access: single-write
+    access: single-writer
 
   sqlite:
     size: 1Gi
     path:  /var/lib/sqlite/data
-    access: single-write
+    access: single-writer
+
+  reports:
+    size: 1Gi
+    path: /var/reports
+    access: multi-writer
 
 apps:
   api:
