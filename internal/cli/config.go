@@ -104,9 +104,13 @@ func configRevisions(app *App) *cobra.Command {
 				app.Infof("No revisions.")
 				return nil
 			}
-			app.Infof("%-30s %-24s %-14s %s", "ID", "CREATED", "PROJECT/ENV", "FILES")
+			app.Infof("%-30s %-24s %-14s %-10s %s", "ID", "CREATED", "PROJECT/ENV", "FILES", "ACTOR/SOURCE")
 			for _, rev := range filtered {
-				app.Infof("%-30s %-24s %-14s %d", rev.ID, rev.CreatedAt.Format("2006-01-02T15:04:05Z07:00"), rev.Project+"/"+rev.Environment, rev.Files)
+				who := rev.Actor
+				if rev.SourceRepo != "" {
+					who += " " + rev.SourceRepo
+				}
+				app.Infof("%-30s %-24s %-14s %-10d %s", rev.ID, rev.CreatedAt.Format("2006-01-02T15:04:05Z07:00"), rev.Project+"/"+rev.Environment, rev.Files, who)
 			}
 			return nil
 		},

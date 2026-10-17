@@ -68,6 +68,7 @@ errors use the generic code/exit.
 | `menina app status <name> --project P --environment E [--json]` | Last deployment job, release digest and observed phase for an app |
 | `menina job list [--status S] [--limit N] [--json]` | List deployment jobs, newest first |
 | `menina job watch <id> [--json] [--timeout D]` | Stream NDJSON job snapshots until a terminal state |
+| `menina job list/watch --host` (client) | Proxy job list/watch over SSH |
 | `menina job cancel <id>` | Cancel a pending or processing deployment job |
 | `menina config validate [--json]` | Resolve the whole config tree and validate it without applying (non-zero exit when invalid) |
 | `menina config revisions [--project P] [--environment E] [--json]` | List pre-apply configuration snapshots |
@@ -109,7 +110,7 @@ errors use the generic code/exit.
 | `menina app <name> --project P [--environment E]` | Interactive: app menu for that app |
 | `menina app create <name> [flags]` | Create an app (interactive without `--yes`) |
 | `menina app list --project P [--json]` | List apps |
-| `menina app deploy <name> --project P --environment E [--yes] [--no-wait] [--timeout D] [--verify]` | Deploy and wait for the rollout (print job id + config snapshot version). `--no-wait` queues and returns; `--verify` checks public HTTP routes and TCP L4 ports after the rollout |
+| `menina app deploy <name> --project P --environment E [--yes] [--no-wait] [--timeout D] [--verify]` | Deploy and wait for the rollout (print job id + config snapshot version). `--no-wait` queues and returns; `--verify` checks public HTTP routes and TCP L4 ports after the rollout; it is a reachability check, not a correctness/body/status assertion |
 | `menina app status <name> --project P --environment E [--json]` | Last job, release digest and observed status |
 | `menina app reset-volume <name> --project P --environment E [--yes]` | Scale to zero, delete the PVC, and redeploy so the volume is recreated empty (data is lost) |
 | `menina app logs <name> --project P --environment E [--follow] [--tail N] [--since D]` | Stream workload logs, bounded by tail lines and/or age |
@@ -133,8 +134,8 @@ prompt for the environment (auto-selected when the project has exactly one).
 | Command | Purpose |
 | --- | --- |
 | `menina secret set <name> --project P --environment E [--file F]` | Store a secret value at `secrets/P/E/<name>` (read from stdin — hidden on a terminal — or `--file`). Prints the `file:` reference to use in `apps/*.yml` |
-| `menina secret rotate <name> --project P --environment E [--file F] [--generate]` | Replace a secret value from stdin/file, or generate a random one |
-| `menina secret list --project P --environment E [--json]` | List secret names (values are never shown) |
+| `menina secret rotate <name> --project P --environment E [--file F] [--generate] [--restart]` | Replace a secret value; `--restart` queues deploys for referencing apps (production needs `--yes`) |
+| `menina secret list --project P --environment E [--json] [--references]` | List secret names (values are never shown); `--references` shows referencing apps |
 | `menina secret remove <name> --project P --environment E [--yes]` | Delete a stored secret value |
 | `menina secret verify [name] --project P --environment E [--json]` | Check that secret files exist, are readable and are not empty |
 

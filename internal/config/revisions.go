@@ -1,11 +1,14 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -22,12 +25,27 @@ type RevisionEntry struct {
 
 // Revision is a snapshot of the files an apply changed.
 type Revision struct {
-	ID          string          `json:"id"`
-	Project     string          `json:"project"`
-	Environment string          `json:"environment"`
-	CreatedAt   time.Time       `json:"createdAt"`
-	Files       int             `json:"files"`
-	Entries     []RevisionEntry `json:"entries,omitempty"`
+	ID             string          `json:"id"`
+	Project        string          `json:"project"`
+	Environment    string          `json:"environment"`
+	CreatedAt      time.Time       `json:"createdAt"`
+	Actor          string          `json:"actor,omitempty"`
+	SourceRepo     string          `json:"sourceRepo,omitempty"`
+	SourceRevision string          `json:"sourceRevision,omitempty"`
+	PlanID         string          `json:"planId,omitempty"`
+	ContentHash    string          `json:"contentHash,omitempty"`
+	Files          int             `json:"files"`
+	Entries        []RevisionEntry `json:"entries,omitempty"`
+}
+
+// RevisionMeta records attribution for a revision.
+type RevisionMeta struct {
+	Project        string
+	Environment    string
+	Actor          string
+	SourceRepo     string
+	SourceRevision string
+	PlanID         string
 }
 
 func revisionsDir(configDir string) string {
@@ -37,6 +55,11 @@ func revisionsDir(configDir string) string {
 // SaveRevision captures the current state of paths (absolute paths under
 // configDir) and writes a revision file. It returns the revision id.
 func SaveRevision(configDir, project, environment string, paths []string) (string, error) {
+	return SaveRevisionWithMeta(configDir, RevisionMeta{Project: project, Environment: environment, Actor: currentUser()}, paths)
+}
+
+// SaveRevisionWithMeta is SaveRevision with attribution metadata.
+func SaveRevisionWithMeta(configDir string, meta RevisionMeta, paths []string) (string, error) {
 	seen := map[string]bool{}
 	entries := make([]RevisionEntry, 0, len(paths))
 	for _, path := range paths {
@@ -66,7 +89,17 @@ func SaveRevision(configDir, project, environment string, paths []string) (strin
 	}
 	now := time.Now().UTC()
 	id := now.Format("20060102T150405.000000000")
-	rev := Revision{ID: id, Project: project, Environment: environment, CreatedAt: now, Entries: entries}
+	if meta.Actor == "" {
+		meta.Actor = currentUser()
+	}
+	rev := Revision{
+		ID: id, Project: meta.Project, Environment: meta.Environment, CreatedAt: now,
+		Actor: meta.Actor, SourceRepo: meta.SourceRepo, SourceRevision: meta.SourceRevision,
+		PlanID: meta.PlanID, Entries: entries,
+	}
+	hashData, _ := json.Marshal(entries)
+	sum := sha256.Sum256(hashData)
+	rev.ContentHash = hex.EncodeToString(sum[:])
 	data, err := json.Marshal(rev)
 	if err != nil {
 		return "", err
@@ -156,6 +189,15 @@ func RestoreRevision(configDir, id string) error {
 	return nil
 }
 
+func revisionRetention() int {
+	if v := os.Getenv("MENINA_REVISION_RETENTION"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return maxRevisions
+}
+
 func pruneRevisions(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -167,11 +209,12 @@ func pruneRevisions(dir string) error {
 			names = append(names, entry.Name())
 		}
 	}
-	if len(names) <= maxRevisions {
+	limit := revisionRetention()
+	if len(names) <= limit {
 		return nil
 	}
 	sort.Strings(names)
-	for _, name := range names[:len(names)-maxRevisions] {
+	for _, name := range names[:len(names)-limit] {
 		_ = os.Remove(filepath.Join(dir, name))
 	}
 	return nil

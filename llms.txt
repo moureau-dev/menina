@@ -40,11 +40,16 @@ menina apply --host user@vps  # desired state over SSH (config only)
 menina apply --diff           # show create/update plan, write nothing
 menina apply --verify         # write, then re-read and verify
 menina apply --prune          # remove owned apps no longer declared (needs source.repo)
+menina apply --diff --json    # prints planId + stateToken
+menina apply --from-plan ID   # execute the reviewed plan (checks hashes/base token)
+menina apply --if-revision TOKEN  # compare-and-swap on resolved config state
 menina build --push         # build/push images locally; push triggers deploys
 menina push --build --filter api,web
 menina build --build-arg VITE_API_URL="$VITE_API_URL"
 printf '%s' "$DATABASE_URL" | menina secret set DATABASE_URL --host user@vps --project demo --environment production
 menina secret rotate API_KEY --host user@vps --project demo --environment production --generate
+menina secret list --host user@vps --project demo --environment production --references
+menina secret rotate DATABASE_URL --host user@vps --project demo --environment production --restart --yes
 menina schema --json        # embedded manifest JSON Schema
 menina capabilities --json  # local version, os/arch, schema + feature flags
 menina capabilities --host user@vps --json  # host capabilities + compatibility
@@ -66,7 +71,7 @@ codes: 1 generic, 2 validation, 3 not_found, 4 auth, 5 timeout, 6 conflict,
 command is `menina`, falling back to `menina-client` when a host `menina` is
 already present. Running `menina` with no subcommand on a terminal opens the
 client TUI (same style as the host menu, labelled client). Manifest JSON Schema:
-`https://menina.moureau.dev/schema/menina.schema.json` (`menina init` adds the
+`https://menina.moureau.dev/schema/v1/menina.schema.json` (`menina init` adds the
 `yaml-language-server` header). Full manifest schema,
 flags, CI patterns, and limitations: `docs/CLIENT-CLI.md`.
 
@@ -201,6 +206,7 @@ menina secret remove DATABASE_URL --project <p> --environment <env> --yes
 menina status [--json]               # includes the registry host
 menina routes [--json]               # HTTP routes + L4 TCP/UDP exposures
 menina job list [--status S] [--json] | menina job watch <id> | menina job cancel <id>   # deployment queue/events
+menina job list --host user@vps | menina job watch <id> --host user@vps --json           # client SSH proxy
 menina config revisions [--project P] | menina config rollback <id> --yes   # desired-state snapshots
 menina config validate [--json]      # resolve+validate the config tree (non-zero if invalid)
 menina doctor                        # config, k8s, registry, routes, TLS checks

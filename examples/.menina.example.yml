@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://menina.moureau.dev/schema/menina.schema.json
+# yaml-language-server: $schema=https://menina.moureau.dev/schema/v1/menina.schema.json
 version: 1
 project: demo
 environment: production

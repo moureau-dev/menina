@@ -109,7 +109,7 @@ workers:
 | `project` | Project name in Menina |
 | `environment` | Environment to write (default target) |
 | `vars` | Non-secret values for `${VAR}` interpolation |
-| `source` | `{repo, revision}` ownership of the apps declared here |
+| `source` | `{repo, revision}` ownership hint for the apps declared here; not an authorization boundary |
 | `defaults` | `context`, `tag`, `registry` defaults |
 | `storages` | Named storage definitions |
 | `apps` | Listening workloads (services) |
@@ -124,15 +124,18 @@ passed to containers — set container values under `env`.
 The manifest has a JSON Schema:
 
 ```text
-https://menina.moureau.dev/schema/menina.schema.json
+https://menina.moureau.dev/schema/v1/menina.schema.json
 ```
+
+The unversioned `/schema/menina.schema.json` remains an alias. Old clients keep
+their embedded schema; new ones should use the versioned URL.
 
 Add this comment at the top of `.menina.yml` for autocomplete and inline
 validation in editors that use the YAML language server (VS Code, Neovim,
 JetBrains, etc.):
 
 ```yaml
-# yaml-language-server: $schema=https://menina.moureau.dev/schema/menina.schema.json
+# yaml-language-server: $schema=https://menina.moureau.dev/schema/v1/menina.schema.json
 ```
 
 `menina init` writes that header automatically. The schema covers the manifest
@@ -368,7 +371,10 @@ menina apply --check               # render + validate, write nothing
 menina apply --diff                # show file changes, write nothing
 menina apply --dry-run --json      # same plan as structured JSON
 menina apply --verify              # write, then re-read and verify apps/overrides
-menina apply --prune               # remove owned apps not declared here
+menina apply --prune --yes         # remove owned apps not declared here
+menina apply --diff --prune --json # planId + stateToken for review
+menina apply --from-plan <plan-id> # execute exactly the reviewed plan
+menina apply --if-revision <token> # compare-and-swap on current state
 menina apply --host deploy@vps     # pipe over SSH
 menina apply --host deploy@vps -e staging
 ```
@@ -377,9 +383,18 @@ menina apply --host deploy@vps -e staging
 environment definition, `apps/<name>.yml`, and per-app overrides. It preserves
 an existing `project.yml` and environment definition. It performs no pruning.
 
-`apply` records a pre-apply revision under `<config-dir>/.revisions/`. List them
-with `menina config revisions` and restore with
-`menina config rollback <id>`. Revisions restore YAML only, not deployed images.
+`apply` takes a config-dir lock and records a pre-apply revision under
+`<config-dir>/.revisions/`. List them with `menina config revisions` and restore
+with `menina config rollback <id>`. Revisions restore YAML only, not deployed
+images. Revisions record actor, source repo/revision, plan id and a content
+hash; retention defaults to 50 and is configurable with
+`MENINA_REVISION_RETENTION`. `.revisions/` is included in backup/restore.
+
+`--diff`/`--dry-run` save a plan under `<config-dir>/.plans/` and print its
+`planId` plus the current `stateToken`. `--from-plan` re-checks the base state
+token and every written/deleted file hash before executing, so the reviewed
+plan is exactly what runs. `--if-revision` compares the canonical resolved
+state token, not the latest pre-apply revision id.
 
 `--prune` removes environment overrides for owned apps that this manifest no
 longer declares, and removes the app definition when no other environment uses
@@ -436,11 +451,22 @@ menina push --build --filter api
 Pushes the manifest's built images. External `image:` apps are skipped. A push
 triggers auto-deploy for enabled apps that were already applied.
 
+### `job`
+
+```bash
+menina job list --host root@vps
+menina job watch <id> --host root@vps --json --timeout 10m
+```
+
+The client proxies `ssh -T <host> menina job ...`; stdout/stderr and the remote
+exit code are propagated. `--json` is NDJSON for `job watch`.
+
 ### `schema` and `capabilities`
 
 ```bash
 menina schema                  # embedded manifest JSON Schema
 menina schema --json           # {schemaVersion, schemaUrl, schema}
+menina schema --version
 menina schema --url
 menina capabilities --json     # version, os/arch, schema version, feature flags, commands
 menina capabilities --host root@vps --json

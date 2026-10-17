@@ -76,7 +76,7 @@ func clientSecretSet(app *App, hostFlag *string) *cobra.Command {
 
 func clientSecretRotate(app *App, hostFlag *string) *cobra.Command {
 	var project, environment, fromFile string
-	var generate bool
+	var generate, restart, yes bool
 	cmd := &cobra.Command{
 		Use:   "rotate <name>",
 		Short: "Replace a stored secret value on the host",
@@ -97,7 +97,14 @@ func clientSecretRotate(app *App, hostFlag *string) *cobra.Command {
 			var stdin []byte
 			if generate {
 				remoteArgs = append(remoteArgs, "--generate")
-			} else {
+			}
+			if restart {
+				remoteArgs = append(remoteArgs, "--restart")
+			}
+			if yes {
+				remoteArgs = append(remoteArgs, "--yes")
+			}
+			if !generate {
 				value, err := readClientSecret(cmd, app, fromFile)
 				if err != nil {
 					return err
@@ -117,11 +124,14 @@ func clientSecretRotate(app *App, hostFlag *string) *cobra.Command {
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
 	cmd.Flags().StringVar(&fromFile, "file", "", "read the value from a local file instead of stdin")
 	cmd.Flags().BoolVar(&generate, "generate", false, "generate a random value on the host")
+	cmd.Flags().BoolVar(&restart, "restart", false, "queue deployments for apps referencing the secret")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm restarting production apps")
 	return cmd
 }
 
 func clientSecretList(app *App, hostFlag *string) *cobra.Command {
 	var project, environment string
+	var references bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List secret names (values are never shown)",
@@ -135,6 +145,9 @@ func clientSecretList(app *App, hostFlag *string) *cobra.Command {
 				return err
 			}
 			remoteArgs := []string{"secret", "list", "--project", project, "--environment", environment}
+			if references {
+				remoteArgs = append(remoteArgs, "--references")
+			}
 			if app.jsonOutput() {
 				remoteArgs = append(remoteArgs, "--json")
 			}
@@ -143,6 +156,7 @@ func clientSecretList(app *App, hostFlag *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
+	cmd.Flags().BoolVar(&references, "references", false, "show which apps reference each secret")
 	return cmd
 }
 

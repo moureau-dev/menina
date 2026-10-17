@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://menina.moureau.dev/schema/menina.schema.json",
+  "$id": "https://menina.moureau.dev/schema/v1/menina.schema.json",
   "title": "Menina repository manifest",
   "description": "Schema for .menina.yml, the repository manifest read by the Menina client.",
   "type": "object",

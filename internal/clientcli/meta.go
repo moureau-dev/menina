@@ -17,7 +17,7 @@ import (
 )
 
 func newSchemaCommand(app *App) *cobra.Command {
-	var urlOnly bool
+	var urlOnly, versionOnly bool
 	cmd := &cobra.Command{
 		Use:   "schema",
 		Short: "Print the .menina.yml JSON Schema",
@@ -26,6 +26,13 @@ func newSchemaCommand(app *App) *cobra.Command {
 		Example: "  menina schema\n  menina schema --json\n  menina schema --url",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if versionOnly {
+				if app.jsonOutput() {
+					return app.printJSON(map[string]any{"schemaVersion": manifest.CurrentVersion, "schemaUrl": schema.ManifestURL})
+				}
+				app.infof("%d", manifest.CurrentVersion)
+				return nil
+			}
 			if urlOnly {
 				if app.jsonOutput() {
 					return app.printJSON(map[string]any{"schemaUrl": schema.ManifestURL})
@@ -49,6 +56,7 @@ func newSchemaCommand(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&urlOnly, "url", false, "print only the public schema URL")
+	cmd.Flags().BoolVar(&versionOnly, "version", false, "print only the schema version")
 	return cmd
 }
 
@@ -101,6 +109,10 @@ func localCapabilities() capabilityDoc {
 			"sourceOwnership": true,
 			"configRevisions": true,
 			"jobWatch":        true,
+			"jobHostProxy":    true,
+			"stateToken":      true,
+			"applyPlan":       true,
+			"applyLock":       true,
 			"nonInteractive":  true,
 		},
 		Commands: []string{

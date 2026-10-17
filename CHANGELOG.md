@@ -7,6 +7,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Apply concurrency: canonical resolved `stateToken`, config-dir lease lock with
+  heartbeat/stale recovery, and `apply --if-revision <token>` (compare-and-swap).
+  `apply --diff` saves a plan under `.plans/` and prints `planId`; `apply
+  --from-plan <id>` re-checks the base state token and every file hash before
+  executing.
+- Schema versioning: `https://menina.moureau.dev/schema/v1/menina.schema.json`
+  (unversioned alias kept), `menina schema --version`, and a reflection-based
+  parser/schema contract test.
+- Revision metadata: actor, source repo/revision, plan id, content hash; `.revisions/`
+  is included in backup/restore; retention is configurable with
+  `MENINA_REVISION_RETENTION` (default 50).
+- `secret list --references` shows referencing apps; `secret rotate --restart`
+  queues deployments for those apps (explicit, production needs `--yes`).
+- Client `job list --host` and `job watch --host` proxy `ssh -T` NDJSON with
+  timeout and remote exit-code propagation.
+
 - Manifest `source: {repo, revision}` ownership. Apply refuses to overwrite an
   app owned by a different repository (and a manifest without `source.repo`
   cannot overwrite a remote-owned app). `apply --prune` removes overrides for

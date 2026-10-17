@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -153,7 +154,7 @@ func newInitCommand(app *App) *cobra.Command {
 	return cmd
 }
 
-const manifestTemplate = `# yaml-language-server: $schema=https://menina.moureau.dev/schema/menina.schema.json
+const manifestTemplate = `# yaml-language-server: $schema=https://menina.moureau.dev/schema/v1/menina.schema.json
 version: 1
 project: %s
 environment: %s
@@ -241,7 +242,8 @@ func newValidateCommand(app *App) *cobra.Command {
 func newApplyCommand(app *App) *cobra.Command {
 	o := &manifestOptions{}
 	var host string
-	var local, check, diff, dryRun, verify, prune bool
+	var local, check, diff, dryRun, verify, prune, yes bool
+	var ifRevision, fromPlan string
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply a .menina.yml manifest to a host",
@@ -257,12 +259,19 @@ func newApplyCommand(app *App) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !local {
 				if target := chooseClientHost(host); target != "" {
-					data, _, err := readManifestInput(cmd, o.File)
-					if err != nil {
-						return err
+					var data []byte
+					if fromPlan == "" {
+						var err error
+						data, _, err = readManifestInput(cmd, o.File)
+						if err != nil {
+							return err
+						}
 					}
-					return sshApply(cmd.Context(), app, target, data, o, check, diff, dryRun, verify, prune)
+					return sshApply(cmd.Context(), app, target, data, o, check, diff, dryRun, verify, prune, yes, ifRevision, fromPlan)
 				}
+			}
+			if fromPlan != "" {
+				return applyFromPlan(cmd, app, fromPlan, ifRevision, diff, dryRun, verify)
 			}
 			f, err := o.load(cmd)
 			if err != nil {
@@ -313,15 +322,21 @@ func newApplyCommand(app *App) *cobra.Command {
 				if err != nil {
 					return err
 				}
+				plan, err := savePlan(app.configDir(), r, deletions)
+				if err != nil {
+					return err
+				}
 				if app.jsonOutput() {
 					summary := manifestSummary(r)
 					summary["applied"] = false
 					summary["dryRun"] = true
 					summary["changes"] = changes
+					summary["planId"] = plan.ID
+					summary["stateToken"] = plan.BaseState
 					return app.printJSON(summary)
 				}
 				if len(changes) == 0 {
-					app.infof("No changes.")
+					app.infof("No changes. Plan: %s", plan.ID)
 					return nil
 				}
 				for _, change := range changes {
@@ -330,7 +345,23 @@ func newApplyCommand(app *App) *cobra.Command {
 						app.infof("%s", change.Diff)
 					}
 				}
+				app.infof("Plan: %s (apply with --from-plan %s)", plan.ID, plan.ID)
 				return nil
+			}
+			if prune && !yes {
+				return clierr.New(clierr.CodeValidation, "--prune requires --yes or a reviewed --from-plan", "run `apply --diff --prune` and then `apply --from-plan <id>`, or pass --yes")
+			}
+			lock, err := config.AcquireLock(app.configDir(), 10*time.Second)
+			if err != nil {
+				return clierr.Wrap(clierr.CodeConflict, err)
+			}
+			defer lock.Release()
+			baseState, err := currentStateToken(app.configDir(), r.Project.Name, r.Environment.Name)
+			if err != nil {
+				return err
+			}
+			if ifRevision != "" && ifRevision != baseState {
+				return clierr.New(clierr.CodeConflict, "configuration changed since --if-revision was read", "run `apply --diff` again and review the new plan")
 			}
 			files, err := r.Plan(app.configDir())
 			if err != nil {
@@ -341,7 +372,10 @@ func newApplyCommand(app *App) *cobra.Command {
 				revisionPaths = append(revisionPaths, file.Path)
 			}
 			revisionPaths = append(revisionPaths, deletions...)
-			revision, err := config.SaveRevision(app.configDir(), r.Project.Name, r.Environment.Name, revisionPaths)
+			revision, err := config.SaveRevisionWithMeta(app.configDir(), config.RevisionMeta{
+				Project: r.Project.Name, Environment: r.Environment.Name,
+				SourceRepo: r.File.Source.Repo, SourceRevision: r.File.Source.Revision,
+			}, revisionPaths)
 			if err != nil {
 				return err
 			}
@@ -353,6 +387,7 @@ func newApplyCommand(app *App) *cobra.Command {
 					return err
 				}
 			}
+			newState, _ := currentStateToken(app.configDir(), r.Project.Name, r.Environment.Name)
 			if verify {
 				if err := verifyApply(app.configDir(), r); err != nil {
 					return err
@@ -364,6 +399,8 @@ func newApplyCommand(app *App) *cobra.Command {
 				summary["verified"] = verify
 				summary["pruned"] = len(deletions)
 				summary["revision"] = revision
+				summary["stateToken"] = newState
+				summary["baseStateToken"] = baseState
 				return app.printJSON(summary)
 			}
 			printManifestSummary(app, r)
@@ -375,6 +412,9 @@ func newApplyCommand(app *App) *cobra.Command {
 			}
 			if revision != "" {
 				app.infof("Revision: %s", revision)
+			}
+			if newState != "" {
+				app.infof("State token: %s", newState)
 			}
 			app.infof("Applied. Push images to deploy, or run `menina app deploy <app> --project %s --environment %s`.", r.Project.Name, r.Environment.Name)
 			return nil
@@ -395,6 +435,9 @@ func newApplyCommand(app *App) *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "alias for --diff")
 	cmd.Flags().BoolVar(&verify, "verify", false, "re-read the written config and verify apps/environment overrides")
 	cmd.Flags().BoolVar(&prune, "prune", false, "remove owned apps not declared by this manifest")
+	cmd.Flags().StringVar(&ifRevision, "if-revision", "", "only apply if the current state token matches")
+	cmd.Flags().StringVar(&fromPlan, "from-plan", "", "apply a previously generated plan id")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm destructive apply --prune")
 	return cmd
 }
 
@@ -728,11 +771,16 @@ func writeCachedHost(host string) error {
 	return os.Chmod(path, 0o600)
 }
 
-func sshApply(ctx context.Context, app *App, host string, data []byte, o *manifestOptions, check, diff, dryRun, verify, prune bool) error {
+func sshApply(ctx context.Context, app *App, host string, data []byte, o *manifestOptions, check, diff, dryRun, verify, prune, yes bool, ifRevision, fromPlan string) error {
 	if strings.HasPrefix(host, "-") {
 		return fmt.Errorf("invalid SSH host %q", host)
 	}
-	args := []string{"-T", host, "menina", "apply", "--local", "-f", "-"}
+	args := []string{"-T", host, "menina", "apply", "--local"}
+	if fromPlan != "" {
+		args = append(args, "--from-plan", fromPlan)
+	} else {
+		args = append(args, "-f", "-")
+	}
 	if o.Project != "" {
 		args = append(args, "--project", o.Project)
 	}
@@ -768,6 +816,12 @@ func sshApply(ctx context.Context, app *App, host string, data []byte, o *manife
 	}
 	if prune {
 		args = append(args, "--prune")
+	}
+	if yes {
+		args = append(args, "--yes")
+	}
+	if ifRevision != "" {
+		args = append(args, "--if-revision", ifRevision)
 	}
 	if app.jsonOutput() {
 		args = append(args, "--json")

@@ -98,7 +98,7 @@ func secretSet(app *App) *cobra.Command {
 
 func secretRotate(app *App) *cobra.Command {
 	var project, environment, fromFile string
-	var generate bool
+	var generate, restart, yes bool
 	var length int
 	cmd := &cobra.Command{
 		Use:   "rotate <name>",
@@ -139,12 +139,43 @@ func secretRotate(app *App) *cobra.Command {
 			if err := secrets.WriteSecretFile(path, value); err != nil {
 				return err
 			}
+			referencing, err := secretReferencingApps(app, project, environment, name)
+			if err != nil {
+				return err
+			}
+			restarted := false
+			if restart && len(referencing) > 0 {
+				cfg, err := app.LoadConfig()
+				if err != nil {
+					return err
+				}
+				if err := requireProdConfirmation(cfg, environment, yes); err != nil {
+					return err
+				}
+				client, err := app.Control(cfg)
+				if err != nil {
+					return fmt.Errorf("control plane not reachable (%v); secret rotated but apps were not restarted", err)
+				}
+				for _, target := range referencing {
+					body := fmt.Sprintf(`{"project":%q,"environment":%q,"app":%q,"confirm":true}`, project, environment, target)
+					if err := client.PostJSON(cmd.Context(), "/deploy", []byte(body)); err != nil {
+						return fmt.Errorf("secret rotated, but restarting %s failed: %w", target, err)
+					}
+					app.Infof("Queued redeploy of %s to pick up the rotated secret", target)
+				}
+				restarted = true
+			}
 			if app.Opts.JSON {
 				return app.PrintJSON(map[string]any{
 					"project": project, "environment": environment, "name": name, "rotated": true,
+					"referencingApps": referencing, "restarted": restarted,
 				})
 			}
 			app.Infof("Rotated secret %q for %s/%s", name, project, environment)
+			if len(referencing) > 0 && !restarted {
+				app.Infof("Apps referencing this secret keep the old value until redeployed: %s", strings.Join(referencing, ", "))
+				app.Infof("Re-run with --restart to queue those deployments.")
+			}
 			return nil
 		},
 	}
@@ -153,6 +184,8 @@ func secretRotate(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&fromFile, "file", "", "read the value from a file instead of stdin")
 	cmd.Flags().BoolVar(&generate, "generate", false, "generate a random value")
 	cmd.Flags().IntVar(&length, "length", 32, "generated value length")
+	cmd.Flags().BoolVar(&restart, "restart", false, "queue deployments for apps that reference this secret")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm restarting production apps")
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("environment")
 	return cmd
@@ -160,6 +193,7 @@ func secretRotate(app *App) *cobra.Command {
 
 func secretList(app *App) *cobra.Command {
 	var project, environment string
+	var references bool
 	cmd := &cobra.Command{
 		Use:     "list",
 		Short:   "List secret names for a project/environment (values are never shown)",
@@ -175,6 +209,23 @@ func secretList(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if references {
+				out := map[string][]string{}
+				for _, n := range names {
+					apps, err := secretReferencingApps(app, project, environment, n)
+					if err != nil {
+						return err
+					}
+					out[n] = apps
+				}
+				if app.Opts.JSON {
+					return app.PrintJSON(out)
+				}
+				for _, n := range names {
+					app.Infof("%s: %s", n, strings.Join(out[n], ", "))
+				}
+				return nil
+			}
 			if app.Opts.JSON {
 				return app.PrintJSON(names)
 			}
@@ -186,9 +237,43 @@ func secretList(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
+	cmd.Flags().BoolVar(&references, "references", false, "show which apps reference each secret")
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("environment")
 	return cmd
+}
+
+func secretReferencingApps(app *App, project, environment, name string) ([]string, error) {
+	projectsDir := config.ProjectsDir(app.Opts.ConfigDir)
+	p, err := config.LoadProject(projectsDir, project)
+	if err != nil {
+		return nil, err
+	}
+	env, err := config.LoadEnvironment(app.Opts.ConfigDir, project, environment)
+	if err != nil {
+		return nil, err
+	}
+	want := "file:" + filepath.Join(appSecretsDir(app, project, environment), name)
+	var out []string
+	for appName, base := range p.Apps {
+		refs := map[string]string{}
+		for k, v := range base.Secrets {
+			refs[k] = v
+		}
+		if ov := env.Apps[appName]; ov != nil {
+			for k, v := range ov.Secrets {
+				refs[k] = v
+			}
+		}
+		for _, ref := range refs {
+			if ref == want {
+				out = append(out, appName)
+				break
+			}
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 func secretRemove(app *App) *cobra.Command {

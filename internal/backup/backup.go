@@ -111,6 +111,9 @@ func Create(ctx context.Context, o CreateOptions) (string, *Manifest, error) {
 	if err := copyTreeIfExists(filepath.Join(o.ConfigDir, "projects"), filepath.Join(cfgDir, "projects")); err != nil {
 		return "", nil, err
 	}
+	if err := copyTreeIfExists(filepath.Join(o.ConfigDir, ".revisions"), filepath.Join(cfgDir, ".revisions")); err != nil {
+		return "", nil, err
+	}
 	m.Components = append(m.Components, "config")
 	if o.WithSecrets {
 		if err := copyTreeIfExists(filepath.Join(o.ConfigDir, dirSecrets), filepath.Join(cfgDir, dirSecrets)); err != nil {
@@ -269,6 +272,9 @@ func Restore(ctx context.Context, o RestoreOptions) (*Manifest, error) {
 		return nil, err
 	}
 	if err := copyTreeIfExists(filepath.Join(cfgSrc, "projects"), filepath.Join(o.ConfigDir, "projects")); err != nil {
+		return nil, err
+	}
+	if err := copyTreeIfExists(filepath.Join(cfgSrc, ".revisions"), filepath.Join(o.ConfigDir, ".revisions")); err != nil {
 		return nil, err
 	}
 	if err := copyTreeIfExists(filepath.Join(cfgSrc, dirSecrets), filepath.Join(o.ConfigDir, dirSecrets)); err != nil {
