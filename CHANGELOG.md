@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.14] - 2026-10-17
+
 ### Added
 - Client `config revisions` / `config rollback --host` proxy the host commands
   over SSH; `config revisions --json` returns `[]` instead of `null` when none
