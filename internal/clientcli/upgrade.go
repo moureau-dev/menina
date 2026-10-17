@@ -106,32 +106,14 @@ func newUpgradeCommand(app *App) *cobra.Command {
 
 			current := version.Get().Version
 			tag := strings.TrimSpace(target)
-			var assetURL, sumsURL string
+			var rel *clientRelease
 			if tag == "" {
-				rel, err := latestClientRelease(ctx)
+				latest, err := latestClientRelease(ctx)
 				if err != nil {
 					return err
 				}
-				tag = rel.TagName
-				asset := clientAssetName()
-				for _, a := range rel.Assets {
-					switch a.Name {
-					case asset:
-						assetURL = a.BrowserDownloadURL
-					case "checksums.txt":
-						sumsURL = a.BrowserDownloadURL
-					}
-				}
-				if assetURL == "" {
-					return fmt.Errorf("release %s has no asset %s", tag, asset)
-				}
-			} else {
-				base := fmt.Sprintf("https://github.com/%s/releases/download/%s", releaseRepo(), tag)
-				assetURL = base + "/" + clientAssetName()
-				sumsURL = base + "/checksums.txt"
-			}
-			if sumsURL == "" {
-				sumsURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/checksums.txt", releaseRepo(), tag)
+				rel = latest
+				tag = latest.TagName
 			}
 
 			updateAvailable := current != tag
@@ -159,6 +141,29 @@ func newUpgradeCommand(app *App) *cobra.Command {
 				app.infof("Latest:    %s", tag)
 				app.infof("Update available.")
 				return nil
+			}
+
+			var assetURL, sumsURL string
+			if rel != nil {
+				asset := clientAssetName()
+				for _, a := range rel.Assets {
+					switch a.Name {
+					case asset:
+						assetURL = a.BrowserDownloadURL
+					case "checksums.txt":
+						sumsURL = a.BrowserDownloadURL
+					}
+				}
+				if assetURL == "" {
+					return fmt.Errorf("release %s has no asset %s", tag, asset)
+				}
+			} else {
+				base := fmt.Sprintf("https://github.com/%s/releases/download/%s", releaseRepo(), tag)
+				assetURL = base + "/" + clientAssetName()
+				sumsURL = base + "/checksums.txt"
+			}
+			if sumsURL == "" {
+				sumsURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/checksums.txt", releaseRepo(), tag)
 			}
 
 			expected, err := fetchClientChecksum(ctx, sumsURL, clientAssetName())

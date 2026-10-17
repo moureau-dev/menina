@@ -272,6 +272,9 @@ rename; on Windows the previous executable is renamed `.old` and removed on the
 next upgrade. The install directory must be writable (re-run with `sudo` if it
 is a system directory). `MENINA_REPO` overrides the GitHub repository.
 
+`version --check` and `upgrade` are standalone-client commands. The host binary
+has its own `version` and Linux-host `upgrade` commands.
+
 
 ## Deploy flow
 
