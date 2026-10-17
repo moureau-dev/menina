@@ -6,7 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Client `config revisions` / `config rollback --host` proxy the host commands
+  over SSH; `config revisions --json` returns `[]` instead of `null` when none
+  exist.
+
 ### Docs
+- Corrected stale manifest docs (prune, ownership, multiple-manifest and
+  limitation wording), documented `secret rotate --output` and client config
+  passthrough, and noted that revisions are not backfilled.
 - Added `ROADMAP.md`, explicitly decomposing multi-node/HA into control-plane
   state, k3s provisioning, replicated storage, proxy/routing, registry, and DR.
 

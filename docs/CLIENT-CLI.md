@@ -387,11 +387,14 @@ an existing `project.yml` and environment definition. It performs no pruning
 unless `--prune` is explicitly reviewed and applied via `--from-plan`.
 
 `apply` takes a config-dir lock and records a pre-apply revision under
-`<config-dir>/.revisions/`. List them with `menina config revisions` and restore
-with `menina config rollback <id>`. Revisions restore YAML only, not deployed
-images. Revisions record actor, source repo/revision, plan id and a content
-hash; retention defaults to 50 and is configurable with
-`MENINA_REVISION_RETENTION`. `.revisions/` is included in backup/restore.
+`<config-dir>/.revisions/`. List them with `menina config revisions` on the host,
+or `menina config revisions --host root@vps` from the client; restore with
+`menina config rollback <id> --yes` (also available through the client with
+`--host`). Revisions restore YAML only, not deployed images. Revisions record
+actor, source repo/revision, plan id and a content hash; retention defaults to 50
+and is configurable with `MENINA_REVISION_RETENTION`. `.revisions/` is included
+in backup/restore. Revisions are not backfilled for applies that happened before
+the feature existed.
 
 `--diff`/`--dry-run` save a plan under `<config-dir>/.plans/` and print its
 `planId` plus the current `stateToken`. `--from-plan` re-checks the base state
