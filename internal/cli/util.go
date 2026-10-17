@@ -43,7 +43,7 @@ func confirmDestructive(app *App, prompt string, yes bool) bool {
 	if yes {
 		return true
 	}
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
+	if nonInteractive || !term.IsTerminal(int(os.Stdin.Fd())) {
 		app.Infof("%s\nrefusing in non-interactive mode; re-run with --yes to confirm", prompt)
 		return false
 	}

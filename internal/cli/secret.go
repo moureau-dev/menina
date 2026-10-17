@@ -30,7 +30,7 @@ func newSecretCommand(app *App) *cobra.Command {
 			"so it can be referenced as file:<path>. Values are read from stdin (hidden\n" +
 			"on a terminal) and are never printed or written into configuration.",
 	}
-	cmd.AddCommand(secretSet(app), secretList(app), secretRemove(app))
+	cmd.AddCommand(secretSet(app), secretList(app), secretRemove(app), secretVerify(app))
 	return cmd
 }
 
@@ -178,6 +178,11 @@ func readSecretValue(cmd *cobra.Command, fromFile string) (string, error) {
 		return strings.TrimRight(string(data), "\r\n"), nil
 	}
 	in := cmd.InOrStdin()
+	if nonInteractive {
+		if f, ok := in.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+			return "", fmt.Errorf("secret value required; pipe it on stdin or use --file with --non-interactive")
+		}
+	}
 	if f, ok := in.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		fmt.Fprint(os.Stderr, "Secret value: ")
 		b, err := term.ReadPassword(int(f.Fd()))
@@ -192,6 +197,98 @@ func readSecretValue(cmd *cobra.Command, fromFile string) (string, error) {
 		return "", err
 	}
 	return strings.TrimRight(string(data), "\r\n"), nil
+}
+
+func secretVerify(app *App) *cobra.Command {
+	var project, environment string
+	cmd := &cobra.Command{
+		Use:   "verify [name]",
+		Short: "Check that stored secret files exist, are readable and are not empty",
+		Long: "Verify one secret by name, or every secret file in a project/environment.\n" +
+			"Never prints secret values.",
+		Example: "  menina secret verify DATABASE_URL --project my-app --environment production\n" +
+			"  menina secret verify --project my-app --environment production --json",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if project == "" {
+				return fmt.Errorf("--project is required")
+			}
+			if environment == "" {
+				return fmt.Errorf("--environment is required")
+			}
+			dir := appSecretsDir(app, project, environment)
+			var names []string
+			if len(args) == 1 {
+				if !secretNameRe.MatchString(args[0]) {
+					return fmt.Errorf("invalid secret name %q", args[0])
+				}
+				names = []string{args[0]}
+			} else {
+				var err error
+				names, err = listSecretNames(dir)
+				if err != nil {
+					return err
+				}
+			}
+			type result struct {
+				Name  string `json:"name"`
+				Path  string `json:"path"`
+				Mode  string `json:"mode,omitempty"`
+				OK    bool   `json:"ok"`
+				Error string `json:"error,omitempty"`
+			}
+			results := make([]result, 0, len(names))
+			failed := false
+			for _, name := range names {
+				path := filepath.Join(dir, name)
+				r := result{Name: name, Path: path}
+				info, err := os.Stat(path)
+				switch {
+				case err != nil:
+					r.Error = err.Error()
+				case info.IsDir():
+					r.Error = "is a directory"
+				case info.Size() == 0:
+					r.Error = "file is empty"
+				default:
+					f, err := os.Open(path)
+					if err != nil {
+						r.Error = err.Error()
+					} else {
+						_ = f.Close()
+						r.OK = true
+						r.Mode = info.Mode().Perm().String()
+					}
+				}
+				if !r.OK {
+					failed = true
+				}
+				results = append(results, r)
+			}
+			if app.Opts.JSON {
+				if err := app.PrintJSON(results); err != nil {
+					return err
+				}
+			} else {
+				for _, r := range results {
+					if r.OK {
+						app.Infof("ok   %s (%s)", r.Name, r.Mode)
+					} else {
+						app.Infof("FAIL %s: %s", r.Name, r.Error)
+					}
+				}
+			}
+			if failed {
+				return fmt.Errorf("one or more secrets are missing or unreadable")
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project name")
+	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
+	_ = cmd.MarkFlagRequired("project")
+	_ = cmd.MarkFlagRequired("environment")
+	return cmd
 }
 
 func listSecretNames(dir string) ([]string, error) {

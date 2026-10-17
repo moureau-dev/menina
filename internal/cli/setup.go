@@ -23,8 +23,10 @@ type prompter struct {
 	tui     bool
 }
 
+var nonInteractive bool
+
 func newPrompter() *prompter {
-	enabled := term.IsTerminal(int(os.Stdin.Fd()))
+	enabled := term.IsTerminal(int(os.Stdin.Fd())) && !nonInteractive
 	return &prompter{reader: bufio.NewReader(os.Stdin), enabled: enabled, tui: enabled}
 }
 
@@ -213,7 +215,6 @@ func (p *prompter) yesNo(label, yesDesc, noDesc string, def bool) bool {
 }
 
 func newSetupCommand(app *App) *cobra.Command {
-	var nonInteractive bool
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Configure the host and platform",
@@ -227,7 +228,7 @@ func newSetupCommand(app *App) *cobra.Command {
 				return fmt.Errorf("menina setup writes to %s and must run as root (try: sudo menina setup, or pass --config-dir)", app.Opts.ConfigDir)
 			}
 			p := newPrompter()
-			if nonInteractive {
+			if app.Opts.NonInteractive {
 				p.enabled = false
 			}
 			cfg := config.Default()
@@ -428,7 +429,6 @@ func newSetupCommand(app *App) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&nonInteractive, "non-interactive", false, "accept all defaults without prompting")
 	return cmd
 }
 

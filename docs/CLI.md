@@ -11,12 +11,14 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
 ## Conventions
 
 - **Global flags**: `--config-dir` (env `MENINA_CONFIG_DIR`, default `/etc/menina`),
-  `--json`, `--verbose`.
+  `--json`, `--verbose`, `--non-interactive`.
 - **`--yes`** on any interactive/destructive command means "flags only, never
   prompt" (also the behavior when stdin is not a terminal).
 - **Interactive prompts happen only on a TTY.** When stdin is not a terminal
-  (piped, CI, `/dev/null`) or `--yes` is set, a missing argument is an error
-  that says what is required — never a secret prompt hang.
+  (piped, CI, `/dev/null`), `--yes` is set, or `--non-interactive` is passed, a
+  missing argument is an error that says what is required — never a secret
+  prompt hang. `--non-interactive` also makes a bare `menina` fail instead of
+  opening the TUI.
 - **Selectors** are numbered menus; **option 1 is always `+ create a new …`**
   (project / app / environment), followed by the existing items, and a final
   **`Exit`**. The app action menu ends with **`Back`**.
@@ -55,6 +57,8 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
 | `menina job list [--status S] [--limit N] [--json]` | List deployment jobs, newest first |
 | `menina job cancel <id>` | Cancel a pending or processing deployment job |
 | `menina config validate [--json]` | Resolve the whole config tree and validate it without applying (non-zero exit when invalid) |
+| `menina schema [--json] [--url]` | Print the embedded `.menina.yml` JSON Schema, or only its public URL |
+| `menina capabilities [--json]` | Local version, OS/arch, manifest schema version, feature flags and command list |
 | `menina notify list` | Configured deploy webhooks |
 | `menina notify test [--project P] [--event E]` | Send a test deploy notification |
 
@@ -116,6 +120,14 @@ prompt for the environment (auto-selected when the project has exactly one).
 | `menina secret set <name> --project P --environment E [--file F]` | Store a secret value at `secrets/P/E/<name>` (read from stdin — hidden on a terminal — or `--file`). Prints the `file:` reference to use in `apps/*.yml` |
 | `menina secret list --project P --environment E [--json]` | List secret names (values are never shown) |
 | `menina secret remove <name> --project P --environment E [--yes]` | Delete a stored secret value |
+| `menina secret verify [name] --project P --environment E [--json]` | Check that secret files exist, are readable and are not empty |
+
+Secret files are created with mode `0660`; the environment directory is `0770`
+with the setgid bit. Run the CLI as a user in the `menina` group (or root) so the
+control plane can read them. Do not copy files into `secrets/` manually — use
+`menina secret set`; a manual copy commonly produces a permission denied when
+the control plane later reads it. `menina secret verify` checks existence,
+readability and non-empty content without printing values.
 
 Values are never taken from arguments, printed, or written into configuration;
 apps reference them by name:

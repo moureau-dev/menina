@@ -120,7 +120,9 @@ func environmentDelete(app *App) *cobra.Command {
 			name := args[0]
 			path := filepath.Join(config.ProjectDir(app.Opts.ConfigDir, project), "environments", name+".yml")
 			softPath := config.SoftDeleteEnvironmentPath(app.Opts.ConfigDir, project, name)
-			live, trashed := fileExists(path), fileExists(softPath)
+			overridesDir := config.EnvironmentOverridesDir(app.Opts.ConfigDir, project, name)
+			live := fileExists(path) || dirExists(overridesDir)
+			trashed := fileExists(softPath)
 			if !live && !trashed {
 				return fmt.Errorf("environment %q not found in project %q", name, project)
 			}
@@ -132,13 +134,18 @@ func environmentDelete(app *App) *cobra.Command {
 				return fmt.Errorf("aborted")
 			}
 			if hard {
-				if live {
+				if fileExists(path) {
 					if err := os.Remove(path); err != nil {
 						return err
 					}
 				}
 				if trashed {
 					if err := os.Remove(softPath); err != nil {
+						return err
+					}
+				}
+				if dirExists(overridesDir) {
+					if err := os.RemoveAll(overridesDir); err != nil {
 						return err
 					}
 				}
@@ -149,7 +156,11 @@ func environmentDelete(app *App) *cobra.Command {
 				app.Infof("Environment %q is already soft-deleted.", name)
 				return nil
 			}
-			if err := moveToTrash(path, softPath); err != nil {
+			if fileExists(path) {
+				if err := moveToTrash(path, softPath); err != nil {
+					return err
+				}
+			} else if err := writeYAML(softPath, config.EnvironmentFile{Name: name}); err != nil {
 				return err
 			}
 			app.Infof("Soft-deleted environment %q (workloads stopped; config kept). Restore with `menina environment restore %s --project %s`.", name, name, project)

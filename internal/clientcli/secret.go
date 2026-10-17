@@ -30,6 +30,7 @@ func newSecretCommand(app *App) *cobra.Command {
 		clientSecretSet(app, &host),
 		clientSecretList(app, &host),
 		clientSecretRemove(app, &host),
+		clientSecretVerify(app, &host),
 	)
 	return cmd
 }
@@ -48,7 +49,7 @@ func clientSecretSet(app *App, hostFlag *string) *cobra.Command {
 			if project == "" || environment == "" {
 				return fmt.Errorf("--project and --environment are required")
 			}
-			value, err := readClientSecret(cmd, fromFile)
+			value, err := readClientSecret(cmd, app, fromFile)
 			if err != nil {
 				return err
 			}
@@ -118,7 +119,7 @@ func clientSecretRemove(app *App, hostFlag *string) *cobra.Command {
 				return err
 			}
 			if !yes {
-				if !term.IsTerminal(int(os.Stdin.Fd())) {
+				if app.nonInteractive() || !term.IsTerminal(int(os.Stdin.Fd())) {
 					return fmt.Errorf("refusing to delete in non-interactive mode; re-run with --yes")
 				}
 				fmt.Fprintf(os.Stderr, "Delete secret %q for %s/%s? [y/N]: ", name, project, environment)
@@ -138,6 +139,36 @@ func clientSecretRemove(app *App, hostFlag *string) *cobra.Command {
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion without prompting")
+	return cmd
+}
+
+func clientSecretVerify(app *App, hostFlag *string) *cobra.Command {
+	var project, environment string
+	cmd := &cobra.Command{
+		Use:   "verify [name]",
+		Short: "Check that stored secret files exist and are readable",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if project == "" || environment == "" {
+				return fmt.Errorf("--project and --environment are required")
+			}
+			host, err := requireSecretHost(*hostFlag)
+			if err != nil {
+				return err
+			}
+			remoteArgs := []string{"secret", "verify"}
+			if len(args) == 1 {
+				remoteArgs = append(remoteArgs, args[0])
+			}
+			remoteArgs = append(remoteArgs, "--project", project, "--environment", environment)
+			if app.jsonOutput() {
+				remoteArgs = append(remoteArgs, "--json")
+			}
+			return runSSHSecret(cmd, host, nil, remoteArgs...)
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project name")
+	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
 	return cmd
 }
 
@@ -168,7 +199,7 @@ func runSSHSecret(cmd *cobra.Command, host string, stdin []byte, args ...string)
 	return nil
 }
 
-func readClientSecret(cmd *cobra.Command, fromFile string) (string, error) {
+func readClientSecret(cmd *cobra.Command, app *App, fromFile string) (string, error) {
 	if fromFile != "" {
 		data, err := os.ReadFile(fromFile)
 		if err != nil {
@@ -177,6 +208,9 @@ func readClientSecret(cmd *cobra.Command, fromFile string) (string, error) {
 		return strings.TrimRight(string(data), "\r\n"), nil
 	}
 	if term.IsTerminal(int(os.Stdin.Fd())) {
+		if app.nonInteractive() {
+			return "", fmt.Errorf("secret value required; pipe it on stdin or use --file with --non-interactive")
+		}
 		fmt.Fprint(os.Stderr, "Secret value: ")
 		data, err := term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Fprintln(os.Stderr)

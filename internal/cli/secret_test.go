@@ -115,3 +115,19 @@ func TestSecretRemoveRefusesWithoutYes(t *testing.T) {
 		t.Fatal("expected removal to be refused without --yes in non-interactive mode")
 	}
 }
+
+func TestSecretVerify(t *testing.T) {
+	dir := seedSecretProject(t)
+	if err := executeIn("value\n", "--config-dir", dir, "secret", "set", "DATABASE_URL", "--project", "p", "--environment", "production"); err != nil {
+		t.Fatal(err)
+	}
+	if err := execute("--config-dir", dir, "secret", "verify", "DATABASE_URL", "--project", "p", "--environment", "production"); err != nil {
+		t.Fatalf("verify existing secret: %v", err)
+	}
+	if err := os.Remove(filepath.Join(dir, "secrets", "p", "production", "DATABASE_URL")); err != nil {
+		t.Fatal(err)
+	}
+	if err := execute("--config-dir", dir, "secret", "verify", "DATABASE_URL", "--project", "p", "--environment", "production"); err == nil {
+		t.Fatal("verify should fail for a missing secret")
+	}
+}

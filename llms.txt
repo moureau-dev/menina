@@ -41,6 +41,8 @@ menina build --push         # build/push images locally; push triggers deploys
 menina push --build --filter api,web
 menina build --build-arg VITE_API_URL="$VITE_API_URL"
 printf '%s' "$DATABASE_URL" | menina secret set DATABASE_URL --host user@vps --project demo --environment production
+menina schema --json        # embedded manifest JSON Schema
+menina capabilities --json  # local version, os/arch, schema + feature flags
 menina version --check      # compare with the latest release
 menina upgrade              # checksum-verified self-update
 ```
@@ -50,8 +52,10 @@ push; `build`/`push` need only Docker and registry credentials. `project` and
 `environment` may be `${VARS}`; `--project`, `-e/--environment`, and repeatable
 `--var KEY=VALUE` override them before rendering. `buildArgs` (manifest) and
 `--build-arg KEY=VALUE` pass Docker build args; they are not secrets. Client
-`secret set|list|remove` proxies the host command over SSH stdin and requires a
-host (`--host`, `MENINA_HOST`, or the cached host). The installed
+`secret set|list|remove|verify` proxies the host command over SSH stdin and
+requires a host (`--host`, `MENINA_HOST`, or the cached host). Add
+`--non-interactive` to any command to fail instead of prompting or opening the
+TUI. The installed
 command is `menina`, falling back to `menina-client` when a host `menina` is
 already present. Running `menina` with no subcommand on a terminal opens the
 client TUI (same style as the host menu, labelled client). Manifest JSON Schema:

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -85,6 +86,9 @@ func platformReady(app *App) bool {
 // full-screen menu and reopens it after each action until the user quits.
 // Without a terminal (scripts, pipes) it prints the root help instead.
 func runMainMenu(root *cobra.Command, app *App, showAll bool) error {
+	if app.Opts.NonInteractive {
+		return fmt.Errorf("interactive menu disabled by --non-interactive; specify a subcommand")
+	}
 	p := newPrompter()
 	if !p.enabled {
 		return root.Help()

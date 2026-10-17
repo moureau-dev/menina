@@ -297,12 +297,20 @@ printf '%s' "$DATABASE_URL" | menina secret set DATABASE_URL \
 
 menina secret list   --host root@vps --project demo --environment production
 menina secret remove DATABASE_URL --host root@vps --project demo --environment production --yes
+menina secret verify DATABASE_URL --host root@vps --project demo --environment production
+menina secret verify --host root@vps --project demo --environment production --json
 ```
 
 The client pipes the value to the host's `menina secret set` over SSH stdin; it
 never goes into the manifest, client config, arguments, or logs. `--host` falls
 back to `MENINA_HOST` or the cached host used by `apply`. You can also run the
 `secret` commands directly on the host.
+
+Secret files are mode `0660`; the environment directory is `0770` with setgid.
+Run the command as a user in the `menina` group (or root) so the control plane
+can read them. Do not copy files into `secrets/` manually: the control plane may not be
+able to read them. `secret verify` checks existence, readability and non-empty
+content without printing values.
 
 The manifest never contains secret values.
 
@@ -404,6 +412,19 @@ menina push --build --filter api
 Pushes the manifest's built images. External `image:` apps are skipped. A push
 triggers auto-deploy for enabled apps that were already applied.
 
+### `schema` and `capabilities`
+
+```bash
+menina schema                  # embedded manifest JSON Schema
+menina schema --json           # {schemaVersion, schemaUrl, schema}
+menina schema --url
+menina capabilities --json     # version, os/arch, schema version, feature flags, commands
+```
+
+These are local-only and work without a host. `capabilities` is intended for
+agents and CI so they can detect support (for example `buildArgs`,
+`exposurePorts`, `nonInteractive`) before authoring a manifest.
+
 ### Common flags
 
 | Flag | Commands | Meaning |
@@ -416,6 +437,7 @@ triggers auto-deploy for enabled apps that were already applied.
 | `--tag` | all | Override the image tag |
 | `--build-arg` | build/push | `docker build --build-arg KEY=VALUE` (repeatable) |
 | `--json` | all | Machine-readable output |
+| `--non-interactive` | all | Never prompt or open the TUI; fail instead |
 | `--config-dir` | all | Host config directory used for secret refs/validation |
 
 ### `version` and `upgrade`

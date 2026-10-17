@@ -20,9 +20,10 @@ import (
 )
 
 type RootOptions struct {
-	ConfigDir string
-	JSON      bool
-	Verbose   bool
+	ConfigDir      string
+	JSON           bool
+	Verbose        bool
+	NonInteractive bool
 }
 
 type App struct {
@@ -51,6 +52,7 @@ func NewRootCommand() *cobra.Command {
 			return runMainMenu(cmd, app, showAll)
 		},
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			nonInteractive = app.Opts.NonInteractive
 			level := slog.LevelInfo
 			if app.Opts.Verbose {
 				level = slog.LevelDebug
@@ -62,6 +64,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&app.Opts.ConfigDir, "config-dir", envOr("MENINA_CONFIG_DIR", "/etc/menina"), "configuration directory")
 	root.PersistentFlags().BoolVar(&app.Opts.JSON, "json", false, "output machine-readable JSON")
 	root.PersistentFlags().BoolVar(&app.Opts.Verbose, "verbose", false, "verbose logging")
+	root.PersistentFlags().BoolVar(&app.Opts.NonInteractive, "non-interactive", false, "never prompt or open the TUI; fail instead")
 
 	info := version.Get()
 	root.Version = info.Version

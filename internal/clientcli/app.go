@@ -18,8 +18,9 @@ import (
 // Options are shared by the host binary (client commands are also available
 // there) and the standalone client binary.
 type Options struct {
-	ConfigDir *string
-	JSON      *bool
+	ConfigDir      *string
+	JSON           *bool
+	NonInteractive *bool
 }
 
 type App struct {
@@ -34,6 +35,8 @@ func NewCommands(opts Options) []*cobra.Command {
 		newApplyCommand(app),
 		newBuildCommand(app),
 		newPushCommand(app),
+		newSchemaCommand(app),
+		newCapabilitiesCommand(app),
 	}
 }
 
@@ -46,6 +49,10 @@ func (a *App) configDir() string {
 
 func (a *App) jsonOutput() bool {
 	return a.opts.JSON != nil && *a.opts.JSON
+}
+
+func (a *App) nonInteractive() bool {
+	return a.opts.NonInteractive != nil && *a.opts.NonInteractive
 }
 
 func (a *App) loadConfig() (*config.Config, error) {
@@ -65,8 +72,8 @@ func (a *App) printJSON(v any) error {
 // NewRootCommand builds the standalone client command tree.
 func NewRootCommand() *cobra.Command {
 	var configDir string
-	var jsonOutput, verbose bool
-	app := &App{opts: Options{ConfigDir: &configDir, JSON: &jsonOutput}}
+	var jsonOutput, verbose, nonInteractive bool
+	app := &App{opts: Options{ConfigDir: &configDir, JSON: &jsonOutput, NonInteractive: &nonInteractive}}
 	root := &cobra.Command{
 		Use:   "menina",
 		Short: "Menina client: apply, build and push repository manifests",
@@ -83,6 +90,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&configDir, "config-dir", envOr("MENINA_CONFIG_DIR", "/etc/menina"), "host configuration directory (used for secret refs)")
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output machine-readable JSON")
 	root.PersistentFlags().BoolVar(&verbose, "verbose", false, "verbose logging")
+	root.PersistentFlags().BoolVar(&nonInteractive, "non-interactive", false, "never prompt or open the TUI; fail instead")
 	_ = verbose
 
 	root.AddCommand(NewCommands(app.opts)...)

@@ -558,7 +558,7 @@ func waitForDeploy(ctx context.Context, client *platform.ControlClient, jobID st
 			}
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out waiting for the deployment to complete; check `menina doctor` and logs")
+			return fmt.Errorf("timed out after %s waiting for deployment job %s; retry with a larger --timeout (for example --timeout 10m), or use --no-wait and poll `menina app status`", timeout, jobID)
 		}
 		select {
 		case <-ctx.Done():

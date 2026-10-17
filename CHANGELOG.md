@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `menina schema [--json] [--url]` prints the embedded `.menina.yml` JSON
+  Schema; `menina capabilities --json` reports version, OS/arch, schema version,
+  feature flags and commands for agents/CI.
+- Global `--non-interactive` on the host and client: never prompt or open the
+  TUI; fail with a clear error instead.
+- `menina secret verify [name]` checks that stored secret files exist, are
+  readable and are not empty, without printing values. The client proxies it
+  over SSH.
+- Environment hard delete now removes `environments/<env>/` per-app overrides;
+  soft delete hides them behind the `.trash` tombstone so the environment no
+  longer appears until restored.
+- Deployment timeouts now name the job and suggest `--timeout`/`--no-wait`.
+
 - Manifest `service: { port }` and an `exposure` block: `exposure.http`
   (`hosts`, `pathPrefix`, `redirectHttp`, `headers`, `compression`, `h2c`,
   `streaming`, `maxBodyBytes`, `timeouts`) and `exposure.ports` for raw

@@ -121,6 +121,12 @@ func LoadEnvironments(projectsDir, project string) (map[string]*EnvironmentFile,
 		if strings.HasPrefix(name, ".") {
 			continue // e.g. .trash
 		}
+		// A soft-deleted environment may leave its per-app override directory
+		// behind. The tombstone in .trash is authoritative, so ignore both the
+		// definition file and the directory until the environment is restored.
+		if _, err := os.Stat(filepath.Join(dir, trashDirName, name+".yml")); err == nil {
+			continue
+		}
 		if e.IsDir() {
 			if envs[name] == nil {
 				envs[name] = &EnvironmentFile{Name: name, Apps: map[string]*AppOverride{}}

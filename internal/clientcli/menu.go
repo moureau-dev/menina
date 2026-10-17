@@ -3,6 +3,7 @@ package clientcli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -25,6 +26,9 @@ type clientMenuEntry struct {
 }
 
 func runClientMenu(cmd *cobra.Command, app *App) error {
+	if app.nonInteractive() {
+		return fmt.Errorf("interactive menu disabled by --non-interactive; specify a subcommand")
+	}
 	if app.jsonOutput() || !term.IsTerminal(int(os.Stdin.Fd())) {
 		return cmd.Help()
 	}
