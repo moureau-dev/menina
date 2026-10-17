@@ -71,7 +71,7 @@ errors use the generic code/exit.
 | `menina job list/watch --host` (client) | Proxy job list/watch over SSH |
 | `menina job cancel <id>` | Cancel a pending or processing deployment job |
 | `menina config validate [--json]` | Resolve the whole config tree and validate it without applying (non-zero exit when invalid) |
-| `menina config revisions [--project P] [--environment E] [--json]` | List pre-apply configuration snapshots |
+| `menina config revisions [--project P] [--environment E] [--json]` | List pre-apply configuration snapshots (host, or client with `--host`) |
 | `menina config rollback <id> --yes` | Restore files changed by an apply revision (desired state only) |
 | `menina schema [--json] [--url]` | Print the embedded `.menina.yml` JSON Schema, or only its public URL |
 | `menina capabilities [--json]` | Local version, OS/arch, manifest schema version, feature flags and command list |

@@ -124,11 +124,11 @@ func ListRevisions(configDir string) ([]Revision, error) {
 	entries, err := os.ReadDir(revisionsDir(configDir))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return []Revision{}, nil
 		}
 		return nil, err
 	}
-	var out []Revision
+	out := []Revision{}
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue

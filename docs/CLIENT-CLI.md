@@ -303,6 +303,8 @@ menina secret list   --host root@vps --project demo --environment production
 menina secret remove DATABASE_URL --host root@vps --project demo --environment production --yes
 menina secret rotate DATABASE_URL --host root@vps --project demo --environment production
 menina secret rotate API_KEY --host root@vps --project demo --environment production --generate
+menina secret rotate API_KEY --host root@vps --project demo --environment production --generate --output ./api-key.txt
+menina secret rotate DATABASE_URL --host root@vps --project demo --environment production --restart --yes
 menina secret verify DATABASE_URL --host root@vps --project demo --environment production
 menina secret verify --host root@vps --project demo --environment production --json
 ```
@@ -316,7 +318,8 @@ Secret files are mode `0660`; the environment directory is `0770` with setgid.
 Run the command as a user in the `menina` group (or root) so the control plane
 can read them. Do not copy files into `secrets/` manually: the control plane may not be
 able to read them. `secret verify` checks existence, readability and non-empty
-content without printing values.
+content without printing values. `secret rotate --generate` never prints the
+value; use `--output <path>` to write it to a mode-0600 file.
 
 The manifest never contains secret values.
 
@@ -380,7 +383,8 @@ menina apply --host deploy@vps -e staging
 
 `apply` is an upsert: it creates the project directory, `project.yml`, missing
 environment definition, `apps/<name>.yml`, and per-app overrides. It preserves
-an existing `project.yml` and environment definition. It performs no pruning.
+an existing `project.yml` and environment definition. It performs no pruning
+unless `--prune` is explicitly reviewed and applied via `--from-plan`.
 
 `apply` takes a config-dir lock and records a pre-apply revision under
 `<config-dir>/.revisions/`. List them with `menina config revisions` and restore
@@ -580,9 +584,9 @@ definitions are kept.
 
 Constraints:
 
-- Workload names must be unique per project/environment. A later apply with the
-  same name overwrites the earlier definition; there is no `source.repo`
-  ownership tracking in manifests yet.
+- Workload names must be unique per project/environment. Ownership is enforced
+  when `source.repo` is declared: another repository cannot overwrite an owned
+  app. A manifest without `source.repo` also cannot overwrite a remote-owned app.
 - Named storages are manifest-local; two manifests using the same storage name
   do not share a volume.
 - Removing a workload from a manifest does not delete it. Use
@@ -592,7 +596,9 @@ Constraints:
 
 ## Limitations
 
-- No `--prune`, no manifest ownership/conflict detection, no git-diff selection.
+- No git-diff selection (`--filter` is explicit), no automatic rollback, and no
+  multi-node/HA support. Prune requires a reviewed `--from-plan`; ownership is a
+  hint, not authorization.
 - One storage per workload; named volumes cannot be shared across workloads;
   multi-writer/RWX is not configured by Menina.
 - No compose semantics: no `depends_on`, no automatic database provisioning, no

@@ -117,7 +117,7 @@ func localCapabilities() capabilityDoc {
 		},
 		Commands: []string{
 			"init", "install", "validate", "apply", "build", "push",
-			"secret", "schema", "capabilities", "version", "upgrade",
+			"secret", "job", "config", "schema", "capabilities", "version", "upgrade",
 		},
 	}
 }

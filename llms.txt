@@ -207,7 +207,7 @@ menina status [--json]               # includes the registry host
 menina routes [--json]               # HTTP routes + L4 TCP/UDP exposures
 menina job list [--status S] [--json] | menina job watch <id> | menina job cancel <id>   # deployment queue/events
 menina job list --host user@vps | menina job watch <id> --host user@vps --json           # client SSH proxy
-menina config revisions [--project P] | menina config rollback <id> --yes   # desired-state snapshots
+menina config revisions [--project P] | menina config rollback <id> --yes   # desired-state snapshots (host or client --host)
 menina config validate [--json]      # resolve+validate the config tree (non-zero if invalid)
 menina doctor                        # config, k8s, registry, routes, TLS checks
 menina registry status

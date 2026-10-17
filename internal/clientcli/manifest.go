@@ -440,7 +440,7 @@ func newApplyCommand(app *App) *cobra.Command {
 	cmd.Flags().BoolVar(&diff, "diff", false, "show config changes without writing")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "alias for --diff")
 	cmd.Flags().BoolVar(&verify, "verify", false, "re-read the written config and verify apps/environment overrides")
-	cmd.Flags().BoolVar(&prune, "prune", false, "remove owned apps not declared by this manifest")
+	cmd.Flags().BoolVar(&prune, "prune", false, "review-only: generate deletions for --from-plan (requires source.repo)")
 	cmd.Flags().StringVar(&ifRevision, "if-revision", "", "only apply if the current state token matches (alias)")
 	cmd.Flags().StringVar(&ifStateToken, "if-state-token", "", "only apply if the current state token matches")
 	cmd.Flags().StringVar(&fromPlan, "from-plan", "", "apply a previously generated plan id")
