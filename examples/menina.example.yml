@@ -1,11 +1,16 @@
 project: demo
 environment: production
 
+# Default values for apps and workers.
 defaults:
   context: .
   tag: production            # default tag; matches defaults.imageTagStrategy
   build: true                # hint only; Menina itself does not build
 
+# Persistent storage definitions.
+# Each storage has a name, size, path, and access mode.
+# The path is the mount point inside the container.
+# The access mode can be single-writer (default) or multi-writer.
 storages:
   pgdata:
     size: 1Gi
@@ -15,13 +20,15 @@ storages:
   sqlite:
     size: 1Gi
     path:  /var/lib/sqlite/data
-    access: single-writer
 
   reports:
     size: 1Gi
     path: /var/reports
     access: multi-writer
 
+# Application definitions.
+# Each app has a dockerfile or an image, a port, and optional environment variables,
+# secrets, storage, and replicas.
 apps:
   api:
     dockerfile: apps/api/Dockerfile
@@ -48,6 +55,8 @@ apps:
     env: { POSTGRES_PASSWORD: secret }
     storage: [pgdata]
 
+# Worker definitions.
+# Each worker has a command, optional environment variables, secrets, storage, and replicas.
 workers:
   jobs:
     from: api
