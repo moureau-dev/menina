@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Docs
+- Added `AGENTS.md` and `docs/STRUCTURE.md` covering release/commit rules, doc
+  maintenance, package boundaries, and when to update the structure guide.
 - Added an implementation dependency map to `ROADMAP.md` with per-item
   prerequisites, difficulty/importance, and the hidden one-off job prerequisite.
 - Clarified the current service-to-service/microservices boundary in `llms.txt`

@@ -5,8 +5,7 @@
   "scripts": {
     "sync": "bun run scripts/sync-docs.ts",
     "start": "bun run sync && newstack start",
-    "build": "bun run sync && newstack build",
-    "build:ssg": "bun run sync && newstack build --mode=ssg"
+    "build": "bun run sync && newstack build  --mode=ssg"
   },
   "dependencies": {
     "@moureau/newstack": "latest"

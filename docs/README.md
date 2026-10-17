@@ -14,6 +14,8 @@
   pinning, retention, and push-triggered deploys.
 - [Operations](OPERATIONS.md) — privileges, security, backups, upgrades, Docker,
   and development.
+- [Repository structure](STRUCTURE.md) — package layout and conventions for
+  contributors and agents.
 
 More docs will be added here over time. The project overview and quick start
 live in the top-level [README](../README.md).
