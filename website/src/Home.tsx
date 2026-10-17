@@ -258,6 +258,9 @@ export class Home extends Newstack {
                     <span>Windows</span>
                   </a>
                 </div>
+                <p class="client-note">
+                  Portable binary. Run <code>menina install</code> once to add it to your PATH.
+                </p>
               </div>
             </div>
           </section>

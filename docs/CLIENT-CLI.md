@@ -21,7 +21,9 @@ irm https://menina.moureau.dev/install-client.ps1 | iex
 
 Both installers verify the release checksum and install the command as `menina`.
 If a host `menina` is already present, they install `menina-client` instead of
-shadowing it. Useful environment variables:
+shadowing it. If you download a release binary directly, run `menina install`
+(the client TUI offers this on first launch) to copy it to the user bin
+directory and update `PATH`. Useful environment variables:
 
 | Variable | Meaning |
 | --- | --- |
@@ -33,8 +35,8 @@ shadowing it. Useful environment variables:
 | `MENINA_REPO` | GitHub repository |
 
 Run `menina` with no subcommand on a terminal to open the client TUI. It uses
-the same menu style as the host, labelled **CLIENT** (the host menu is labelled
-**HOST**), and offers Init / Validate / Apply / Build / Push / Version /
+the same menu style as the host, labelled **client** (the host menu is labelled
+**host**), and offers Init / Validate / Apply / Build / Push / Version /
 Upgrade / Quit. Without a terminal it prints help instead. The TUI re-executes
 the binary for the chosen action, so flags and output behave exactly like the
 non-interactive commands.
@@ -210,6 +212,20 @@ menina init --environment staging --from .menina.yml --file .menina.staging.yml
 Creates a minimal manifest. `--from` copies a manifest and rewrites its
 `environment` and `vars.ENVIRONMENT`, keeping `${ENVIRONMENT}` placeholders.
 Refuses to overwrite unless `--force` is passed.
+
+### `install`
+
+```bash
+menina install
+menina install --dir /usr/local/bin
+menina install --no-path
+```
+
+Copies the running client to the user bin directory (Windows:
+`%LOCALAPPDATA%\Menina\bin`, Unix: `~/.local/bin`, or `/usr/local/bin` as root)
+and adds it to `PATH`. Running the client TUI for the first time from an
+uninstalled location offers the same step. The release installers do this
+automatically; this command covers the direct-download binary.
 
 ### `validate`
 

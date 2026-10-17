@@ -34,6 +34,7 @@ curl -fsSL https://menina.moureau.dev/install-client.sh | sh   # Linux/macOS
 # Windows: irm https://menina.moureau.dev/install-client.ps1 | iex
 
 menina init                 # scaffold .menina.yml
+menina install              # install this downloaded binary on PATH
 menina validate             # parse + render without writing
 menina apply --host user@vps  # desired state over SSH (config only)
 menina build --push         # build/push images locally; push triggers deploys
@@ -48,7 +49,7 @@ push; `build`/`push` need only Docker and registry credentials. `project` and
 `--var KEY=VALUE` override them before rendering. The installed
 command is `menina`, falling back to `menina-client` when a host `menina` is
 already present. Running `menina` with no subcommand on a terminal opens the
-client TUI (same style as the host menu, labelled CLIENT). Full manifest schema,
+client TUI (same style as the host menu, labelled client). Full manifest schema,
 flags, CI patterns, and limitations: `docs/CLIENT-CLI.md`.
 
 ## Concepts

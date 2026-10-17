@@ -30,8 +30,24 @@ func runClientMenu(cmd *cobra.Command, app *App) error {
 	}
 	selected := 0
 	var prelude string
+	if !clientInstalled() {
+		install, err := clientConfirm("Install menina and add it to your PATH?", true)
+		switch err {
+		case nil:
+			if install {
+				target, note, ierr := installSelf("", false, false)
+				if ierr != nil {
+					prelude = tui.Block("Install", "error: "+ierr.Error())
+				} else {
+					prelude = tui.Block("Install", "Installed "+target+"\n"+note)
+				}
+			}
+		case errClientQuit:
+			return nil
+		}
+	}
 	for {
-		entries := clientMenuEntries()
+		entries := clientMenuEntries(clientInstalled())
 		opts := make([]tui.Option, len(entries))
 		for i, e := range entries {
 			opts[i] = tui.Option{Label: e.label, Description: e.desc}
@@ -39,7 +55,7 @@ func runClientMenu(cmd *cobra.Command, app *App) error {
 		if selected >= len(entries) {
 			selected = 0
 		}
-		idx, action := tui.SelectWithPreludeBadge("Menina", "CLIENT", opts, selected, false, prelude)
+		idx, action := tui.SelectWithPreludeBadge("Menina", "client", opts, selected, false, prelude)
 		switch action {
 		case tui.ActionBack:
 			continue
@@ -70,16 +86,23 @@ func runClientMenu(cmd *cobra.Command, app *App) error {
 	}
 }
 
-func clientMenuEntries() []clientMenuEntry {
+func clientMenuEntries(installed bool) []clientMenuEntry {
+	install := clientMenuEntry{"Install", "Copy this client to your user bin directory and add it to PATH.", menuInstall}
+	version := clientMenuEntry{"Version", "Show the client version or check for updates.", menuVersion}
+	quit := clientMenuEntry{"Quit", "Exit Menina.", nil}
+	if !installed {
+		return []clientMenuEntry{install, version, quit}
+	}
 	return []clientMenuEntry{
 		{"Init", "Scaffold a .menina.yml in the current directory.", menuInit},
+		install,
 		{"Validate", "Parse and render a manifest without writing anything.", menuValidate},
 		{"Apply", "Write project/app/environment config, locally or over SSH.", menuApply},
 		{"Build", "Build the manifest's images with Docker.", menuBuild},
 		{"Push", "Push images to the registry; optionally build first.", menuPush},
-		{"Version", "Show the client version or check for updates.", menuVersion},
+		version,
 		{"Upgrade", "Check for or install a newer client binary.", menuUpgrade},
-		{"Quit", "Exit Menina.", nil},
+		quit,
 	}
 }
 
@@ -170,6 +193,17 @@ func menuInit(cmd *cobra.Command, app *App) (string, error) {
 		args = append(args, "--force")
 	}
 	return runClientProcess(cmd.Context(), app, args...)
+}
+
+func menuInstall(cmd *cobra.Command, app *App) (string, error) {
+	ok, err := clientConfirm("Install this client and update PATH?", true)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", errClientBack
+	}
+	return runClientProcess(cmd.Context(), app, "install")
 }
 
 func menuValidate(cmd *cobra.Command, app *App) (string, error) {

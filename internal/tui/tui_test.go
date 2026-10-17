@@ -23,9 +23,9 @@ func press(m selectModel, key tea.KeyType) selectModel {
 
 func TestBadgeAppearsInHeader(t *testing.T) {
 	m := newModel(1)
-	m.badge = "CLIENT"
+	m.badge = "client"
 	header := ansi.Strip(m.header())
-	if !strings.Contains(header, "Menina") || !strings.Contains(header, "CLIENT") {
+	if !strings.Contains(header, "Menina") || !strings.Contains(header, "client") {
 		t.Fatalf("header = %q", header)
 	}
 }

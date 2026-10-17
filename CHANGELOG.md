@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `menina install` copies a directly downloaded client binary into the user bin
+  directory and updates `PATH` (Windows user PATH via PowerShell). The client
+  TUI offers the same install step on first launch from an uninstalled location.
+
+### Fixed
+- The TUI `host`/`client` badge is now small muted lowercase text instead of a
+  padded, filled block.
+
 ### Docs
 - Website: label the server install command and add Linux/macOS/Windows client
   buttons linking directly to the latest release assets. The client links are

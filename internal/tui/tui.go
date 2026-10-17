@@ -33,11 +33,7 @@ var (
 			Padding(0, 1)
 	blockTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("170"))
 	dirStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
-	badgeStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFDF5")).
-			Background(lipgloss.Color("#3C3C3C")).
-			Bold(true).
-			Padding(0, 1)
+	badgeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
 )
 
 const (

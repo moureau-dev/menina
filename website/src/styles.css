@@ -227,6 +227,16 @@ pre {
   flex: none;
 }
 
+.client-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.client-note code {
+  color: #d9d6f2;
+}
+
 /* ---------- Command ---------- */
 .cmd {
   display: flex;
