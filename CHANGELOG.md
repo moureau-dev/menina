@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.10] - 2026-10-17
+
 ### Added
 - Repository manifests (`.menina.yml`) and a cross-platform client:
   `menina init`, `validate`, `apply`, `build`, and `push`. Multiple manifests can
