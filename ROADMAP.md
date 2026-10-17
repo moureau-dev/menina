@@ -39,45 +39,60 @@ honest about what was and was not rolled back.
 
 ### Release model
 
-Define a project/environment **release** as an immutable, identifiable unit:
+Build the model **per app first**, then compose it into a project/environment
+release. Do not pretend a multi-app rollout is a transaction.
 
-- image digest for every component (not mutable tags);
-- the resolved configuration snapshot and its identity/`stateToken`;
+**App release** — the unit that can be tested and recovered independently:
+
+- pinned image digest and resolved configuration (`stateToken`);
 - verification results and migration status;
-- a pointer to the previous known-good release;
-- retained previous workloads and PVCs.
+- a pointer to the previous known-good app release;
+- retained previous workload and PVC;
+- explicit states such as `prepared`, `migrating`, `deploying`, `verifying`,
+  `active`, `failed`, `recovering`, `rolled_back`.
 
-A deployment becomes a state transition, not a sequence of loosely related
-commands:
+**Project/environment release** — an aggregate, not an atomic operation:
+
+- coordinates app releases and any explicitly declared ordering;
+- records each component outcome and summarizes the overall release as
+  succeeded, failed, or partially failed;
+- never hides a failed component behind a global success;
+- reports code, configuration, and data state separately.
+
+Example partial failure:
 
 ```text
-known-good A
-    -> prepare B (pin digests + resolved config)
-    -> run declared migration policy
-    -> deploy B
-    -> verify B
-       success -> promote B
-       failure -> recovery policy
-                  report code / config / data state separately
+release staging-042: partially failed
+  api:      active       new image verified
+  admin:    failed       previous image remains active
+  database: migrated     migration not reversed; verify old code compatibility
 ```
 
-Requirements:
+Recovery is an explicit per-app/environment policy, never a hidden global
+default:
 
-- Explicit states such as `prepared`, `migrating`, `deploying`, `verifying`,
-  `active`, `failed`, `recovering`, `rolled_back`, with per-component status.
-- Never report a generic “rollback successful.” Report at least:
-  application image rolled back, configuration restored, migration completed or
-  not reversed, verification still required.
-- Automatic rollback on failed verification, with a policy for interrupted
-  deployments and safe retries.
+| Policy | Behavior |
+| --- | --- |
+| `previous` | Attempt to restore the previous known-good app release after qualifying failures. |
+| `none` | Keep the failed release state for inspection; do not auto-restore. |
+| `require-approval` | Prepare recovery but wait for an authorized operator. |
+
+Define triggers separately: deploy error, failed verification, timeout, and
+interrupted job. Apps with declared migrations should default to `none` or
+`require-approval`; an image rollback does not reverse data changes.
+
+Also:
+
 - Declarative verification: expected HTTP status/body/header and optional
-  smoke-test command/job, plus a defined failure policy.
+  smoke-test command/job, with an explicit failure policy.
 - First-class promotion: move an existing image digest + reviewed target plan
   between environments without rebuilding.
 - App-aware migration/pre/post hooks are opt-in, permissioned, image-pinned,
   timeout-bounded, logged, and never assumed reversible.
 - Optional volume snapshots only when the storage class provides them. They are
   not a substitute for scheduled backups.
+- Keep dependency ordering minimal and explicit (for example migrations before
+  API, API before workers). Do not build a general orchestration DAG.
 
 ### Determinism and operations
 
@@ -104,6 +119,10 @@ is observable without manual checks.
 
 ## Tier 2 — team and security
 
+**Shared-access gate:** before multiple independent clients or autonomous agents
+share one host, require project-scoped credentials and attributable audit logs.
+A shared administrative identity is not a tenant boundary. RBAC/SSO can follow.
+
 Ordered cheapest-first:
 
 1. Per-project secret permissions and per-user registry credentials.
@@ -116,6 +135,7 @@ Ordered cheapest-first:
 
 Exit criteria: multiple operators can share a host without sharing credentials
 or silently overwriting each other; actions are attributable and reviewable.
+Independent clients/agents do not share an administrative identity.
 
 ## Tier 3 — fleet operations, multi-node, and HA/DR
 
