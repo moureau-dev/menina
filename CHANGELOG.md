@@ -6,11 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.12] - 2026-10-17
+
 ### Fixed
 - Digest resolution now treats bare image names (`redis:7-alpine`) as external
   images instead of assuming they belong to the bundled registry. Previously
   Zot returned 404 for `/v2/redis/manifests/7-alpine`, leaving the deploy job
   pending; they now deploy by tag as documented.
+
 ## [0.0.11] - 2026-10-17
 
 ### Added
