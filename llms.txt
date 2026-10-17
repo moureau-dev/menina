@@ -41,7 +41,7 @@ installs a directly downloaded binary onto `PATH`.
 A repository manifest is `.menina.yml`. JSON Schema (versioned):
 `https://menina.moureau.dev/schema/v1/menina.schema.json` (unversioned alias
 `/schema/menina.schema.json`). `menina init` adds the `yaml-language-server`
-header. See [`docs/CLIENT-CLI.md`](docs/CLIENT-CLI.md) for the full schema.
+header. See [`docs/CLIENT-CLI.md`](https://menina.moureau.dev/docs/CLIENT-CLI.md) for the full schema.
 
 Top-level: `version`, `project`, `environment`, `vars`, `source`,
 `defaults` (`context`, `tag`, `registry`, `buildArgs`), `storages`, `apps`,
@@ -157,8 +157,8 @@ Config layout:
 Desired state is human-editable YAML; operational state is SQLite. The app
 definition holds image, workload, resources, replicas, storage, health, env and
 secret references. Environment overrides can opt in to exposure and change
-mergeable fields. See [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for the merge model and
-[`docs/CLI.md`](docs/CLI.md) for the full host command reference.
+mergeable fields. See [`docs/CONFIGURATION.md`](https://menina.moureau.dev/docs/CONFIGURATION.md) for the merge model and
+[`docs/CLI.md`](https://menina.moureau.dev/docs/CLI.md) for the full host command reference.
 
 Host commands (summary):
 
@@ -197,11 +197,11 @@ or per-user registry credentials (one shared push/pull credential).
 
 ## Docs
 
-- [`docs/CLIENT-CLI.md`](docs/CLIENT-CLI.md) — client, manifest, apply/build/push, CI.
-- [`docs/CLI.md`](docs/CLI.md) — host commands, interactive flows, scaling.
-- [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — config layout, merge rules, notifications.
-- [`docs/PROXY.md`](docs/PROXY.md) — routing, TLS, caching, protocols, L4 exposure.
-- [`docs/KUBERNETES.md`](docs/KUBERNETES.md) — k3s, namespaces, RBAC, workloads.
-- [`docs/REGISTRY.md`](docs/REGISTRY.md) — Zot, auth, digest pinning, retention, push→deploy.
-- [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — privileges, security, backups, upgrades, Docker.
+- [`docs/CLIENT-CLI.md`](https://menina.moureau.dev/docs/CLIENT-CLI.md) — client, manifest, apply/build/push, CI.
+- [`docs/CLI.md`](https://menina.moureau.dev/docs/CLI.md) — host commands, interactive flows, scaling.
+- [`docs/CONFIGURATION.md`](https://menina.moureau.dev/docs/CONFIGURATION.md) — config layout, merge rules, notifications.
+- [`docs/PROXY.md`](https://menina.moureau.dev/docs/PROXY.md) — routing, TLS, caching, protocols, L4 exposure.
+- [`docs/KUBERNETES.md`](https://menina.moureau.dev/docs/KUBERNETES.md) — k3s, namespaces, RBAC, workloads.
+- [`docs/REGISTRY.md`](https://menina.moureau.dev/docs/REGISTRY.md) — Zot, auth, digest pinning, retention, push→deploy.
+- [`docs/OPERATIONS.md`](https://menina.moureau.dev/docs/OPERATIONS.md) — privileges, security, backups, upgrades, Docker.
 - [`ROADMAP.md`](https://github.com/moureau-dev/menina/blob/main/ROADMAP.md) — next tiers, multi-node/HA decomposition.

@@ -62,7 +62,7 @@ await mkdir(outDir, { recursive: true });
 await rm(join(outDir, "docs"), { recursive: true, force: true });
 await rm(join(outDir, "schema"), { recursive: true, force: true });
 
-await cp(join(repoDir, "llms.txt"), join(outDir, "llms.txt"));
+await writeFile(join(outDir, "llms.txt"), rewriteLinks(await readFile(join(repoDir, "llms.txt"), "utf8")));
 await copyDocs(join(repoDir, "docs"), join(outDir, "docs"));
 await mkdir(join(outDir, "schema", "v1"), { recursive: true });
 await cp(join(repoDir, "internal", "schema", "menina.schema.json"), join(outDir, "schema", "v1", "menina.schema.json"));
