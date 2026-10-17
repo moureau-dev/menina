@@ -6,6 +6,55 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Repository manifests (`.menina.yml`) and a cross-platform client:
+  `menina init`, `validate`, `apply`, `build`, and `push`. Multiple manifests can
+  contribute apps/workers to the same project/environment; apply is an upsert and
+  never prunes.
+- `menina init` scaffolds a manifest and can copy one with `--from`, rewriting
+  the environment and `vars.ENVIRONMENT`.
+- `menina validate` parses, interpolates and renders a manifest; when
+  `config.yml` is available it also resolves the rendered project against the
+  host configuration.
+- `menina apply` writes project/app/environment YAML locally or pipes it over
+  SSH (`--host`, cached under the user config directory); `--check` validates
+  without writing.
+- `menina build` / `menina push` build and push manifest images with the local
+  Docker daemon, including `--filter` name/glob selection. Push triggers the
+  normal deploy for already-applied apps.
+- Standalone `menina-client` binary for Linux, macOS and Windows
+  (`cmd/menina-client`); the host binary also exposes the client commands.
+- Installers (`scripts/install-client.sh`, `scripts/install-client.ps1`) that
+  verify checksums, install the command as `menina` (or `menina-client` when a
+  host `menina` exists) and update `PATH`. Release workflow publishes client
+  assets for linux/darwin/windows on amd64/arm64.
+- `menina version --check` and `menina upgrade` for checksum-verified client
+  self-updates.
+- A client TUI (bare `menina` on a terminal) with Init/Validate/Apply/Build/
+  Push/Version/Upgrade. Both root menus now carry a small badge: `HOST` or
+  `CLIENT`.
+
+### Changed
+- Manifest storage is intentionally conservative: one storage per workload,
+  named volumes cannot be shared, `single-writer` forces one replica, and
+  `multi-writer` is rejected until Menina configures an RWX storage class.
+- Worker `from: <app>` inherits image/build/env/secrets/resources but never
+  storage, preventing accidental second writers to SQLite.
+
+### Fixed
+- Manifest secret references use forward-slash host paths, so rendering on
+  Windows/macOS produces references a Linux host can resolve.
+- Example manifest updated to validate: single-writer storage, matching SQLite
+  mount path, a separate worker volume, and no multi-writer/replicas conflict.
+
+### Docs
+- `docs/CLIENT-CLI.md`: manifest schema, commands and flags, SSH host caching,
+  deploy ordering, CI patterns, multi-manifest rules and limitations.
+- `llms.txt`, `README.md` and `docs/README.md` describe the client, installers,
+  TUI and client commands.
+- Website doc sync now rewrites relative Markdown links to absolute
+  `https://menina.moureau.dev/docs/...` URLs.
+
 ## [0.0.9] - 2026-10-16
 
 ### Added
