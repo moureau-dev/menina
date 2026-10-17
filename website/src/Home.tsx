@@ -52,7 +52,7 @@ async function detectClientArch(): Promise<ClientArch | null> {
 const features = [
   {
     title: "Self-hosted by design",
-    body: "Runs on your VPS. Your servers, your configuration and your data stay yours. Nothing depends on someone else's cloud.",
+    body: "Runs on your VPS. Your servers, configuration and data stay yours, and there is no vendor control plane in the deploy path.",
   },
   {
     title: "Push to deploy",
@@ -64,7 +64,7 @@ const features = [
   },
   {
     title: "Immutable releases",
-    body: "Every tag is resolved to an image digest. Releases are recorded, so you can roll back to a version that already ran.",
+    body: "Bundled-registry tags are resolved to immutable image digests. Releases are recorded, so you can roll back to a version that already ran. External images deploy by tag.",
   },
   {
     title: "Routing and HTTPS",
@@ -80,7 +80,7 @@ const features = [
   },
   {
     title: "Backups and upgrades",
-    body: "Portable tar.gz backups (config, database, volumes, images) and a self-upgrade that verifies the checksum before it swaps the binary.",
+    body: "Portable tar.gz backups (config and database, plus opt-in volumes and images) and a self-upgrade that verifies the checksum before it swaps the binary.",
   },
 ];
 
@@ -88,12 +88,12 @@ const steps = [
   {
     n: "01",
     title: "Install and provision",
-    body: "The installer only installs the binary and systemd units. Then menina setup writes the config, and menina deploy provisions k3s, the registry, the control plane and the proxy.",
+    body: "The installer sets up the host binary, service user, shell completion and systemd unit templates; it does not provision. Then menina setup writes the config, and menina deploy provisions k3s, the registry, the control plane and the proxy.",
   },
   {
     n: "02",
     title: "Define your apps",
-    body: "Projects, environments and apps are plain YAML under /etc/menina. You can also use the guided CLI and its interactive menu.",
+    body: "Projects, environments and apps are plain YAML under /etc/menina, or a repository .menina.yml applied by the client CLI. You can also use the guided CLI and its interactive menu.",
   },
   {
     n: "03",

@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Docs
+- Website copy: clarify that digest pinning/immutable releases apply to
+  bundled-registry images (external images deploy by tag), mention repository
+  manifests in the app-definition step, and describe the installer's full scope.
+
 ## [0.0.12] - 2026-10-17
 
 ### Fixed
