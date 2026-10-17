@@ -1,11 +1,19 @@
 project: demo
 environment: production
 
+# Config environment menina client variables.
+# They are only available in this configuration file and are not passed to
+# the container automatically. Use the values by wrapping with `${}`.
+vars:
+  ENVIRONMENT: production
+  DOMAIN: example.com
+  MOUNT_BASE: /var/lib
+  
+
 # Default values for apps and workers.
 defaults:
   context: .
-  tag: production            # default tag; matches defaults.imageTagStrategy
-  build: true                # hint only; Menina itself does not build
+  tag: ${ENVIRONMENT}            # default tag; matches defaults.imageTagStrategy
 
 # Persistent storage definitions.
 # Each storage has a name, size, path, and access mode.
@@ -13,17 +21,17 @@ defaults:
 # The access mode can be single-writer (default) or multi-writer.
 storages:
   pgdata:
-    size: 1Gi
-    path: /var/lib/postgresql/data
+    size: 2Gi
+    path: ${MOUNT_BASE}/postgresql/data
     access: single-writer
 
   sqlite:
     size: 1Gi
-    path:  /var/lib/sqlite/data
+    path:  ${MOUNT_BASE}/sqlite/data
 
   reports:
     size: 1Gi
-    path: /var/reports
+    path: ${MOUNT_BASE}/reports
     access: multi-writer
 
 # Application definitions.
@@ -33,16 +41,15 @@ apps:
   api:
     dockerfile: apps/api/Dockerfile
     port: 8080
-    host: api.example.com
-    env: { REDIS_URL: "redis://redis:6379" } # environment variables merged in the container
-    secrets: [DATABASE_URL]  # names only, values stay on the host
-    storage: [sqlite] # list of storage names, or a single name, or an object with the name and overrides ({ name: sqlite, path: /data }) or list of such objects
+    host: api.${DOMAIN}
+    env: { REDIS_URL: "redis://redis:6379", DB_PATH: "${MOUNT_BASE}/sqlite" } # environment variables merged in the container
+    storage: [sqlite] # list of storage names, or a single name, or an object with the name and overrides ({ use: sqlite, path: /data }) or list of such objects
     replicas: 1 # optional, defaults to 1. can be a single number or an object with min and max values
 
   web:
     dockerfile: apps/web/Dockerfile
     port: 3000
-    host: demo.example.com
+    host: demo.${DOMAIN}
 
   redis:
     image: redis:7-alpine    # external image = plain app, no build
@@ -54,7 +61,7 @@ apps:
     port: 5432
     env: { POSTGRES_DB: demo, POSTGRES_USER: demo }   # non-sensitive
     secrets: [POSTGRES_PASSWORD]                      # value lives on the host
-    storage: [pgdata]
+    storage: pgdata
 
 # Worker definitions.
 # Each worker has a command, optional environment variables, secrets, storage, and replicas.
@@ -62,13 +69,14 @@ workers:
   jobs:
     from: api
     command: ["/app/worker"]
-    replicas: 2
+    replicas: 1
     env: { QUEUE: default }
 
   report:
     dockerfile: apps/report/Dockerfile   # own image
-    replicas: { min: 2, max: 5 }
+    replicas: { min: 2, max: 5    }
+    storage: [reports]
+    secrets: [DATABASE_URL]
     env: { 
-      DATABASE_URL: "postgres://postgres:secret@pg:5432/postgres",
-      REPORT_PATH: "/var/reports",
+      REPORT_PATH: "${MOUNT_BASE}/reports",
     }
