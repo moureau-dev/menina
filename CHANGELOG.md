@@ -10,6 +10,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Website copy: clarify that digest pinning/immutable releases apply to
   bundled-registry images (external images deploy by tag), mention repository
   manifests in the app-definition step, and describe the installer's full scope.
+- Add a `.menina.yml` JSON Schema at
+  `https://menina.moureau.dev/schema/menina.schema.json`, serve it from the
+  website, and add the `yaml-language-server` header to `menina init` and the
+  example manifest.
+- Quickstart now follows the manifest flow (`init` → `apply` → `build --push`)
+  instead of skipping the app definition.
 
 ## [0.0.12] - 2026-10-17
 

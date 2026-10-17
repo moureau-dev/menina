@@ -108,6 +108,26 @@ workers:
 undefined variable is an error; unknown fields are rejected. `vars` are not
 passed to containers — set container values under `env`.
 
+### Editor validation
+
+The manifest has a JSON Schema:
+
+```text
+https://menina.moureau.dev/schema/menina.schema.json
+```
+
+Add this comment at the top of `.menina.yml` for autocomplete and inline
+validation in editors that use the YAML language server (VS Code, Neovim,
+JetBrains, etc.):
+
+```yaml
+# yaml-language-server: $schema=https://menina.moureau.dev/schema/menina.schema.json
+```
+
+`menina init` writes that header automatically. The schema covers the manifest
+only; the host-side `config.yml`/`project.yml`/`apps/*.yml` files are still
+validated by `menina config validate` at apply/deploy time.
+
 ### Replicated projects and environments
 
 Because interpolation happens before validation, `project` and `environment`

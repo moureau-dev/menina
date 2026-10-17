@@ -54,7 +54,9 @@ push; `build`/`push` need only Docker and registry credentials. `project` and
 host (`--host`, `MENINA_HOST`, or the cached host). The installed
 command is `menina`, falling back to `menina-client` when a host `menina` is
 already present. Running `menina` with no subcommand on a terminal opens the
-client TUI (same style as the host menu, labelled client). Full manifest schema,
+client TUI (same style as the host menu, labelled client). Manifest JSON Schema:
+`https://menina.moureau.dev/schema/menina.schema.json` (`menina init` adds the
+`yaml-language-server` header). Full manifest schema,
 flags, CI patterns, and limitations: `docs/CLIENT-CLI.md`.
 
 ## Concepts

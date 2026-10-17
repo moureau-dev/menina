@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://menina.moureau.dev/schema/menina.schema.json",
+  "title": "Menina repository manifest",
+  "description": "Schema for .menina.yml, the repository manifest read by the Menina client.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project", "environment"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "enum": [1],
+      "default": 1
+    },
+    "project": {
+      "$ref": "#/$defs/projectName"
+    },
+    "environment": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vars": {
+      "type": "object",
+      "description": "Non-secret values for ${VAR} interpolation.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "defaults": {
+      "$ref": "#/$defs/defaults"
+    },
+    "storages": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/storage"
+      }
+    },
+    "apps": {
+      "type": "object",
+      "description": "Listening workloads (services).",
+      "propertyNames": { "$ref": "#/$defs/workloadName" },
+      "additionalProperties": {
+        "$ref": "#/$defs/workload"
+      }
+    },
+    "workers": {
+      "type": "object",
+      "description": "Non-listening workloads (queues, background jobs).",
+      "propertyNames": { "$ref": "#/$defs/workloadName" },
+      "additionalProperties": {
+        "$ref": "#/$defs/workload"
+      }
+    }
+  },
+  "$defs": {
+    "projectName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+    },
+    "workloadName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+    },
+    "secretName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "buildArgs": {
+      "type": "object",
+      "description": "Docker build arguments. Not secrets and not runtime env.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "type": "string",
+          "description": "Default Docker build context, relative to the manifest."
+        },
+        "tag": {
+          "type": "string",
+          "description": "Default image tag for built images."
+        },
+        "registry": {
+          "type": "string",
+          "description": "Registry host used to derive built image repositories."
+        },
+        "buildArgs": {
+          "$ref": "#/$defs/buildArgs"
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size", "path"],
+      "properties": {
+        "size": {
+          "type": "string",
+          "minLength": 1,
+          "description": "PVC size, for example 1Gi."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Default mount path inside the container."
+        },
+        "access": {
+          "type": "string",
+          "enum": ["single-writer", "multi-writer"],
+          "default": "single-writer"
+        }
+      }
+    },
+    "storageEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "use": {
+          "$ref": "#/$defs/workloadName"
+        },
+        "size": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "anyOf": [
+        { "required": ["use"] },
+        { "required": ["size", "path"] }
+      ]
+    },
+    "storageRef": {
+      "oneOf": [
+        { "$ref": "#/$defs/workloadName" },
+        { "$ref": "#/$defs/storageEntry" },
+        {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/workloadName" },
+              { "$ref": "#/$defs/storageEntry" }
+            ]
+          }
+        }
+      ]
+    },
+    "replicas": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min": { "type": "integer", "minimum": 0 },
+            "max": { "type": "integer", "minimum": 0 },
+            "targetCPU": { "type": "integer", "minimum": 1, "maximum": 100 }
+          }
+        }
+      ]
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpu": { "type": "string" },
+        "memory": { "type": "string" }
+      }
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "readiness": { "type": "string" },
+        "liveness": { "type": "string" }
+      }
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dockerfile": {
+          "type": "string",
+          "description": "Dockerfile path, relative to the manifest (or context)."
+        },
+        "image": {
+          "type": "string",
+          "description": "External image, or a repository override when dockerfile is set."
+        },
+        "context": {
+          "type": "string",
+          "description": "Docker build context, relative to the manifest."
+        },
+        "from": {
+          "$ref": "#/$defs/workloadName",
+          "description": "Reuse an app's image/build/env/secrets. Storage is not inherited."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["service", "worker"]
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "host": {
+          "type": "string",
+          "description": "Public hostname. Apps without a host are cluster-internal."
+        },
+        "command": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "env": {
+          "type": "object",
+          "description": "Runtime environment variables.",
+          "additionalProperties": { "type": "string" }
+        },
+        "secrets": {
+          "type": "array",
+          "description": "Secret names. Values live on the host, never in the manifest.",
+          "items": { "$ref": "#/$defs/secretName" }
+        },
+        "buildArgs": {
+          "$ref": "#/$defs/buildArgs"
+        },
+        "storage": {
+          "$ref": "#/$defs/storageRef"
+        },
+        "replicas": {
+          "$ref": "#/$defs/replicas"
+        },
+        "resources": {
+          "$ref": "#/$defs/resources"
+        },
+        "health": {
+          "$ref": "#/$defs/health"
+        }
+      }
+    }
+  }
+}

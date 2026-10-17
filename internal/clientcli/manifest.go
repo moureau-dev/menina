@@ -144,7 +144,8 @@ func newInitCommand(app *App) *cobra.Command {
 	return cmd
 }
 
-const manifestTemplate = `version: 1
+const manifestTemplate = `# yaml-language-server: $schema=https://menina.moureau.dev/schema/menina.schema.json
+version: 1
 project: %s
 environment: %s
 

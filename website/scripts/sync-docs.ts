@@ -60,11 +60,13 @@ async function copyDocs(srcDir: string, dstDir: string): Promise<void> {
 
 await mkdir(outDir, { recursive: true });
 await rm(join(outDir, "docs"), { recursive: true, force: true });
+await rm(join(outDir, "schema"), { recursive: true, force: true });
 
 await cp(join(repoDir, "llms.txt"), join(outDir, "llms.txt"));
 await copyDocs(join(repoDir, "docs"), join(outDir, "docs"));
+await cp(join(repoDir, "schema"), join(outDir, "schema"), { recursive: true });
 await cp(join(repoDir, "scripts", "install.sh"), join(outDir, "install.sh"));
 await cp(join(repoDir, "scripts", "install-client.sh"), join(outDir, "install-client.sh"));
 await cp(join(repoDir, "scripts", "install-client.ps1"), join(outDir, "install-client.ps1"));
 
-console.log("sync-docs: copied llms.txt, docs/ and installer scripts into public/");
+console.log("sync-docs: copied llms.txt, docs/, schema/ and installer scripts into public/");
