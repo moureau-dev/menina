@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Docs
+- Added `ROADMAP.md`, explicitly decomposing multi-node/HA into control-plane
+  state, k3s provisioning, replicated storage, proxy/routing, registry, and DR.
+
 ## [0.0.13] - 2026-10-17
 
 ### Added
