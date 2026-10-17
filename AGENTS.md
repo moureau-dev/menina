@@ -94,12 +94,36 @@ responsibilities. Update that document when the structure changes.
 
 ## Commit messages
 
-Use lowercase, imperative mood, colon prefix for scoping. No period at end.
+Match the existing history: imperative mood, sentence case, no period at the
+end. Do not use Conventional Commits prefixes such as `feat:` or `fix:`; older
+commits contain them, but current practice does not. A scoped subject such as
+`Website: ...` is acceptable when it adds useful context.
+
+Keep the subject concise. Add a body only when the change is non-obvious:
+explain what changed and why, wrap at roughly 72 characters, and leave a blank
+line after the subject. Use short paragraphs, or a bullet list when the change
+has several independent parts. Use backticks for commands, flags, and field
+names. Avoid filler such as “This commit…” or “I changed…”. Release commits are
+`Release v<version>` and normally have no body.
 
 ```text
-add manifest exposure plan checks
-fix bare external image digest resolution
-update client CLI docs for apply plans
+Add implementation dependency map to roadmap
+Document per-item prerequisites, difficulty/importance, and the hidden
+one-off job prerequisite. Clarify current service-to-service boundaries
+in llms.txt and remove the stale Tier 4 placement.
+
+Add classified CLI errors and apply plan/verify
+Introduce `clierr` with stable error codes and exit codes (1-7).
+With `--json`, failures emit a structured error envelope to stderr.
+
+- Add `apply --diff`/`--dry-run` previews
+- Add `apply --verify` read-back checks
+- Add `capabilities --host`
+
+Fix bare image names resolving as bundled registry images
+Rewrite llms.txt with role-first client and host guidance
+Website: add client download links for Linux, macOS, and Windows
+Release v0.0.14
 ```
 
 ## Release
