@@ -68,6 +68,11 @@ func NewRootCommand() *cobra.Command {
 
 	root.AddCommand(
 		newCreateCommand(app),
+		newInitCommand(app),
+		newValidateCommand(app),
+		newApplyCommand(app),
+		newBuildCommand(app),
+		newPushCommand(app),
 		newSetupCommand(app),
 		newDeployCommand(app),
 		newStatusCommand(app),
