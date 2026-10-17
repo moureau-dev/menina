@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.11] - 2026-10-17
+
 ### Added
 - `menina install` copies a directly downloaded client binary into the user bin
   directory and updates `PATH` (Windows user PATH via PowerShell). The client
