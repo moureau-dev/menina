@@ -10,6 +10,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `menina install` copies a directly downloaded client binary into the user bin
   directory and updates `PATH` (Windows user PATH via PowerShell). The client
   TUI offers the same install step on first launch from an uninstalled location.
+- Client `secret set|list|remove` commands for standalone clients: they proxy
+  the host's `menina secret` command over SSH, passing values on stdin (hidden
+  prompt on a TTY), never through the manifest or arguments.
+- Manifest `buildArgs` (`defaults.buildArgs` + per-workload) and repeatable
+  `--build-arg KEY=VALUE` on `build`/`push`, passed to `docker build` with
+  overrides. Worker `from` inheritance includes build args; building the same
+  image with conflicting args is rejected.
 
 ### Fixed
 - The TUI `host`/`client` badge is now small muted lowercase text instead of a

@@ -273,3 +273,59 @@ func TestWithEnvironmentRewritesPlaceholders(t *testing.T) {
 		t.Fatalf("environment = %q", f.Environment)
 	}
 }
+
+func TestRenderMergesBuildArgs(t *testing.T) {
+	doc := `project: demo
+environment: production
+defaults:
+  buildArgs:
+    BASE: default
+apps:
+  api:
+    dockerfile: Dockerfile
+    port: 8080
+    buildArgs:
+      API: "1"
+workers:
+  jobs:
+    from: api
+`
+	f, err := Load([]byte(doc), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := f.Render(RenderOptions{ConfigDir: "/etc/menina", Registry: "registry.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Targets) != 1 {
+		t.Fatalf("targets = %d, want 1", len(r.Targets))
+	}
+	got := r.Targets[0].BuildArgs
+	if got["BASE"] != "default" || got["API"] != "1" {
+		t.Fatalf("build args = %#v", got)
+	}
+}
+
+func TestRenderRejectsConflictingBuildArgs(t *testing.T) {
+	doc := `project: demo
+environment: production
+apps:
+  api:
+    dockerfile: Dockerfile
+    port: 8080
+    buildArgs: { MODE: api }
+workers:
+  jobs:
+    from: api
+    buildArgs: { MODE: worker }
+`
+	f, err := Load([]byte(doc), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.Render(RenderOptions{ConfigDir: "/etc/menina", Registry: "registry.test"})
+	if err == nil || !strings.Contains(err.Error(), "different buildArgs") {
+		t.Fatalf("expected build-arg conflict, got %v", err)
+	}
+}

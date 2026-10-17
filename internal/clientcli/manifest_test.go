@@ -3,6 +3,7 @@ package clientcli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -53,5 +54,22 @@ func TestManifestOptionsRejectsInvalidVar(t *testing.T) {
 	o := &manifestOptions{File: path, Vars: []string{"NOPE"}}
 	if _, err := o.load(&cobra.Command{}); err == nil {
 		t.Fatal("expected invalid --var to fail")
+	}
+}
+
+func TestParseBuildArgs(t *testing.T) {
+	got, err := parseBuildArgs([]string{"A=1", "B=two=three", "EMPTY="})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["A"] != "1" || got["B"] != "two=three" || got["EMPTY"] != "" {
+		t.Fatalf("build args = %#v", got)
+	}
+	if _, err := parseBuildArgs([]string{"NOPE"}); err == nil {
+		t.Fatal("expected missing = to fail")
+	}
+	flags := buildArgFlags(map[string]string{"B": "2", "A": "1"}, map[string]string{"B": "override"})
+	if strings.Join(flags, ",") != "A=1,B=override" {
+		t.Fatalf("flags = %#v", flags)
 	}
 }

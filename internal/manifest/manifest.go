@@ -49,6 +49,9 @@ type Defaults struct {
 	// Registry is the image registry host used for built apps when the
 	// manifest is rendered outside a host with a config.yml (e.g. CI).
 	Registry string `yaml:"registry,omitempty"`
+	// BuildArgs are passed to docker build (--build-arg). They are not
+	// secrets and are not injected into the running container.
+	BuildArgs map[string]string `yaml:"buildArgs,omitempty"`
 }
 
 type Storage struct {
@@ -134,6 +137,7 @@ type Workload struct {
 	Args       []string             `yaml:"args,omitempty"`
 	Env        map[string]string    `yaml:"env,omitempty"`
 	Secrets    []string             `yaml:"secrets,omitempty"`
+	BuildArgs  map[string]string    `yaml:"buildArgs,omitempty"`
 	Storage    StorageRefs          `yaml:"storage,omitempty"`
 	Replicas   *config.ReplicasSpec `yaml:"replicas,omitempty"`
 	Resources  *config.ResourceSpec `yaml:"resources,omitempty"`

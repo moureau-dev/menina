@@ -150,6 +150,7 @@ Each workload accepts:
 - `command` / `args`
 - `env`
 - `secrets` — names only, never values
+- `buildArgs` — `docker build --build-arg` values (not runtime env, not secrets)
 - `storage` — a name, `{ use: name, path: /override }`, an inline
   `{ size, path }`, or a list of those
 - `replicas` — a number or `{ min, max, targetCPU }`
@@ -173,6 +174,34 @@ needs one.
 - Only apps/workers with a `dockerfile` are build targets. External images are
   skipped by `build`/`push`.
 
+### Build args
+
+`buildArgs` are passed to `docker build` as `--build-arg`; they are separate
+from the runtime `env` block and from `secrets`:
+
+```yaml
+defaults:
+  buildArgs:
+    NODE_ENV: production
+
+apps:
+  web:
+    dockerfile: apps/web/Dockerfile
+    buildArgs:
+      VITE_API_URL: ${PUBLIC_API_URL}
+```
+
+```bash
+menina build --build-arg VITE_API_URL="$VITE_API_URL" --push
+```
+
+Precedence: `defaults.buildArgs`, then the workload's `buildArgs`, then
+repeatable `--build-arg KEY=VALUE` flags. Values from `vars` are interpolated.
+Build args are **not secrets**: they can appear in image metadata/history. Use
+BuildKit secrets for tokens, not build args. A worker using `from` inherits the
+app's build args unless it overrides them; building the same image with
+different args is rejected.
+
 ### Storage
 
 `storages.<name>` has `size`, `path` (container mount point) and `access`:
@@ -191,9 +220,18 @@ needs one.
 value on the host with:
 
 ```bash
+# From the client, over SSH (value read from stdin or a hidden prompt)
 printf '%s' "$DATABASE_URL" | menina secret set DATABASE_URL \
-  --project demo --environment production
+  --host root@vps --project demo --environment production
+
+menina secret list   --host root@vps --project demo --environment production
+menina secret remove DATABASE_URL --host root@vps --project demo --environment production --yes
 ```
+
+The client pipes the value to the host's `menina secret set` over SSH stdin; it
+never goes into the manifest, client config, arguments, or logs. `--host` falls
+back to `MENINA_HOST` or the cached host used by `apply`. You can also run the
+`secret` commands directly on the host.
 
 The manifest never contains secret values.
 
@@ -282,6 +320,7 @@ menina build --dry-run
 Builds each `dockerfile` target with its manifest repository/tag and context
 using the local Docker daemon. `--filter` takes comma-separated names or globs
 and selects build targets only. `--push` pushes each image after building.
+`--build-arg KEY=VALUE` overrides manifest build args and is repeatable.
 
 ### `push`
 
@@ -304,6 +343,7 @@ triggers auto-deploy for enabled apps that were already applied.
 | `-e`, `--environment` | all | Override manifest environment (also rewrites `${ENVIRONMENT}`) |
 | `--registry` | validate/apply/build/push | Registry host for built repositories |
 | `--tag` | all | Override the image tag |
+| `--build-arg` | build/push | `docker build --build-arg KEY=VALUE` (repeatable) |
 | `--json` | all | Machine-readable output |
 | `--config-dir` | all | Host config directory used for secret refs/validation |
 

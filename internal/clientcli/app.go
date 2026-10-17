@@ -86,7 +86,7 @@ func NewRootCommand() *cobra.Command {
 	_ = verbose
 
 	root.AddCommand(NewCommands(app.opts)...)
-	root.AddCommand(newInstallCommand(app), newVersionCommand(app), newUpgradeCommand(app))
+	root.AddCommand(newInstallCommand(app), newSecretCommand(app), newVersionCommand(app), newUpgradeCommand(app))
 
 	info := version.Get()
 	root.Version = info.Version

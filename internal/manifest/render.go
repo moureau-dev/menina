@@ -32,6 +32,7 @@ type Target struct {
 	Tag        string
 	Dockerfile string
 	Context    string
+	BuildArgs  map[string]string
 	Worker     bool
 }
 
@@ -122,7 +123,11 @@ func (f *File) Render(opts RenderOptions) (*Rendered, error) {
 		builtTargets = append(builtTargets, targets...)
 	}
 
-	out.Targets = dedupeTargets(builtTargets)
+	deduped, err := dedupeTargets(builtTargets)
+	if err != nil {
+		return nil, err
+	}
+	out.Targets = deduped
 
 	for name := range f.Storages {
 		if _, ok := usedStorages[name]; !ok {
@@ -155,6 +160,7 @@ func (f *File) renderWorkload(name string, w Workload, worker bool, tag, registr
 		}
 		base.Env = mergeEnv(src.Env, w.Env)
 		base.Secrets = mergeUnique(src.Secrets, w.Secrets)
+		base.BuildArgs = mergeBuildArgs(src.BuildArgs, w.BuildArgs)
 		if w.Resources == nil {
 			base.Resources = src.Resources
 		}
@@ -251,6 +257,7 @@ func (f *File) renderWorkload(name string, w Workload, worker bool, tag, registr
 			Tag:        imageTag,
 			Dockerfile: resolvePath(f.BaseDir, base.Dockerfile),
 			Context:    resolvePath(f.BaseDir, context),
+			BuildArgs:  mergeBuildArgs(f.Defaults.BuildArgs, base.BuildArgs),
 			Worker:     worker,
 		})
 	}
@@ -345,18 +352,33 @@ func resolvePath(baseDir, path string) string {
 	return filepath.Join(baseDir, path)
 }
 
-func dedupeTargets(in []Target) []Target {
-	seen := map[string]bool{}
+func dedupeTargets(in []Target) ([]Target, error) {
+	seen := map[string]Target{}
 	out := make([]Target, 0, len(in))
 	for _, t := range in {
 		key := t.Repository + ":" + t.Tag + "|" + t.Dockerfile + "|" + t.Context
-		if seen[key] {
+		if existing, ok := seen[key]; ok {
+			if !equalBuildArgs(existing.BuildArgs, t.BuildArgs) {
+				return nil, fmt.Errorf("%s is built by multiple workloads with different buildArgs", t.Image())
+			}
 			continue
 		}
-		seen[key] = true
+		seen[key] = t
 		out = append(out, t)
 	}
-	return out
+	return out, nil
+}
+
+func equalBuildArgs(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 // ProjectModel returns the project tree for the resolver. It lets apply
@@ -433,6 +455,10 @@ func mergeEnv(base, override map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func mergeBuildArgs(base, override map[string]string) map[string]string {
+	return mergeEnv(base, override)
 }
 
 func mergeUnique(a, b []string) []string {

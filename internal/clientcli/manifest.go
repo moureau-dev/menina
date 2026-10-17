@@ -314,6 +314,7 @@ func newApplyCommand(app *App) *cobra.Command {
 func newBuildCommand(app *App) *cobra.Command {
 	o := &manifestOptions{}
 	var filter string
+	var buildArgs []string
 	var push, dryRun bool
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -323,10 +324,11 @@ func newBuildCommand(app *App) *cobra.Command {
 			"image after it builds; the push triggers the deploy for applied apps.",
 		Example: "  menina build\n" +
 			"  menina build --push\n" +
-			"  menina build --push --filter api,web",
+			"  menina build --push --filter api,web\n" +
+			"  menina build --build-arg VITE_API_URL=\"$VITE_API_URL\"",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runManifestBuild(cmd, app, o, filter, true, push, dryRun)
+			return runManifestBuild(cmd, app, o, filter, buildArgs, true, push, dryRun)
 		},
 	}
 	cmd.Flags().StringVarP(&o.File, "file", "f", defaultManifestFile, "manifest path (- for stdin)")
@@ -336,6 +338,7 @@ func newBuildCommand(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&o.Registry, "registry", "", "registry host for built apps")
 	cmd.Flags().StringVar(&o.Tag, "tag", "", "override the image tag")
 	cmd.Flags().StringVar(&filter, "filter", "", "comma-separated app/worker names or globs")
+	cmd.Flags().StringArrayVar(&buildArgs, "build-arg", nil, "docker build arg (KEY=VALUE); repeatable, overrides manifest buildArgs")
 	cmd.Flags().BoolVar(&push, "push", false, "push each image after building")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print docker commands without running them")
 	return cmd
@@ -344,16 +347,18 @@ func newBuildCommand(app *App) *cobra.Command {
 func newPushCommand(app *App) *cobra.Command {
 	o := &manifestOptions{}
 	var filter string
+	var buildArgs []string
 	var build, dryRun bool
 	cmd := &cobra.Command{
 		Use:   "push",
 		Short: "Push a manifest's images (optionally building first)",
 		Long: "Push images to the registry. With --build, builds each image first.\n" +
 			"Pushing an image deploys matching apps that were already applied.",
-		Example: "  menina push\n  menina push --build\n  menina push --build --filter api",
-		Args:    cobra.NoArgs,
+		Example: "  menina push\n  menina push --build\n  menina push --build --filter api\n" +
+			"  menina push --build --build-arg NODE_ENV=production",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runManifestBuild(cmd, app, o, filter, build, true, dryRun)
+			return runManifestBuild(cmd, app, o, filter, buildArgs, build, true, dryRun)
 		},
 	}
 	cmd.Flags().StringVarP(&o.File, "file", "f", defaultManifestFile, "manifest path (- for stdin)")
@@ -363,13 +368,18 @@ func newPushCommand(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&o.Registry, "registry", "", "registry host for built apps")
 	cmd.Flags().StringVar(&o.Tag, "tag", "", "override the image tag")
 	cmd.Flags().StringVar(&filter, "filter", "", "comma-separated app/worker names or globs")
+	cmd.Flags().StringArrayVar(&buildArgs, "build-arg", nil, "docker build arg (KEY=VALUE); repeatable, overrides manifest buildArgs")
 	cmd.Flags().BoolVar(&build, "build", false, "build before pushing")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print docker commands without running them")
 	return cmd
 }
 
-func runManifestBuild(cmd *cobra.Command, app *App, o *manifestOptions, filter string, build, push, dryRun bool) error {
+func runManifestBuild(cmd *cobra.Command, app *App, o *manifestOptions, filter string, buildArgs []string, build, push, dryRun bool) error {
 	f, err := o.load(cmd)
+	if err != nil {
+		return err
+	}
+	overrides, err := parseBuildArgs(buildArgs)
 	if err != nil {
 		return err
 	}
@@ -406,6 +416,9 @@ func runManifestBuild(cmd *cobra.Command, app *App, o *manifestOptions, filter s
 	for _, t := range targets {
 		if doBuild {
 			args := []string{"build", "-t", t.Image()}
+			for _, kv := range buildArgFlags(t.BuildArgs, overrides) {
+				args = append(args, "--build-arg", kv)
+			}
 			if t.Dockerfile != "" {
 				args = append(args, "-f", t.Dockerfile)
 			}
@@ -428,6 +441,38 @@ func runManifestBuild(cmd *cobra.Command, app *App, o *manifestOptions, filter s
 		return app.printJSON(map[string]any{"images": images})
 	}
 	return nil
+}
+
+func parseBuildArgs(values []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, item := range values {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok || key == "" {
+			return nil, fmt.Errorf("invalid --build-arg %q: use KEY=VALUE", item)
+		}
+		out[key] = value
+	}
+	return out, nil
+}
+
+func buildArgFlags(base, overrides map[string]string) []string {
+	merged := map[string]string{}
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range overrides {
+		merged[k] = v
+	}
+	keys := make([]string, 0, len(merged))
+	for k := range merged {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, k+"="+merged[k])
+	}
+	return out
 }
 
 func runDocker(cmd *cobra.Command, dryRun, jsonMode bool, args ...string) error {
