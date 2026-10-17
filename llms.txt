@@ -127,6 +127,27 @@ menina job watch <id> --host user@vps --json --timeout 10m   # NDJSON
   replica.
 - Apps with neither HTTP hosts nor L4 ports are cluster-internal.
 
+### Service-to-service / microservices (today)
+
+Menina is a deployment layer, not a microservices platform. Multiple apps in one
+project/environment get internal Service DNS, independent images/secrets/resources,
+and per-app deploys. What is missing:
+
+- ordered startup / `depends_on` and readiness-aware service discovery;
+- one-off jobs, migration jobs, and pre/post-deploy hooks;
+- NetworkPolicy/mTLS and service identity;
+- retries, circuit breaking, rate limiting, and distributed tracing across
+  services (per-route HTTP timeouts do exist);
+- atomic multi-service release sets, cross-service contracts, and canary
+  release trains;
+- per-service authorization and namespace quotas.
+
+Workarounds are application-level (retries/backoff, app tracing, external
+databases, ordered deploys/manual migrations). Roadmap: dependency ordering and
+migration hooks are Tier 1; network policies/quotas are Tier 2; canary and
+cross-service strategies are Tier 4. See
+[`ROADMAP.md`](https://github.com/moureau-dev/menina/blob/main/ROADMAP.md).
+
 ## Host platform
 
 Install/provision:

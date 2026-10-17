@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Docs
+- Added an implementation dependency map to `ROADMAP.md` with per-item
+  prerequisites, difficulty/importance, and the hidden one-off job prerequisite.
+- Clarified the current service-to-service/microservices boundary in `llms.txt`
+  and removed the stale Tier 4 placement of migration jobs/dependency ordering
+  from `ROADMAP.md`.
 - Expanded `ROADMAP.md` with a per-app-first release model (project releases as
   partial-failure aggregates), explicit recovery policies (`previous` / `none` /
   `require-approval`), declarative verification, promotion by digest + reviewed

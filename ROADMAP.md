@@ -205,10 +205,59 @@ Definition of done for a multi-node MVP:
 
 - Image signing (cosign/Sigstore), scanning (Trivy or similar), and admission
   policy.
-- Canary/blue-green, configurable `maxSurge`/`maxUnavailable`, migration jobs,
-  dependency ordering.
+- Canary/blue-green, configurable `maxSurge`/`maxUnavailable`, and cross-service
+  traffic splitting.
 - Log retention/search, alerting, and deploy event history.
 - Larger-scale quota, multi-tenancy, and audit export.
+
+## Implementation dependency map
+
+These IDs are for dependency tracking only. Difficulty is end-to-end inside
+Menina (validation, defaults, failure semantics, tests), not “an add-on can do
+it.” Importance is for multi-service/multi-client production; for a solo
+single-node setup most importance scores drop.
+
+| # | Deps | Item | Diff. | Imp. | Why |
+| --- | --- | --- | ---: | ---: | --- |
+| 1 | 9 | Per-app release identity + state machine | 7 | 9 | Pin digest/config, verification/migration status, previous good release, explicit states. |
+| 2 | 1, 3, 4 | Project/env release as partial-failure aggregate | 7 | 8 | Compose per-app outcomes; never claim atomicity. |
+| 3 | 1, 4, 9 | Recovery policy (`previous`/`none`/`require-approval`) | 6 | 9 | Triggers, interrupted jobs, previous-good pointer; no data rollback implied. |
+| 4 | 1, 9 | Declarative verification (status/body/smoke) | 5 | 9 | Manifest-declared checks + failure policy; reachability is not correctness. |
+| 5 | 1, 9 | First-class promotion | 5 | 7 | Digest + reviewed target plan; never rebuild. |
+| 6 | 1, 4 | App-aware migration/pre/post hooks | 8 | 9 | Needs a one-off job primitive (not yet indexed), permissions, pinning, timeouts, logs. |
+| 7 | — | Optional volume snapshots | 6 | 5 | External CSI capability only; not a backup substitute. |
+| 8 | 2, 4, 6 | Minimal dependency ordering | 6 | 7 | Migrations→API→workers; avoid a general DAG. |
+| 9 | — | Pin config snapshot on jobs | 5 | 9 | Foundation for release identity and closing the apply/deploy race. |
+| 10 | — | Secret staleness annotation/status | 5 | 7 | Hash injected secrets at rollout; should feed release state too. |
+| 11 | — | Job watch resume cursor + terminal sentinel | 4 | 5 | Survive SSH drops; propagate remote exit code. |
+| 12 | 1, 4 | Webhook operational visibility | 6 | 6 | Versioned payload, delivery status, DLQ/replay; release/verification fields depend on 1/4. |
+| 13 | — | Metrics depth + alert rules | 6 | 8 | Deploy duration, queue depth, ready replicas, proxy/registry/disk; external alerting. |
+| 14 | — | DR: scheduled backups, RPO/RTO, restore CI | 6 | 10 | Backup exists; automation and proof do not. |
+| 15 | — | Finish error taxonomy | 4 | 7 | Stable codes for CAS/stale plans/auth/schema mismatches. |
+| 16 | 26 | Per-project secret permissions + per-user registry creds | 8 | 9 | Tenant model affects scoping; isolation/revocation required. |
+| 17 | 16 | Operator audit log | 6 | 9 | Actor/source/plan/tokens; weak without identity but useful early. |
+| 18 | 16 | Real authorization vs `source.repo` hint | 7 | 8 | Enforce ownership; repo metadata is not a boundary. |
+| 19 | 16, 17, 18 | RBAC/SSO, team quotas, NetworkPolicy | 9 | 8 | Large identity/infra program on top of creds/audit/authorization. |
+| 20 | 16 | Secret isolation beyond shared `menina` group | 8 | 9 | Group-readable secrets are not tenant isolation. |
+| 21 | 16, 17 | Shared-access gate | 2 | 9 | Process/validation: no shared admin identity across clients/agents. |
+| 22 | 14, 16 | Per-client backup schedules/retention | 6 | 8 | Fleet policy needs DR automation + project isolation. |
+| 23 | 13 | Aggregate fleet overview | 6 | 7 | Failed deploys, health, disk, certs, backups; needs metrics/labels. |
+| 24 | 14, 16 | Replacement-host migration workflow | 8 | 8 | Tested DR + isolation; config/revisions/secrets/registry/volumes. |
+| 25 | 16 | Per-project quotas/limits | 5 | 6 | ResourceQuota/LimitRange + project isolation. |
+| 26 | — | Multi-tenant vs one-install-per-client decision | 3 | 8 | Architecture/product choice; affects 16, 19, 22, 24. |
+| 27 | 1, 9 | HA control-plane state | 9 | 10 | Replace SQLite writer, leader election, idempotent jobs, consistent snapshots. |
+| 28 | 27 | Multi-node k3s provisioning | 7 | 9 | Tokens, upgrades, drain, scheduling; HA needs 27. |
+| 29 | 28 | Replicated/RWX storage | 9 | 9 | Longhorn/Ceph/NFS; never silently move stateful apps to empty volumes. |
+| 30 | 28 | Per-node proxy/routing / L4 LB | 8 | 9 | Shared routing state, no split-brain, consistent TLS/ACME. |
+| 31 | 28 | HA/replicated registry | 8 | 7 | Multi-node pull reliability; shared credential remains. |
+| 32 | 14, 24, 27, 28, 29, 30, 31 | Multi-node DR | 9 | 9 | Restore control plane, registry, config, revisions, volumes after node loss. |
+| 33 | — | Image signing/scanning/admission | 8 | 7 | Supply-chain trust; can run in parallel. |
+| 34 | 2, 3, 4, 5 | Canary/blue-green, maxSurge/maxUnavailable, traffic splitting | 8 | 7 | Needs release sets + verification + recovery + traffic control. |
+| 35 | 12, 13 | Log retention/search, alerting, deploy events | 7 | 8 | Needs metrics/events first; much can be external. |
+| 36 | 16, 18, 19, 25 | Larger-scale quotas/multitenancy/audit export | 9 | 6 | Identity/authorization/quotas must land first. |
+
+The key hidden prerequisite is a **one-off job primitive** for item 6; it should
+probably be added as its own item between 9 and 6.
 
 ## Explicit non-goals for the current line
 
