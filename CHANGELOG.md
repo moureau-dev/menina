@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.13] - 2026-10-17
+
 ### Added
 - Apply concurrency: canonical resolved `stateToken`, config-dir lease lock with
   heartbeat/stale recovery, and `apply --if-revision <token>` (compare-and-swap).
