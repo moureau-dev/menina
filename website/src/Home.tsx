@@ -5,7 +5,49 @@ import Newstack from "@moureau/newstack";
 import { CopyCommand } from "./CopyCommand";
 
 const GITHUB = "https://github.com/moureau-dev/menina";
+const RELEASES = `${GITHUB}/releases/latest`;
 const MOUREAU = "https://moureau.dev";
+
+type ClientArch = "amd64" | "arm64";
+
+const CLIENT_DOWNLOADS: Record<"linux" | "macos" | "windows", Record<ClientArch, string>> = {
+  linux: {
+    amd64: `${RELEASES}/download/menina-client-linux-amd64`,
+    arm64: `${RELEASES}/download/menina-client-linux-arm64`,
+  },
+  macos: {
+    amd64: `${RELEASES}/download/menina-client-darwin-amd64`,
+    arm64: `${RELEASES}/download/menina-client-darwin-arm64`,
+  },
+  windows: {
+    amd64: `${RELEASES}/download/menina-client-windows-amd64.exe`,
+    arm64: `${RELEASES}/download/menina-client-windows-arm64.exe`,
+  },
+};
+
+async function detectClientArch(): Promise<ClientArch | null> {
+  if (typeof navigator === "undefined") {
+    return null;
+  }
+  const nav = navigator as Navigator & {
+    userAgentData?: {
+      getHighEntropyValues?: (hints: string[]) => Promise<{ architecture?: string }>;
+    };
+  };
+  const ua = nav.userAgent ?? "";
+  let arch: ClientArch | null = /arm64|aarch64|armv8/i.test(ua) ? "arm64" : null;
+  try {
+    const values = await nav.userAgentData?.getHighEntropyValues?.(["architecture"]);
+    if (values?.architecture === "arm") {
+      arch = "arm64";
+    } else if (values?.architecture === "x86") {
+      arch = "amd64";
+    }
+  } catch {
+    // User-Agent Client Hints can be unavailable or blocked; keep the UA result.
+  }
+  return arch;
+}
 
 const features = [
   {
@@ -85,6 +127,9 @@ function Header() {
         <span class="brand-logo">Menina</span>
       </a>
       <nav class="nav-links">
+        <a href={`${GITHUB}/tree/main/docs`} target="_blank">
+          Docs
+        </a>
         <a href="/llms.txt" target="_blank">
           llms.txt
         </a>
@@ -144,6 +189,12 @@ function Footer() {
  * Menina landing page.
  */
 export class Home extends Newstack {
+  downloads = {
+    linux: CLIENT_DOWNLOADS.linux.amd64,
+    macos: CLIENT_DOWNLOADS.macos.amd64,
+    windows: CLIENT_DOWNLOADS.windows.amd64,
+  };
+
   /* ---------- Lifecycle ---------- */
   prepare({ page }) {
     page.title = "Menina • a self-hosted platform for your containers";
@@ -152,8 +203,21 @@ export class Home extends Newstack {
     page.image = "/og.png";
   }
 
+  async hydrate() {
+    const arch = await detectClientArch();
+    if (!arch) {
+      return;
+    }
+    this.downloads = {
+      linux: CLIENT_DOWNLOADS.linux[arch],
+      macos: CLIENT_DOWNLOADS.macos[arch],
+      windows: CLIENT_DOWNLOADS.windows[arch],
+    };
+  }
+
   /* ---------- Render ---------- */
   render() {
+    const downloads = this.downloads;
     return (
       <div class="page">
         <Header />
@@ -173,21 +237,27 @@ export class Home extends Newstack {
                 proxy with automatic HTTPS.
               </p>
               <div class="hero-actions">
+                <p class="cmd-label">In your server run</p>
                 <CopyCommand />
               </div>
-              <div class="hero-links">
-                <a class="btn btn-primary" href={GITHUB} target="_blank">
-                  View on GitHub
-                </a>
-                <a class="btn" href={`${GITHUB}/tree/main/docs`} target="_blank">
-                  Documentation
-                </a>
-                <a class="btn" href="/llms.txt" target="_blank">
-                  llms.txt
-                </a>
-                <a class="btn" href={MOUREAU} target="_blank">
-                  moureau.dev
-                </a>
+              <div class="client">
+                <p class="client-label">
+                  You can manage it through a simple client CLI available for
+                </p>
+                <div class="os-links">
+                  <a class="os-link" href={downloads.linux} target="_blank" rel="noreferrer">
+                    <img class="os-icon" src="/os/linux.svg" alt="" />
+                    <span>Linux</span>
+                  </a>
+                  <a class="os-link" href={downloads.macos} target="_blank" rel="noreferrer">
+                    <img class="os-icon" src="/os/apple.svg" alt="" />
+                    <span>macOS</span>
+                  </a>
+                  <a class="os-link" href={downloads.windows} target="_blank" rel="noreferrer">
+                    <img class="os-icon" src="/os/windows.svg" alt="" />
+                    <span>Windows</span>
+                  </a>
+                </div>
               </div>
             </div>
           </section>

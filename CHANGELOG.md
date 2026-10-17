@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Docs
+- Website: label the server install command and add Linux/macOS/Windows client
+  buttons linking directly to the latest release assets. The client links are
+  upgraded to arm64 in `hydrate` when the browser exposes an ARM architecture;
+  the Docs link moved to the navbar and the redundant hero links were removed.
+
 ## [0.0.10] - 2026-10-17
 
 ### Added
