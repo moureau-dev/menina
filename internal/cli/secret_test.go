@@ -131,3 +131,21 @@ func TestSecretVerify(t *testing.T) {
 		t.Fatal("verify should fail for a missing secret")
 	}
 }
+
+func TestSecretRotate(t *testing.T) {
+	dir := seedSecretProject(t)
+	if err := executeIn("first\n", "--config-dir", dir, "secret", "set", "DATABASE_URL", "--project", "p", "--environment", "production"); err != nil {
+		t.Fatal(err)
+	}
+	if err := executeIn("", "--config-dir", dir, "secret", "rotate", "DATABASE_URL", "--project", "p", "--environment", "production", "--generate"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "secrets", "p", "production", "DATABASE_URL")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) == "first" || len(data) == 0 {
+		t.Fatalf("secret was not rotated: %q", data)
+	}
+}

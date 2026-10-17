@@ -28,6 +28,7 @@ func newSecretCommand(app *App) *cobra.Command {
 	cmd.PersistentFlags().StringVar(&host, "host", "", "SSH host (user@host); defaults to MENINA_HOST or the cached host")
 	cmd.AddCommand(
 		clientSecretSet(app, &host),
+		clientSecretRotate(app, &host),
 		clientSecretList(app, &host),
 		clientSecretRemove(app, &host),
 		clientSecretVerify(app, &host),
@@ -70,6 +71,52 @@ func clientSecretSet(app *App, hostFlag *string) *cobra.Command {
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
 	cmd.Flags().StringVar(&fromFile, "file", "", "read the value from a local file instead of stdin")
+	return cmd
+}
+
+func clientSecretRotate(app *App, hostFlag *string) *cobra.Command {
+	var project, environment, fromFile string
+	var generate bool
+	cmd := &cobra.Command{
+		Use:   "rotate <name>",
+		Short: "Replace a stored secret value on the host",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if !varNameRe.MatchString(name) {
+				return fmt.Errorf("invalid secret name %q", name)
+			}
+			if project == "" || environment == "" {
+				return fmt.Errorf("--project and --environment are required")
+			}
+			host, err := requireSecretHost(*hostFlag)
+			if err != nil {
+				return err
+			}
+			remoteArgs := []string{"secret", "rotate", name, "--project", project, "--environment", environment}
+			var stdin []byte
+			if generate {
+				remoteArgs = append(remoteArgs, "--generate")
+			} else {
+				value, err := readClientSecret(cmd, app, fromFile)
+				if err != nil {
+					return err
+				}
+				if value == "" {
+					return fmt.Errorf("refusing to store an empty secret value")
+				}
+				stdin = []byte(value)
+			}
+			if app.jsonOutput() {
+				remoteArgs = append(remoteArgs, "--json")
+			}
+			return runSSHSecret(cmd, host, stdin, remoteArgs...)
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project name")
+	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
+	cmd.Flags().StringVar(&fromFile, "file", "", "read the value from a local file instead of stdin")
+	cmd.Flags().BoolVar(&generate, "generate", false, "generate a random value on the host")
 	return cmd
 }
 

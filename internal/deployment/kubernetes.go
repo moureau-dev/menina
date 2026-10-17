@@ -386,6 +386,9 @@ func (k *KubernetesCluster) PodLogs(ctx context.Context, namespace, name string,
 	if opts.TailLines != nil {
 		q.Set("tailLines", strconv.FormatInt(*opts.TailLines, 10))
 	}
+	if opts.Since > 0 {
+		q.Set("sinceSeconds", strconv.FormatInt(int64(opts.Since.Seconds()), 10))
+	}
 	return k.client.Stream(ctx, nsResource(coreV1, namespace, "pods")+"/"+pods.Items[0].Metadata.Name+"/log", q)
 }
 

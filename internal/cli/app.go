@@ -275,7 +275,7 @@ func appList(app *App) *cobra.Command {
 
 func appDeploy(app *App) *cobra.Command {
 	var project, environment string
-	var yes, noWait bool
+	var yes, noWait, verify bool
 	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:   "deploy <name>",
@@ -291,6 +291,9 @@ func appDeploy(app *App) *cobra.Command {
 			cfg, err := app.LoadConfig()
 			if err != nil {
 				return err
+			}
+			if noWait && verify {
+				return fmt.Errorf("--verify cannot be combined with --no-wait")
 			}
 			if err := requireProdConfirmation(cfg, environment, yes); err != nil {
 				return err
@@ -317,6 +320,11 @@ func appDeploy(app *App) *cobra.Command {
 				return err
 			}
 			app.Infof("Deployment of %s/%s/%s succeeded", project, environment, args[0])
+			if verify {
+				if err := verifyDeployed(cmd.Context(), cfg, app, project, environment, args[0]); err != nil {
+					return err
+				}
+			}
 			return nil
 		},
 	}
@@ -324,6 +332,7 @@ func appDeploy(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm a production deployment")
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "queue the deployment and return without waiting for the rollout")
+	cmd.Flags().BoolVar(&verify, "verify", false, "after the rollout, check public HTTP routes and TCP L4 ports")
 	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "how long to wait for the rollout")
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("environment")
@@ -421,6 +430,7 @@ func appLogs(app *App) *cobra.Command {
 	var project, environment string
 	var follow bool
 	var tail int64
+	var since time.Duration
 	cmd := &cobra.Command{
 		Use:   "logs <name>",
 		Short: "Retrieve workload logs",
@@ -446,7 +456,7 @@ func appLogs(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := deployment.LogOptions{Follow: follow}
+			opts := deployment.LogOptions{Follow: follow, Since: since}
 			if cmd.Flags().Changed("tail") {
 				opts.TailLines = &tail
 			}
@@ -463,6 +473,7 @@ func appLogs(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
 	cmd.Flags().BoolVar(&follow, "follow", false, "follow log output")
 	cmd.Flags().Int64Var(&tail, "tail", 200, "number of lines from the end")
+	cmd.Flags().DurationVar(&since, "since", 0, "only logs newer than this duration (e.g. 15m)")
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("environment")
 	return cmd

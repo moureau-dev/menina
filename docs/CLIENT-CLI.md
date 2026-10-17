@@ -297,6 +297,8 @@ printf '%s' "$DATABASE_URL" | menina secret set DATABASE_URL \
 
 menina secret list   --host root@vps --project demo --environment production
 menina secret remove DATABASE_URL --host root@vps --project demo --environment production --yes
+menina secret rotate DATABASE_URL --host root@vps --project demo --environment production
+menina secret rotate API_KEY --host root@vps --project demo --environment production --generate
 menina secret verify DATABASE_URL --host root@vps --project demo --environment production
 menina secret verify --host root@vps --project demo --environment production --json
 ```

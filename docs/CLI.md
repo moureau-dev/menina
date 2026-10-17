@@ -106,10 +106,10 @@ errors use the generic code/exit.
 | `menina app <name> --project P [--environment E]` | Interactive: app menu for that app |
 | `menina app create <name> [flags]` | Create an app (interactive without `--yes`) |
 | `menina app list --project P [--json]` | List apps |
-| `menina app deploy <name> --project P --environment E [--yes] [--no-wait] [--timeout D]` | Deploy and wait for the rollout (print job id + config snapshot version). `--no-wait` queues and returns; track with `menina job list` / `app status` |
+| `menina app deploy <name> --project P --environment E [--yes] [--no-wait] [--timeout D] [--verify]` | Deploy and wait for the rollout (print job id + config snapshot version). `--no-wait` queues and returns; `--verify` checks public HTTP routes and TCP L4 ports after the rollout |
 | `menina app status <name> --project P --environment E [--json]` | Last job, release digest and observed status |
 | `menina app reset-volume <name> --project P --environment E [--yes]` | Scale to zero, delete the PVC, and redeploy so the volume is recreated empty (data is lost) |
-| `menina app logs <name> --project P --environment E [--follow] [--tail N]` | Stream workload logs |
+| `menina app logs <name> --project P --environment E [--follow] [--tail N] [--since D]` | Stream workload logs, bounded by tail lines and/or age |
 | `menina app rollback <name> --project P --environment E [--digest D] [--yes] [--no-wait] [--timeout D]` | Restore a recorded digest |
 | `menina app scale <name> --project P [--environment/-e E \| --baseline] (--replicas N \| --min M --max X [--target-cpu C] \| --reset)` | Change scaling. `-e E` writes that environment's override; `--baseline` writes the shared baseline; on a terminal with more than one environment and neither given, it prompts. Non-interactive with neither ⇒ baseline |
 | `menina app edit <name> --project P` | Edit the app YAML in `$EDITOR` |
@@ -130,6 +130,7 @@ prompt for the environment (auto-selected when the project has exactly one).
 | Command | Purpose |
 | --- | --- |
 | `menina secret set <name> --project P --environment E [--file F]` | Store a secret value at `secrets/P/E/<name>` (read from stdin — hidden on a terminal — or `--file`). Prints the `file:` reference to use in `apps/*.yml` |
+| `menina secret rotate <name> --project P --environment E [--file F] [--generate]` | Replace a secret value from stdin/file, or generate a random one |
 | `menina secret list --project P --environment E [--json]` | List secret names (values are never shown) |
 | `menina secret remove <name> --project P --environment E [--yes]` | Delete a stored secret value |
 | `menina secret verify [name] --project P --environment E [--json]` | Check that secret files exist, are readable and are not empty |

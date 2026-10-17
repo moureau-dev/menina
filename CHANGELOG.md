@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `menina app deploy --verify` checks the app's public HTTP route(s) after the
+  rollout and TCP-dials configured L4 ports. `--verify` cannot be combined with
+  `--no-wait`.
+- `menina app logs --since D` bounds logs by age (Kubernetes `sinceSeconds`), in
+  addition to `--tail`; the deployment log path previously ignored `Since`.
+- `menina secret rotate <name>` replaces a value from stdin/`--file`, or
+  generates one with `--generate`; the client proxies it over SSH.
+
 - `menina capabilities --host user@vps --json` queries the host over SSH and
   reports schema/version compatibility (schema mismatch is incompatible; a
   version difference is a warning).

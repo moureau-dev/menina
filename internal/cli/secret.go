@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/moureau-dev/menina/internal/clierr"
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/secrets"
 )
@@ -30,7 +31,7 @@ func newSecretCommand(app *App) *cobra.Command {
 			"so it can be referenced as file:<path>. Values are read from stdin (hidden\n" +
 			"on a terminal) and are never printed or written into configuration.",
 	}
-	cmd.AddCommand(secretSet(app), secretList(app), secretRemove(app), secretVerify(app))
+	cmd.AddCommand(secretSet(app), secretRotate(app), secretList(app), secretRemove(app), secretVerify(app))
 	return cmd
 }
 
@@ -90,6 +91,68 @@ func secretSet(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
 	cmd.Flags().StringVar(&fromFile, "file", "", "read the value from a file instead of stdin")
+	_ = cmd.MarkFlagRequired("project")
+	_ = cmd.MarkFlagRequired("environment")
+	return cmd
+}
+
+func secretRotate(app *App) *cobra.Command {
+	var project, environment, fromFile string
+	var generate bool
+	var length int
+	cmd := &cobra.Command{
+		Use:   "rotate <name>",
+		Short: "Replace a stored secret value",
+		Long: "Write a new value for an existing secret (or create it if missing). Reads\n" +
+			"from stdin/--file, or generates a random value with --generate.",
+		Example: "  printf '%s' \"$NEW_VALUE\" | menina secret rotate DATABASE_URL --project my-app --environment production\n" +
+			"  menina secret rotate API_KEY --project my-app --environment production --generate",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if !secretNameRe.MatchString(name) {
+				return fmt.Errorf("invalid secret name %q: use letters, digits and underscore, starting with a letter or underscore", name)
+			}
+			if project == "" || environment == "" {
+				return fmt.Errorf("--project and --environment are required")
+			}
+			if _, err := config.LoadProject(config.ProjectsDir(app.Opts.ConfigDir), project); err != nil {
+				return clierr.Wrap(clierr.CodeNotFound, err)
+			}
+			if _, err := config.LoadEnvironment(app.Opts.ConfigDir, project, environment); err != nil {
+				return clierr.Wrap(clierr.CodeNotFound, err)
+			}
+			var value string
+			var err error
+			if generate {
+				value, err = secrets.GeneratePassword(length)
+			} else {
+				value, err = readSecretValue(cmd, fromFile)
+			}
+			if err != nil {
+				return err
+			}
+			if value == "" {
+				return fmt.Errorf("refusing to store an empty secret value")
+			}
+			path := filepath.Join(appSecretsDir(app, project, environment), name)
+			if err := secrets.WriteSecretFile(path, value); err != nil {
+				return err
+			}
+			if app.Opts.JSON {
+				return app.PrintJSON(map[string]any{
+					"project": project, "environment": environment, "name": name, "rotated": true,
+				})
+			}
+			app.Infof("Rotated secret %q for %s/%s", name, project, environment)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project name")
+	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
+	cmd.Flags().StringVar(&fromFile, "file", "", "read the value from a file instead of stdin")
+	cmd.Flags().BoolVar(&generate, "generate", false, "generate a random value")
+	cmd.Flags().IntVar(&length, "length", 32, "generated value length")
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("environment")
 	return cmd

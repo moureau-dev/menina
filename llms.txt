@@ -43,6 +43,7 @@ menina build --push         # build/push images locally; push triggers deploys
 menina push --build --filter api,web
 menina build --build-arg VITE_API_URL="$VITE_API_URL"
 printf '%s' "$DATABASE_URL" | menina secret set DATABASE_URL --host user@vps --project demo --environment production
+menina secret rotate API_KEY --host user@vps --project demo --environment production --generate
 menina schema --json        # embedded manifest JSON Schema
 menina capabilities --json  # local version, os/arch, schema + feature flags
 menina capabilities --host user@vps --json  # host capabilities + compatibility
