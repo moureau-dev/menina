@@ -254,6 +254,25 @@ triggers auto-deploy for enabled apps that were already applied.
 | `--json` | all | Machine-readable output |
 | `--config-dir` | all | Host config directory used for secret refs/validation |
 
+### `version` and `upgrade`
+
+```bash
+menina version                 # installed version
+menina version --check         # compare with the latest GitHub release
+menina upgrade --check         # same, upgrade-oriented output
+menina upgrade                 # download, verify, replace the current binary
+menina upgrade --version v0.2.0
+menina upgrade --force         # reinstall even when already current
+```
+
+`upgrade` selects the `menina-client-<os>-<arch>` asset for the running
+platform, verifies it against `checksums.txt`, executes it as a sanity check,
+then replaces the running executable. On Unix the replacement is an atomic
+rename; on Windows the previous executable is renamed `.old` and removed on the
+next upgrade. The install directory must be writable (re-run with `sudo` if it
+is a system directory). `MENINA_REPO` overrides the GitHub repository.
+
+
 ## Deploy flow
 
 ```bash

@@ -83,7 +83,7 @@ func NewRootCommand() *cobra.Command {
 	_ = verbose
 
 	root.AddCommand(NewCommands(app.opts)...)
-	root.AddCommand(newVersionCommand())
+	root.AddCommand(newVersionCommand(app), newUpgradeCommand(app))
 
 	info := version.Get()
 	root.Version = info.Version
@@ -98,18 +98,6 @@ func Execute() int {
 		return 1
 	}
 	return 0
-}
-
-func newVersionCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print version information",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			info := version.Get()
-			fmt.Fprintf(os.Stdout, "menina %s (commit %s, built %s, %s)\n", info.Version, info.Commit, info.Date, info.GoVersion)
-			return nil
-		},
-	}
 }
 
 func envOr(key, fallback string) string {

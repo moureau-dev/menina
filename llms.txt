@@ -38,6 +38,8 @@ menina validate             # parse + render without writing
 menina apply --host user@vps  # desired state over SSH (config only)
 menina build --push         # build/push images locally; push triggers deploys
 menina push --build --filter api,web
+menina version --check      # compare with the latest release
+menina upgrade              # checksum-verified self-update
 ```
 
 `apply` is an upsert of project/app/environment YAML and does not build or
