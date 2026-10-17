@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -19,11 +20,15 @@ import (
 
 const defaultManifestFile = ".menina.yml"
 
+var varNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 type manifestOptions struct {
 	File        string
+	Project     string
 	Environment string
 	Registry    string
 	Tag         string
+	Vars        []string
 }
 
 func (o *manifestOptions) load(cmd *cobra.Command) (*manifest.File, error) {
@@ -31,13 +36,32 @@ func (o *manifestOptions) load(cmd *cobra.Command) (*manifest.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	var overrides map[string]string
+	overrides := map[string]string{}
+	for _, item := range o.Vars {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok || key == "" {
+			return nil, fmt.Errorf("invalid --var %q: use KEY=VALUE", item)
+		}
+		if !varNameRe.MatchString(key) {
+			return nil, fmt.Errorf("invalid --var name %q", key)
+		}
+		overrides[key] = value
+	}
+	if o.Project != "" {
+		overrides["PROJECT"] = o.Project
+	}
 	if o.Environment != "" {
-		overrides = map[string]string{"ENVIRONMENT": o.Environment}
+		overrides["ENVIRONMENT"] = o.Environment
+	}
+	if len(overrides) == 0 {
+		overrides = nil
 	}
 	f, err := manifest.LoadWithVars(data, baseDir, overrides)
 	if err != nil {
 		return nil, err
+	}
+	if o.Project != "" {
+		f.Project = o.Project
 	}
 	if o.Environment != "" {
 		f.Environment = o.Environment
@@ -194,6 +218,8 @@ func newValidateCommand(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&o.File, "file", "f", defaultManifestFile, "manifest path (- for stdin)")
+	cmd.Flags().StringVar(&o.Project, "project", "", "override the manifest project")
+	cmd.Flags().StringArrayVar(&o.Vars, "var", nil, "override a manifest variable (KEY=VALUE); repeatable")
 	cmd.Flags().StringVarP(&o.Environment, "environment", "e", "", "override the manifest environment")
 	cmd.Flags().StringVar(&o.Registry, "registry", "", "registry host for built apps")
 	cmd.Flags().StringVar(&o.Tag, "tag", "", "override the image tag")
@@ -274,6 +300,8 @@ func newApplyCommand(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&o.File, "file", "f", defaultManifestFile, "manifest path (- for stdin)")
+	cmd.Flags().StringVar(&o.Project, "project", "", "override the manifest project")
+	cmd.Flags().StringArrayVar(&o.Vars, "var", nil, "override a manifest variable (KEY=VALUE); repeatable")
 	cmd.Flags().StringVarP(&o.Environment, "environment", "e", "", "override the manifest environment")
 	cmd.Flags().StringVar(&o.Registry, "registry", "", "registry host for built apps")
 	cmd.Flags().StringVar(&o.Tag, "tag", "", "override the image tag")
@@ -302,6 +330,8 @@ func newBuildCommand(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&o.File, "file", "f", defaultManifestFile, "manifest path (- for stdin)")
+	cmd.Flags().StringVar(&o.Project, "project", "", "override the manifest project")
+	cmd.Flags().StringArrayVar(&o.Vars, "var", nil, "override a manifest variable (KEY=VALUE); repeatable")
 	cmd.Flags().StringVarP(&o.Environment, "environment", "e", "", "override the manifest environment")
 	cmd.Flags().StringVar(&o.Registry, "registry", "", "registry host for built apps")
 	cmd.Flags().StringVar(&o.Tag, "tag", "", "override the image tag")
@@ -327,6 +357,8 @@ func newPushCommand(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&o.File, "file", "f", defaultManifestFile, "manifest path (- for stdin)")
+	cmd.Flags().StringVar(&o.Project, "project", "", "override the manifest project")
+	cmd.Flags().StringArrayVar(&o.Vars, "var", nil, "override a manifest variable (KEY=VALUE); repeatable")
 	cmd.Flags().StringVarP(&o.Environment, "environment", "e", "", "override the manifest environment")
 	cmd.Flags().StringVar(&o.Registry, "registry", "", "registry host for built apps")
 	cmd.Flags().StringVar(&o.Tag, "tag", "", "override the image tag")
@@ -569,6 +601,12 @@ func sshApply(ctx context.Context, app *App, host string, data []byte, o *manife
 		return fmt.Errorf("invalid SSH host %q", host)
 	}
 	args := []string{"-T", host, "menina", "apply", "--local", "-f", "-"}
+	if o.Project != "" {
+		args = append(args, "--project", o.Project)
+	}
+	for _, v := range o.Vars {
+		args = append(args, "--var", v)
+	}
 	if o.Environment != "" {
 		args = append(args, "-e", o.Environment)
 	}

@@ -43,7 +43,9 @@ menina upgrade              # checksum-verified self-update
 ```
 
 `apply` is an upsert of project/app/environment YAML and does not build or
-push; `build`/`push` need only Docker and registry credentials. The installed
+push; `build`/`push` need only Docker and registry credentials. `project` and
+`environment` may be `${VARS}`; `--project`, `-e/--environment`, and repeatable
+`--var KEY=VALUE` override them before rendering. The installed
 command is `menina`, falling back to `menina-client` when a host `menina` is
 already present. Running `menina` with no subcommand on a terminal opens the
 client TUI (same style as the host menu, labelled CLIENT). Full manifest schema,

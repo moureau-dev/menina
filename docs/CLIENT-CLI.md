@@ -106,6 +106,34 @@ workers:
 undefined variable is an error; unknown fields are rejected. `vars` are not
 passed to containers — set container values under `env`.
 
+### Replicated projects and environments
+
+Because interpolation happens before validation, `project` and `environment`
+can themselves be variables:
+
+```yaml
+vars:
+  PROJECT: demo
+  ENVIRONMENT: production
+
+project: ${PROJECT}
+environment: ${ENVIRONMENT}
+```
+
+Override them at scaffold/apply/build/push time:
+
+```bash
+menina apply --project demo-staging --environment staging
+menina build --project demo-staging --environment staging --push
+menina validate --var PROJECT=demo-staging --var ENVIRONMENT=staging
+```
+
+Precedence: `--var KEY=VALUE` (repeatable) first, then `--project` /
+`--environment`, which also set the rendered project/environment even when the
+manifest uses literal values. Overriding `project` changes the derived image
+repository (`<registry>/<project>/<name>`), so build/push target the replicated
+project and apply must run for that project too.
+
 ### Apps and workers
 
 `apps` are services: they must have a `port` and get a cluster Service. Add
@@ -255,6 +283,8 @@ triggers auto-deploy for enabled apps that were already applied.
 | Flag | Commands | Meaning |
 | --- | --- | --- |
 | `-f`, `--file` | all | Manifest path; `-` reads stdin |
+| `--project` | all | Override the manifest project |
+| `--var` | all | Override a manifest variable (`KEY=VALUE`, repeatable) |
 | `-e`, `--environment` | all | Override manifest environment (also rewrites `${ENVIRONMENT}`) |
 | `--registry` | validate/apply/build/push | Registry host for built repositories |
 | `--tag` | all | Override the image tag |

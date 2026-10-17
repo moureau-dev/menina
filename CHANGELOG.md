@@ -13,6 +13,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   never prunes.
 - `menina init` scaffolds a manifest and can copy one with `--from`, rewriting
   the environment and `vars.ENVIRONMENT`.
+- `project` and `environment` may be `${VAR}` values. All client commands accept
+  `--project`, `-e/--environment`, and repeatable `--var KEY=VALUE` overrides,
+  applied before interpolation, so the same manifest can target replicated
+  projects/environments (including derived image repositories).
 - `menina validate` parses, interpolates and renders a manifest; when
   `config.yml` is available it also resolves the rendered project against the
   host configuration.
