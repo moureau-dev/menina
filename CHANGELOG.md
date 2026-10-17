@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Docs
+- Expanded `ROADMAP.md` with a release object/state machine, declarative
+  verification, promotion by digest + reviewed plan, explicit code/config/data
+  rollback states, optional migration hooks/snapshots, and fleet operations.
 - Rewrote `llms.txt` role-first: choose client vs host, client manifest/apply
   safety contract, shared deployment model, then host platform details. Detailed
   reference remains in the subdocs.

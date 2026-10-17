@@ -14,7 +14,7 @@ makes the multi-node/HA work explicit instead of hiding it under “HA/DR”.
 - **Design bias:** one small system you can understand and operate yourself.
   Add capabilities without turning Menina into a generic Kubernetes distro.
 
-## Landed recently (through v0.0.13)
+## Landed recently (through v0.0.14)
 
 - Repository manifests (`.menina.yml`), client installers, manifest schema,
   `init`/`validate`/`apply`/`build`/`push`, `--json`, `--non-interactive`.
@@ -31,7 +31,55 @@ makes the multi-node/HA work explicit instead of hiding it under “HA/DR”.
   classified errors with stable exit codes.
 - Host/client TUI, cross-platform client builds and installers.
 
-## Tier 1 — finish determinism and operations (next)
+Guiding principle: **make failure paths as deliberate and predictable as the
+happy path.** A release must be identifiable, verifiable, recoverable, and
+honest about what was and was not rolled back.
+
+## Tier 1 — release model, determinism, and operations (next)
+
+### Release model
+
+Define a project/environment **release** as an immutable, identifiable unit:
+
+- image digest for every component (not mutable tags);
+- the resolved configuration snapshot and its identity/`stateToken`;
+- verification results and migration status;
+- a pointer to the previous known-good release;
+- retained previous workloads and PVCs.
+
+A deployment becomes a state transition, not a sequence of loosely related
+commands:
+
+```text
+known-good A
+    -> prepare B (pin digests + resolved config)
+    -> run declared migration policy
+    -> deploy B
+    -> verify B
+       success -> promote B
+       failure -> recovery policy
+                  report code / config / data state separately
+```
+
+Requirements:
+
+- Explicit states such as `prepared`, `migrating`, `deploying`, `verifying`,
+  `active`, `failed`, `recovering`, `rolled_back`, with per-component status.
+- Never report a generic “rollback successful.” Report at least:
+  application image rolled back, configuration restored, migration completed or
+  not reversed, verification still required.
+- Automatic rollback on failed verification, with a policy for interrupted
+  deployments and safe retries.
+- Declarative verification: expected HTTP status/body/header and optional
+  smoke-test command/job, plus a defined failure policy.
+- First-class promotion: move an existing image digest + reviewed target plan
+  between environments without rebuilding.
+- App-aware migration/pre/post hooks are opt-in, permissioned, image-pinned,
+  timeout-bounded, logged, and never assumed reversible.
+- Optional volume snapshots only when the storage class provides them. They are
+  not a substitute for scheduled backups.
+
+### Determinism and operations
 
 - Pin the resolved config snapshot on deployment jobs so a deploy cannot execute
   against config written after it was queued. Surface the pinned version in
@@ -49,9 +97,10 @@ makes the multi-node/HA work explicit instead of hiding it under “HA/DR”.
 - Finish error taxonomy: CAS conflicts, stale plans, auth failures, and schema
   mismatches should all use stable codes/exit values.
 
-Exit criteria: no known apply/deploy race; stale secrets are visible; a dropped
-SSH session does not lose job state; a failed deploy is observable without
-manual checks.
+Exit criteria: releases are pinned/identifiable; a failed deployment reports
+code, config, and data state separately; verification has an explicit failure
+policy; promotion does not rebuild; no known apply/deploy race; a failed deploy
+is observable without manual checks.
 
 ## Tier 2 — team and security
 
@@ -68,11 +117,26 @@ Ordered cheapest-first:
 Exit criteria: multiple operators can share a host without sharing credentials
 or silently overwriting each other; actions are attributable and reviewable.
 
-## Tier 3 — multi-node and HA/DR
+## Tier 3 — fleet operations, multi-node, and HA/DR
 
-**Multi-node is a huge win, but it is a program, not a flag.** It is listed in
-the HA/DR tier because it decomposes into dependent workstreams. Adding agents
-to k3s alone does not make Menina highly available.
+### Fleet operations
+
+These are useful even while staying single-node:
+
+- per-client/per-project backup schedules and retention;
+- aggregate overview of failed deployments, unhealthy apps, disk usage,
+  expiring certificates, and backup failures;
+- a tested replacement-host workflow: move a project, its registry state,
+  revisions, secrets, and volumes to a new server;
+- resource limits and quotas per project;
+- a deliberate answer for multi-tenant vs one-installation-per-client isolation.
+
+### Multi-node and HA
+
+
+**Multi-node is a huge win, but it is a program, not a flag.** It decomposes
+into dependent workstreams. Adding agents to k3s alone does not make Menina
+highly available.
 
 Dependency order:
 
@@ -122,7 +186,7 @@ Definition of done for a multi-node MVP:
 - Image signing (cosign/Sigstore), scanning (Trivy or similar), and admission
   policy.
 - Canary/blue-green, configurable `maxSurge`/`maxUnavailable`, migration jobs,
-  dependency ordering, automatic rollback on failed verification.
+  dependency ordering.
 - Log retention/search, alerting, and deploy event history.
 - Larger-scale quota, multi-tenancy, and audit export.
 
