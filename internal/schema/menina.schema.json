@@ -59,6 +59,9 @@
       "additionalProperties": {
         "$ref": "#/$defs/workload"
       }
+    },
+    "source": {
+      "$ref": "#/$defs/source"
     }
   },
   "$defs": {
@@ -458,6 +461,20 @@
           ]
         }
       ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repo": {
+          "type": "string",
+          "description": "Repository that owns the apps declared by this manifest."
+        },
+        "revision": {
+          "type": "string",
+          "description": "Optional informational revision."
+        }
+      }
     }
   }
 }

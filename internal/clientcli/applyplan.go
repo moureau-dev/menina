@@ -3,11 +3,13 @@ package clientcli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/moureau-dev/menina/internal/clierr"
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/manifest"
 )
@@ -18,12 +20,26 @@ type applyChange struct {
 	Diff   string `json:"diff,omitempty"`
 }
 
-func planApply(configDir string, r *manifest.Rendered) ([]applyChange, error) {
+func planApply(configDir string, r *manifest.Rendered, deletions []string) ([]applyChange, error) {
 	files, err := r.Plan(configDir)
 	if err != nil {
 		return nil, err
 	}
 	var changes []applyChange
+	for _, path := range deletions {
+		existing, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		changes = append(changes, applyChange{
+			Path:   path,
+			Action: "delete",
+			Diff:   lineDiff(string(existing), ""),
+		})
+	}
 	for _, file := range files {
 		existing, err := os.ReadFile(file.Path)
 		if os.IsNotExist(err) {
@@ -47,6 +63,67 @@ func planApply(configDir string, r *manifest.Rendered) ([]applyChange, error) {
 		})
 	}
 	return changes, nil
+}
+
+func checkOwnership(configDir string, r *manifest.Rendered) error {
+	existing, err := config.LoadApps(config.ProjectsDir(configDir), r.Project.Name)
+	if err != nil {
+		return err
+	}
+	for name := range r.Apps {
+		app := existing[name]
+		if app == nil {
+			continue
+		}
+		switch {
+		case r.File.Source.Repo == "" && app.Source.Repo != "":
+			return clierr.New(clierr.CodeConflict, fmt.Sprintf("app %q is owned by %s; set source.repo in the manifest", name, app.Source.Repo), "use a different app name or declare the owning source.repo")
+		case r.File.Source.Repo != "" && app.Source.Repo != "" && app.Source.Repo != r.File.Source.Repo:
+			return clierr.New(clierr.CodeConflict, fmt.Sprintf("app %q is owned by %s, not %s", name, app.Source.Repo, r.File.Source.Repo), "use a different app name or fix source.repo")
+		}
+	}
+	return nil
+}
+
+func planPrune(configDir string, r *manifest.Rendered) ([]string, error) {
+	if r.File.Source.Repo == "" {
+		return nil, clierr.New(clierr.CodeValidation, "--prune requires source.repo in the manifest (or --source-repo)", "set source.repo so only apps owned by this repository are pruned")
+	}
+	project, err := config.LoadProject(config.ProjectsDir(configDir), r.Project.Name)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var paths []string
+	add := func(path string) {
+		if !seen[path] {
+			seen[path] = true
+			paths = append(paths, path)
+		}
+	}
+	for name, app := range project.Apps {
+		if _, declared := r.Apps[name]; declared {
+			continue
+		}
+		if app.Source.Repo != r.File.Source.Repo {
+			continue
+		}
+		add(config.AppOverridePath(configDir, r.Project.Name, r.Environment.Name, name))
+		usedElsewhere := false
+		for envName, env := range project.Envs {
+			if envName == r.Environment.Name {
+				continue
+			}
+			if _, ok := env.Apps[name]; ok {
+				usedElsewhere = true
+				break
+			}
+		}
+		if !usedElsewhere {
+			add(filepath.Join(config.ProjectDir(configDir, r.Project.Name), "apps", name+".yml"))
+		}
+	}
+	return paths, nil
 }
 
 func yamlEqual(a, b []byte) bool {

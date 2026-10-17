@@ -109,6 +109,7 @@ workers:
 | `project` | Project name in Menina |
 | `environment` | Environment to write (default target) |
 | `vars` | Non-secret values for `${VAR}` interpolation |
+| `source` | `{repo, revision}` ownership of the apps declared here |
 | `defaults` | `context`, `tag`, `registry` defaults |
 | `storages` | Named storage definitions |
 | `apps` | Listening workloads (services) |
@@ -367,6 +368,7 @@ menina apply --check               # render + validate, write nothing
 menina apply --diff                # show file changes, write nothing
 menina apply --dry-run --json      # same plan as structured JSON
 menina apply --verify              # write, then re-read and verify apps/overrides
+menina apply --prune               # remove owned apps not declared here
 menina apply --host deploy@vps     # pipe over SSH
 menina apply --host deploy@vps -e staging
 ```
@@ -375,7 +377,18 @@ menina apply --host deploy@vps -e staging
 environment definition, `apps/<name>.yml`, and per-app overrides. It preserves
 an existing `project.yml` and environment definition. It performs no pruning.
 
-`--diff`/`--dry-run` print `create`/`update` changes and a line diff; with
+`apply` records a pre-apply revision under `<config-dir>/.revisions/`. List them
+with `menina config revisions` and restore with
+`menina config rollback <id>`. Revisions restore YAML only, not deployed images.
+
+`--prune` removes environment overrides for owned apps that this manifest no
+longer declares, and removes the app definition when no other environment uses
+it. It requires `source.repo` (manifest or `--source-repo`) and refuses to touch
+apps owned by another repository. Ownership is also checked on every apply:
+overwriting another repository's app is a conflict, and a manifest without
+`source.repo` cannot overwrite a remote-owned app.
+
+`--diff`/`--dry-run` print `create`/`update`/`delete` changes and a line diff; with
 `--json` the response adds `changes: [{path, action, diff}]` and
 `applied: false`. `--verify` re-loads the written project and checks that every
 manifest app and environment override exists. `--diff` and `--verify` are

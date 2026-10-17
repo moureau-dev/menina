@@ -7,6 +7,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Manifest `source: {repo, revision}` ownership. Apply refuses to overwrite an
+  app owned by a different repository (and a manifest without `source.repo`
+  cannot overwrite a remote-owned app). `apply --prune` removes overrides for
+  owned apps no longer declared, and removes the app definition when no other
+  environment uses it.
+- `apply` records pre-apply revisions under `<config-dir>/.revisions/`;
+  `menina config revisions` lists them and `menina config rollback <id> --yes`
+  restores the affected YAML files.
+- `menina job watch <id>` streams NDJSON job snapshots until done/failed/cancelled
+  with `--json` and `--timeout`. The control plane exposes `/jobs/watch`; the
+  streaming client no longer inherits the 10-second request timeout.
+
 - `menina app deploy --verify` checks the app's public HTTP route(s) after the
   rollout and TCP-dials configured L4 ports. `--verify` cannot be combined with
   `--no-wait`.

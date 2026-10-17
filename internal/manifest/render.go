@@ -239,6 +239,7 @@ func (f *File) renderWorkload(name string, w Workload, worker bool, tag, registr
 
 	app := &config.AppFile{
 		Name:      name,
+		Source:    f.Source,
 		Image:     config.ImageSpec{Repository: repository, Tag: imageTag},
 		Workload:  config.WorkloadSpec{Type: kind, Port: servicePort, Command: base.Command, Args: base.Args},
 		Resources: config.ResourceSpec{},

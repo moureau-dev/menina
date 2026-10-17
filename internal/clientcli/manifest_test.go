@@ -93,7 +93,7 @@ apps:
 	if err != nil {
 		t.Fatal(err)
 	}
-	changes, err := planApply(dir, r)
+	changes, err := planApply(dir, r, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ apps:
 	if err := r.Write(dir); err != nil {
 		t.Fatal(err)
 	}
-	changes, err = planApply(dir, r)
+	changes, err = planApply(dir, r, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,5 +112,85 @@ apps:
 	}
 	if err := verifyApply(dir, r); err != nil {
 		t.Fatalf("verify: %v", err)
+	}
+}
+
+func TestOwnershipAndPrune(t *testing.T) {
+	dir := t.TempDir()
+	first, err := manifest.Load([]byte(`project: demo
+environment: production
+source: { repo: github.com/acme/demo }
+apps:
+  web: { image: nginx, service: { port: 80 } }
+  old: { image: busybox, service: { port: 9000 } }
+`), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r1, err := first.Render(manifest.RenderOptions{ConfigDir: dir, Registry: "registry.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r1.Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	second, err := manifest.Load([]byte(`project: demo
+environment: production
+source: { repo: github.com/acme/demo }
+apps:
+  web: { image: nginx, service: { port: 80 } }
+`), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, err := second.Render(manifest.RenderOptions{ConfigDir: dir, Registry: "registry.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkOwnership(dir, r2); err != nil {
+		t.Fatal(err)
+	}
+	deletions, err := planPrune(dir, r2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deletions) != 2 {
+		t.Fatalf("deletions = %v, want app and override files", deletions)
+	}
+}
+
+func TestOwnershipConflict(t *testing.T) {
+	dir := t.TempDir()
+	first, err := manifest.Load([]byte(`project: demo
+environment: production
+source: { repo: github.com/acme/one }
+apps:
+  web: { image: nginx, service: { port: 80 } }
+`), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r1, err := first.Render(manifest.RenderOptions{ConfigDir: dir, Registry: "registry.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r1.Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	second, err := manifest.Load([]byte(`project: demo
+environment: production
+source: { repo: github.com/acme/two }
+apps:
+  web: { image: nginx, service: { port: 80 } }
+`), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, err := second.Render(manifest.RenderOptions{ConfigDir: dir, Registry: "registry.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkOwnership(dir, r2); err == nil {
+		t.Fatal("expected ownership conflict")
 	}
 }

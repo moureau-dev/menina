@@ -33,6 +33,7 @@ type File struct {
 	Project     string              `yaml:"project"`
 	Environment string              `yaml:"environment"`
 	Vars        map[string]string   `yaml:"vars,omitempty"`
+	Source      config.SourceSpec   `yaml:"source,omitempty"`
 	Defaults    Defaults            `yaml:"defaults,omitempty"`
 	Storages    map[string]Storage  `yaml:"storages,omitempty"`
 	Apps        map[string]Workload `yaml:"apps,omitempty"`

@@ -331,6 +331,7 @@ func (s *Service) controlMux() http.Handler {
 	mux.HandleFunc("/job-status", s.handleJobStatus)
 	mux.HandleFunc("/jobs", s.handleJobs)
 	mux.HandleFunc("/jobs/cancel", s.handleJobCancel)
+	mux.HandleFunc("/jobs/watch", s.handleJobWatch)
 	mux.HandleFunc("/deploy", s.handleDeploy)
 	mux.HandleFunc("/rollback", s.handleRollback)
 	return mux
@@ -354,6 +355,58 @@ func (s *Service) handleJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"jobs": jobs})
+}
+
+func (s *Service) handleJobWatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	if _, ok, err := s.db.JobByID(r.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	} else if !ok {
+		http.Error(w, "job not found", http.StatusNotFound)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	last := ""
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		job, ok, err := s.db.JobByID(r.Context(), id)
+		if err != nil {
+			return
+		}
+		if !ok {
+			return
+		}
+		data, err := json.Marshal(job)
+		if err == nil && string(data) != last {
+			last = string(data)
+			_, _ = w.Write(append(data, '\n'))
+			flusher.Flush()
+		}
+		switch job.Status {
+		case "done", "failed", "cancelled", "superseded":
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (s *Service) handleJobCancel(w http.ResponseWriter, r *http.Request) {

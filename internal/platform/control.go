@@ -144,6 +144,32 @@ func (c *ControlClient) GetJSON(ctx context.Context, path string, out any) error
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
+// doStream is like do but without the client-wide timeout, so long-lived
+// streams are not cut off after 10 seconds.
+func (c *ControlClient) doStream(ctx context.Context, path string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://unix"+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	client := &http.Client{Transport: c.http.Transport}
+	return client.Do(req)
+}
+
+// GetStream opens a streaming GET endpoint and returns the response body.
+func (c *ControlClient) GetStream(ctx context.Context, path string) (io.ReadCloser, error) {
+	resp, err := c.doStream(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("control request %s failed: %s: %s", path, resp.Status, strings.TrimSpace(string(data)))
+	}
+	return resp.Body, nil
+}
+
 func (c *ControlClient) Snapshot(ctx context.Context) (*proxy.Snapshot, error) {
 	var snap proxy.Snapshot
 	if err := c.GetJSON(ctx, "/snapshot", &snap); err != nil {
@@ -185,7 +211,7 @@ func (c *ControlClient) PostJSONDecode(ctx context.Context, path string, body []
 type SnapshotStream func(*proxy.Snapshot)
 
 func (c *ControlClient) Stream(ctx context.Context, fn SnapshotStream) error {
-	resp, err := c.do(ctx, http.MethodGet, "/stream", nil)
+	resp, err := c.doStream(ctx, "/stream")
 	if err != nil {
 		return err
 	}

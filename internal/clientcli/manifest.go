@@ -24,12 +24,14 @@ const defaultManifestFile = ".menina.yml"
 var varNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 type manifestOptions struct {
-	File        string
-	Project     string
-	Environment string
-	Registry    string
-	Tag         string
-	Vars        []string
+	File           string
+	Project        string
+	Environment    string
+	Registry       string
+	Tag            string
+	SourceRepo     string
+	SourceRevision string
+	Vars           []string
 }
 
 func (o *manifestOptions) load(cmd *cobra.Command) (*manifest.File, error) {
@@ -66,6 +68,12 @@ func (o *manifestOptions) load(cmd *cobra.Command) (*manifest.File, error) {
 	}
 	if o.Environment != "" {
 		f.Environment = o.Environment
+	}
+	if o.SourceRepo != "" {
+		f.Source.Repo = o.SourceRepo
+	}
+	if o.SourceRevision != "" {
+		f.Source.Revision = o.SourceRevision
 	}
 	return f, nil
 }
@@ -233,7 +241,7 @@ func newValidateCommand(app *App) *cobra.Command {
 func newApplyCommand(app *App) *cobra.Command {
 	o := &manifestOptions{}
 	var host string
-	var local, check, diff, dryRun, verify bool
+	var local, check, diff, dryRun, verify, prune bool
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply a .menina.yml manifest to a host",
@@ -253,7 +261,7 @@ func newApplyCommand(app *App) *cobra.Command {
 					if err != nil {
 						return err
 					}
-					return sshApply(cmd.Context(), app, target, data, o, check, diff, dryRun, verify)
+					return sshApply(cmd.Context(), app, target, data, o, check, diff, dryRun, verify, prune)
 				}
 			}
 			f, err := o.load(cmd)
@@ -280,6 +288,16 @@ func newApplyCommand(app *App) *cobra.Command {
 			if err := validateRendered(app, r, true); err != nil {
 				return clierr.Wrap(clierr.CodeValidation, err)
 			}
+			if err := checkOwnership(app.configDir(), r); err != nil {
+				return err
+			}
+			var deletions []string
+			if prune {
+				deletions, err = planPrune(app.configDir(), r)
+				if err != nil {
+					return err
+				}
+			}
 			if check {
 				if app.jsonOutput() {
 					summary := manifestSummary(r)
@@ -291,7 +309,7 @@ func newApplyCommand(app *App) *cobra.Command {
 				return nil
 			}
 			if diff || dryRun {
-				changes, err := planApply(app.configDir(), r)
+				changes, err := planApply(app.configDir(), r, deletions)
 				if err != nil {
 					return err
 				}
@@ -314,8 +332,26 @@ func newApplyCommand(app *App) *cobra.Command {
 				}
 				return nil
 			}
+			files, err := r.Plan(app.configDir())
+			if err != nil {
+				return err
+			}
+			revisionPaths := make([]string, 0, len(files)+len(deletions))
+			for _, file := range files {
+				revisionPaths = append(revisionPaths, file.Path)
+			}
+			revisionPaths = append(revisionPaths, deletions...)
+			revision, err := config.SaveRevision(app.configDir(), r.Project.Name, r.Environment.Name, revisionPaths)
+			if err != nil {
+				return err
+			}
 			if err := r.Write(app.configDir()); err != nil {
 				return err
+			}
+			for _, path := range deletions {
+				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+					return err
+				}
 			}
 			if verify {
 				if err := verifyApply(app.configDir(), r); err != nil {
@@ -326,11 +362,19 @@ func newApplyCommand(app *App) *cobra.Command {
 				summary := manifestSummary(r)
 				summary["applied"] = true
 				summary["verified"] = verify
+				summary["pruned"] = len(deletions)
+				summary["revision"] = revision
 				return app.printJSON(summary)
 			}
 			printManifestSummary(app, r)
 			if verify {
 				app.infof("Verified written config.")
+			}
+			if len(deletions) > 0 {
+				app.infof("Pruned %d stale file(s).", len(deletions))
+			}
+			if revision != "" {
+				app.infof("Revision: %s", revision)
 			}
 			app.infof("Applied. Push images to deploy, or run `menina app deploy <app> --project %s --environment %s`.", r.Project.Name, r.Environment.Name)
 			return nil
@@ -345,9 +389,12 @@ func newApplyCommand(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&host, "host", "", "SSH host (user@host); cached for later commands")
 	cmd.Flags().BoolVar(&local, "local", false, "apply locally even if a host is cached")
 	cmd.Flags().BoolVar(&check, "check", false, "validate and render without writing")
+	cmd.Flags().StringVar(&o.SourceRepo, "source-repo", "", "repository that owns these apps (overrides manifest source.repo)")
+	cmd.Flags().StringVar(&o.SourceRevision, "source-revision", "", "informational source revision")
 	cmd.Flags().BoolVar(&diff, "diff", false, "show config changes without writing")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "alias for --diff")
 	cmd.Flags().BoolVar(&verify, "verify", false, "re-read the written config and verify apps/environment overrides")
+	cmd.Flags().BoolVar(&prune, "prune", false, "remove owned apps not declared by this manifest")
 	return cmd
 }
 
@@ -681,13 +728,19 @@ func writeCachedHost(host string) error {
 	return os.Chmod(path, 0o600)
 }
 
-func sshApply(ctx context.Context, app *App, host string, data []byte, o *manifestOptions, check, diff, dryRun, verify bool) error {
+func sshApply(ctx context.Context, app *App, host string, data []byte, o *manifestOptions, check, diff, dryRun, verify, prune bool) error {
 	if strings.HasPrefix(host, "-") {
 		return fmt.Errorf("invalid SSH host %q", host)
 	}
 	args := []string{"-T", host, "menina", "apply", "--local", "-f", "-"}
 	if o.Project != "" {
 		args = append(args, "--project", o.Project)
+	}
+	if o.SourceRepo != "" {
+		args = append(args, "--source-repo", o.SourceRepo)
+	}
+	if o.SourceRevision != "" {
+		args = append(args, "--source-revision", o.SourceRevision)
 	}
 	for _, v := range o.Vars {
 		args = append(args, "--var", v)
@@ -712,6 +765,9 @@ func sshApply(ctx context.Context, app *App, host string, data []byte, o *manife
 	}
 	if verify {
 		args = append(args, "--verify")
+	}
+	if prune {
+		args = append(args, "--prune")
 	}
 	if app.jsonOutput() {
 		args = append(args, "--json")

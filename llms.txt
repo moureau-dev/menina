@@ -39,6 +39,7 @@ menina validate             # parse + render without writing
 menina apply --host user@vps  # desired state over SSH (config only)
 menina apply --diff           # show create/update plan, write nothing
 menina apply --verify         # write, then re-read and verify
+menina apply --prune          # remove owned apps no longer declared (needs source.repo)
 menina build --push         # build/push images locally; push triggers deploys
 menina push --build --filter api,web
 menina build --build-arg VITE_API_URL="$VITE_API_URL"
@@ -199,7 +200,8 @@ menina secret remove DATABASE_URL --project <p> --environment <env> --yes
 # observe / infra
 menina status [--json]               # includes the registry host
 menina routes [--json]               # HTTP routes + L4 TCP/UDP exposures
-menina job list [--status S] [--json] | menina job cancel <id>   # deployment queue
+menina job list [--status S] [--json] | menina job watch <id> | menina job cancel <id>   # deployment queue/events
+menina config revisions [--project P] | menina config rollback <id> --yes   # desired-state snapshots
 menina config validate [--json]      # resolve+validate the config tree (non-zero if invalid)
 menina doctor                        # config, k8s, registry, routes, TLS checks
 menina registry status

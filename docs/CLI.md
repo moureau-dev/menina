@@ -67,8 +67,11 @@ errors use the generic code/exit.
 | `menina registry credential [--regenerate]` | Show or rotate the registry push credential |
 | `menina app status <name> --project P --environment E [--json]` | Last deployment job, release digest and observed phase for an app |
 | `menina job list [--status S] [--limit N] [--json]` | List deployment jobs, newest first |
+| `menina job watch <id> [--json] [--timeout D]` | Stream NDJSON job snapshots until a terminal state |
 | `menina job cancel <id>` | Cancel a pending or processing deployment job |
 | `menina config validate [--json]` | Resolve the whole config tree and validate it without applying (non-zero exit when invalid) |
+| `menina config revisions [--project P] [--environment E] [--json]` | List pre-apply configuration snapshots |
+| `menina config rollback <id> --yes` | Restore files changed by an apply revision (desired state only) |
 | `menina schema [--json] [--url]` | Print the embedded `.menina.yml` JSON Schema, or only its public URL |
 | `menina capabilities [--json]` | Local version, OS/arch, manifest schema version, feature flags and command list |
 | `menina notify list` | Configured deploy webhooks |
