@@ -7,7 +7,8 @@ set -eu
 # applies them over SSH, and builds/pushes images. It does not install the host
 # control plane; use install.sh for that.
 
-APP="menina-client"
+ASSET_PREFIX="menina-client"
+BINARY_NAME="${MENINA_CLIENT_BINARY_NAME:-menina}"
 REPO="${MENINA_REPO:-moureau-dev/menina}"
 VERSION="${MENINA_CLIENT_VERSION:-latest}"
 NO_MODIFY_PATH="${MENINA_CLIENT_NO_MODIFY_PATH:-0}"
@@ -69,9 +70,27 @@ hash_file() {
   fi
 }
 
+choose_binary_name() {
+  # The client is normally called `menina`, just like on a laptop where the
+  # host binary is absent. If a host `menina` is already installed, avoid
+  # shadowing it and use `menina-client` instead.
+  if [ -n "${MENINA_CLIENT_BINARY_NAME:-}" ]; then
+    return 0
+  fi
+  existing="$(command -v menina 2>/dev/null || true)"
+  if [ -z "$existing" ]; then
+    return 0
+  fi
+  if "$existing" --help 2>&1 | grep -q "Menina client"; then
+    return 0
+  fi
+  BINARY_NAME="menina-client"
+  warn "found an existing host 'menina' at $existing; installing as 'menina-client'"
+}
+
 download_and_install() {
   version="$1"
-  asset="${APP}-${OS}-${ARCH}"
+  asset="${ASSET_PREFIX}-${OS}-${ARCH}"
   base="https://github.com/${REPO}/releases/download/${version}"
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
@@ -86,15 +105,15 @@ download_and_install() {
   [ "$expected" = "$actual" ] || die "checksum mismatch for ${asset}"
 
   info "checksum verified"
-  cp "${tmp}/${asset}" "${BIN_DIR}/${APP}"
-  chmod 0755 "${BIN_DIR}/${APP}"
+  cp "${tmp}/${asset}" "${BIN_DIR}/${BINARY_NAME}"
+  chmod 0755 "${BIN_DIR}/${BINARY_NAME}"
 }
 
 install_local() {
   [ -x "$MENINA_CLIENT_LOCAL_BINARY" ] || die "MENINA_CLIENT_LOCAL_BINARY=$MENINA_CLIENT_LOCAL_BINARY is not executable"
   info "installing local binary $MENINA_CLIENT_LOCAL_BINARY (no download, no checksum)"
-  cp "$MENINA_CLIENT_LOCAL_BINARY" "${BIN_DIR}/${APP}"
-  chmod 0755 "${BIN_DIR}/${APP}"
+  cp "$MENINA_CLIENT_LOCAL_BINARY" "${BIN_DIR}/${BINARY_NAME}"
+  chmod 0755 "${BIN_DIR}/${BINARY_NAME}"
 }
 
 modify_path() {
@@ -150,6 +169,7 @@ main() {
       info "  MENINA_CLIENT_VERSION   release tag (default: latest)"
       info "  MENINA_CLIENT_DIR       install directory"
       info "  MENINA_CLIENT_LOCAL_BINARY  install a local build"
+      info "  MENINA_CLIENT_BINARY_NAME   command name (default: menina)"
       info "  MENINA_CLIENT_NO_MODIFY_PATH=1  do not edit shell profiles"
       info "  MENINA_REPO             GitHub repository"
       exit 0
@@ -160,10 +180,11 @@ main() {
   need mktemp
   detect_platform
   choose_dir
+  choose_binary_name
 
   if [ -n "${MENINA_CLIENT_LOCAL_BINARY:-}" ]; then
     install_local
-    version="$("${BIN_DIR}/${APP}" version 2>/dev/null || echo local)"
+    version="$("${BIN_DIR}/${BINARY_NAME}" version 2>/dev/null || echo local)"
   else
     version="$(resolve_version)"
     [ -n "$version" ] || die "could not determine the latest release"
@@ -172,12 +193,12 @@ main() {
   modify_path
 
   info ""
-  info "Menina client ${version} installed to ${BIN_DIR}/${APP}"
+  info "Menina client ${version} installed to ${BIN_DIR}/${BINARY_NAME}"
   info "Next:"
-  info "  menina-client init          # scaffold .menina.yml"
-  info "  menina-client validate      # check it"
-  info "  menina-client apply --host user@vps.example.com"
-  info "  menina-client build --push  # build and push images"
+  info "  ${BINARY_NAME} init          # scaffold .menina.yml"
+  info "  ${BINARY_NAME} validate      # check it"
+  info "  ${BINARY_NAME} apply --host user@vps.example.com"
+  info "  ${BINARY_NAME} build --push  # build and push images"
 }
 
 main "$@"

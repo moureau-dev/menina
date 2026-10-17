@@ -81,9 +81,10 @@ curl -fsSL https://menina.moureau.dev/install-client.sh | sh
 irm https://menina.moureau.dev/install-client.ps1 | iex
 ```
 
-The installers verify the release checksum and add `menina-client` to your
-`PATH` (user-level on Windows). `menina-client apply --host user@vps` sends the
-manifest over SSH; build/push use the local Docker daemon.
+The installers verify the release checksum and install the command as `menina`
+(they fall back to `menina-client` if a host `menina` is already present). On
+Windows it is added to the user-level `PATH`. `menina apply --host user@vps`
+sends the manifest over SSH; build/push use the local Docker daemon.
 
 **Prerequisites for a clean Ubuntu Server VPS**: `amd64` or `arm64`, systemd,
 `curl`, network access to `get.k3s.io` / GitHub Releases / `ghcr.io` /

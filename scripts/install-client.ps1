@@ -24,6 +24,7 @@ $ErrorActionPreference = "Stop"
 $Repo = if ($env:MENINA_REPO) { $env:MENINA_REPO } else { "moureau-dev/menina" }
 if (-not $Version) { $Version = "latest" }
 if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA "Menina\bin" }
+$BinaryName = if ($env:MENINA_CLIENT_BINARY_NAME) { $env:MENINA_CLIENT_BINARY_NAME } else { "menina" }
 
 function Info($Message) { Write-Host $Message }
 function Die($Message) { Write-Error $Message; exit 1 }
@@ -35,7 +36,21 @@ switch ($env:PROCESSOR_ARCHITECTURE) {
 }
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-$Target = Join-Path $InstallDir "menina-client.exe"
+
+# The client is normally called `menina`. If a host `menina` is already
+# installed, avoid shadowing it and use `menina-client` instead.
+if (-not $env:MENINA_CLIENT_BINARY_NAME) {
+    $Existing = Get-Command menina -ErrorAction SilentlyContinue
+    if ($Existing) {
+        $HelpText = (& $Existing.Source --help 2>$null | Out-String)
+        if ($HelpText -notmatch "Menina client") {
+            $BinaryName = "menina-client"
+            Info "found an existing host 'menina' at $($Existing.Source); installing as 'menina-client'"
+        }
+    }
+}
+
+$Target = Join-Path $InstallDir "$BinaryName.exe"
 
 if ($env:MENINA_CLIENT_LOCAL_BINARY) {
     if (-not (Test-Path $env:MENINA_CLIENT_LOCAL_BINARY)) {
@@ -100,7 +115,7 @@ else {
 Info ""
 Info "Menina client $InstalledVersion installed to $Target"
 Info "Next:"
-Info "  menina-client init          # scaffold .menina.yml"
-Info "  menina-client validate      # check it"
-Info "  menina-client apply --host user@vps.example.com"
-Info "  menina-client build --push  # build and push images"
+Info "  $BinaryName init          # scaffold .menina.yml"
+Info "  $BinaryName validate      # check it"
+Info "  $BinaryName apply --host user@vps.example.com"
+Info "  $BinaryName build --push  # build and push images"

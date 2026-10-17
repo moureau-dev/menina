@@ -68,7 +68,7 @@ func NewRootCommand() *cobra.Command {
 	var jsonOutput, verbose bool
 	app := &App{opts: Options{ConfigDir: &configDir, JSON: &jsonOutput}}
 	root := &cobra.Command{
-		Use:   "menina-client",
+		Use:   "menina",
 		Short: "Menina client: apply, build and push repository manifests",
 		Long: "Menina client is the cross-platform side of Menina. It scaffolds and\n" +
 			"validates .menina.yml manifests, applies them over SSH, and builds/pushes\n" +
@@ -87,7 +87,7 @@ func NewRootCommand() *cobra.Command {
 
 	info := version.Get()
 	root.Version = info.Version
-	root.SetVersionTemplate(fmt.Sprintf("menina-client %s (commit %s, built %s, %s)\n", info.Version, info.Commit, info.Date, info.GoVersion))
+	root.SetVersionTemplate(fmt.Sprintf("menina %s (commit %s, built %s, %s)\n", info.Version, info.Commit, info.Date, info.GoVersion))
 	return root
 }
 
@@ -106,7 +106,7 @@ func newVersionCommand() *cobra.Command {
 		Short: "Print version information",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			info := version.Get()
-			fmt.Fprintf(os.Stdout, "menina-client %s (commit %s, built %s, %s)\n", info.Version, info.Commit, info.Date, info.GoVersion)
+			fmt.Fprintf(os.Stdout, "menina %s (commit %s, built %s, %s)\n", info.Version, info.Commit, info.Date, info.GoVersion)
 			return nil
 		},
 	}
