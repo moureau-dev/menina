@@ -37,12 +37,15 @@ menina init                 # scaffold .menina.yml
 menina install              # install this downloaded binary on PATH
 menina validate             # parse + render without writing
 menina apply --host user@vps  # desired state over SSH (config only)
+menina apply --diff           # show create/update plan, write nothing
+menina apply --verify         # write, then re-read and verify
 menina build --push         # build/push images locally; push triggers deploys
 menina push --build --filter api,web
 menina build --build-arg VITE_API_URL="$VITE_API_URL"
 printf '%s' "$DATABASE_URL" | menina secret set DATABASE_URL --host user@vps --project demo --environment production
 menina schema --json        # embedded manifest JSON Schema
 menina capabilities --json  # local version, os/arch, schema + feature flags
+menina capabilities --host user@vps --json  # host capabilities + compatibility
 menina version --check      # compare with the latest release
 menina upgrade              # checksum-verified self-update
 ```
@@ -55,7 +58,9 @@ push; `build`/`push` need only Docker and registry credentials. `project` and
 `secret set|list|remove|verify` proxies the host command over SSH stdin and
 requires a host (`--host`, `MENINA_HOST`, or the cached host). Add
 `--non-interactive` to any command to fail instead of prompting or opening the
-TUI. The installed
+TUI. With `--json`, failures use `{"error":{"code","message","hint"}}` and exit
+codes: 1 generic, 2 validation, 3 not_found, 4 auth, 5 timeout, 6 conflict,
+7 unsupported. The installed
 command is `menina`, falling back to `menina-client` when a host `menina` is
 already present. Running `menina` with no subcommand on a terminal opens the
 client TUI (same style as the host menu, labelled client). Manifest JSON Schema:

@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/moureau-dev/menina/internal/clierr"
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/version"
 )
@@ -104,9 +105,25 @@ func NewRootCommand() *cobra.Command {
 
 // Execute runs the standalone client binary.
 func Execute() int {
-	if err := NewRootCommand().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		return 1
+	root := NewRootCommand()
+	if err := root.Execute(); err != nil {
+		code, message, hint, exit := clierr.Info(err)
+		jsonOut, _ := root.PersistentFlags().GetBool("json")
+		if jsonOut {
+			enc := json.NewEncoder(os.Stderr)
+			enc.SetIndent("", "  ")
+			body := map[string]any{"code": code, "message": message}
+			if hint != "" {
+				body["hint"] = hint
+			}
+			_ = enc.Encode(map[string]any{"error": body})
+		} else {
+			fmt.Fprintln(os.Stderr, "error:", message)
+			if hint != "" {
+				fmt.Fprintln(os.Stderr, "hint:", hint)
+			}
+		}
+		return exit
 	}
 	return 0
 }

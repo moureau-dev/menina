@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/moureau-dev/menina/internal/clierr"
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/manifest"
 )
@@ -200,7 +201,7 @@ func newValidateCommand(app *App) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f, err := o.load(cmd)
 			if err != nil {
-				return err
+				return clierr.Wrap(clierr.CodeValidation, err)
 			}
 			r, err := f.Render(manifest.RenderOptions{
 				ConfigDir: app.configDir(),
@@ -208,10 +209,10 @@ func newValidateCommand(app *App) *cobra.Command {
 				Tag:       o.Tag,
 			})
 			if err != nil {
-				return err
+				return clierr.Wrap(clierr.CodeValidation, err)
 			}
 			if err := validateRendered(app, r, false); err != nil {
-				return err
+				return clierr.Wrap(clierr.CodeValidation, err)
 			}
 			if app.jsonOutput() {
 				return app.printJSON(manifestSummary(r))
@@ -232,7 +233,7 @@ func newValidateCommand(app *App) *cobra.Command {
 func newApplyCommand(app *App) *cobra.Command {
 	o := &manifestOptions{}
 	var host string
-	var local, check bool
+	var local, check, diff, dryRun, verify bool
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply a .menina.yml manifest to a host",
@@ -252,12 +253,12 @@ func newApplyCommand(app *App) *cobra.Command {
 					if err != nil {
 						return err
 					}
-					return sshApply(cmd.Context(), app, target, data, o, check)
+					return sshApply(cmd.Context(), app, target, data, o, check, diff, dryRun, verify)
 				}
 			}
 			f, err := o.load(cmd)
 			if err != nil {
-				return err
+				return clierr.Wrap(clierr.CodeValidation, err)
 			}
 			registry := o.Registry
 			if registry == "" {
@@ -274,10 +275,10 @@ func newApplyCommand(app *App) *cobra.Command {
 				Tag:       o.Tag,
 			})
 			if err != nil {
-				return err
+				return clierr.Wrap(clierr.CodeValidation, err)
 			}
 			if err := validateRendered(app, r, true); err != nil {
-				return err
+				return clierr.Wrap(clierr.CodeValidation, err)
 			}
 			if check {
 				if app.jsonOutput() {
@@ -289,15 +290,48 @@ func newApplyCommand(app *App) *cobra.Command {
 				app.infof("Manifest OK (not written)")
 				return nil
 			}
+			if diff || dryRun {
+				changes, err := planApply(app.configDir(), r)
+				if err != nil {
+					return err
+				}
+				if app.jsonOutput() {
+					summary := manifestSummary(r)
+					summary["applied"] = false
+					summary["dryRun"] = true
+					summary["changes"] = changes
+					return app.printJSON(summary)
+				}
+				if len(changes) == 0 {
+					app.infof("No changes.")
+					return nil
+				}
+				for _, change := range changes {
+					app.infof("%s %s", strings.ToUpper(change.Action), change.Path)
+					if change.Diff != "" {
+						app.infof("%s", change.Diff)
+					}
+				}
+				return nil
+			}
 			if err := r.Write(app.configDir()); err != nil {
 				return err
+			}
+			if verify {
+				if err := verifyApply(app.configDir(), r); err != nil {
+					return err
+				}
 			}
 			if app.jsonOutput() {
 				summary := manifestSummary(r)
 				summary["applied"] = true
+				summary["verified"] = verify
 				return app.printJSON(summary)
 			}
 			printManifestSummary(app, r)
+			if verify {
+				app.infof("Verified written config.")
+			}
 			app.infof("Applied. Push images to deploy, or run `menina app deploy <app> --project %s --environment %s`.", r.Project.Name, r.Environment.Name)
 			return nil
 		},
@@ -311,6 +345,9 @@ func newApplyCommand(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&host, "host", "", "SSH host (user@host); cached for later commands")
 	cmd.Flags().BoolVar(&local, "local", false, "apply locally even if a host is cached")
 	cmd.Flags().BoolVar(&check, "check", false, "validate and render without writing")
+	cmd.Flags().BoolVar(&diff, "diff", false, "show config changes without writing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "alias for --diff")
+	cmd.Flags().BoolVar(&verify, "verify", false, "re-read the written config and verify apps/environment overrides")
 	return cmd
 }
 
@@ -380,11 +417,11 @@ func newPushCommand(app *App) *cobra.Command {
 func runManifestBuild(cmd *cobra.Command, app *App, o *manifestOptions, filter string, buildArgs []string, build, push, dryRun bool) error {
 	f, err := o.load(cmd)
 	if err != nil {
-		return err
+		return clierr.Wrap(clierr.CodeValidation, err)
 	}
 	overrides, err := parseBuildArgs(buildArgs)
 	if err != nil {
-		return err
+		return clierr.Wrap(clierr.CodeValidation, err)
 	}
 	registry := o.Registry
 	if registry == "" {
@@ -401,7 +438,7 @@ func runManifestBuild(cmd *cobra.Command, app *App, o *manifestOptions, filter s
 		Tag:       o.Tag,
 	})
 	if err != nil {
-		return err
+		return clierr.Wrap(clierr.CodeValidation, err)
 	}
 	targets, err := manifest.FilterTargets(r.Targets, filter)
 	if err != nil {
@@ -644,7 +681,7 @@ func writeCachedHost(host string) error {
 	return os.Chmod(path, 0o600)
 }
 
-func sshApply(ctx context.Context, app *App, host string, data []byte, o *manifestOptions, check bool) error {
+func sshApply(ctx context.Context, app *App, host string, data []byte, o *manifestOptions, check, diff, dryRun, verify bool) error {
 	if strings.HasPrefix(host, "-") {
 		return fmt.Errorf("invalid SSH host %q", host)
 	}
@@ -666,6 +703,15 @@ func sshApply(ctx context.Context, app *App, host string, data []byte, o *manife
 	}
 	if check {
 		args = append(args, "--check")
+	}
+	if diff {
+		args = append(args, "--diff")
+	}
+	if dryRun {
+		args = append(args, "--dry-run")
+	}
+	if verify {
+		args = append(args, "--verify")
 	}
 	if app.jsonOutput() {
 		args = append(args, "--json")

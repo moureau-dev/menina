@@ -2,11 +2,15 @@ package clientcli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/moureau-dev/menina/internal/clierr"
 	"github.com/moureau-dev/menina/internal/manifest"
 	"github.com/moureau-dev/menina/internal/schema"
 	"github.com/moureau-dev/menina/internal/version"
@@ -48,54 +52,132 @@ func newSchemaCommand(app *App) *cobra.Command {
 	return cmd
 }
 
+type manifestSchemaCap struct {
+	Version int    `json:"version"`
+	URL     string `json:"url"`
+}
+
+type capabilityDoc struct {
+	Version        version.Info      `json:"version"`
+	OS             string            `json:"os"`
+	Arch           string            `json:"arch"`
+	ManifestSchema manifestSchemaCap `json:"manifestSchema"`
+	Features       map[string]bool   `json:"features"`
+	Commands       []string          `json:"commands"`
+}
+
+type compatibilityDoc struct {
+	SchemaMatch  bool     `json:"schemaMatch"`
+	VersionMatch bool     `json:"versionMatch"`
+	Compatible   bool     `json:"compatible"`
+	Warnings     []string `json:"warnings"`
+}
+
+func localCapabilities() capabilityDoc {
+	return capabilityDoc{
+		Version: version.Get(),
+		OS:      runtime.GOOS,
+		Arch:    runtime.GOARCH,
+		ManifestSchema: manifestSchemaCap{
+			Version: manifest.CurrentVersion,
+			URL:     schema.ManifestURL,
+		},
+		Features: map[string]bool{
+			"manifest":       true,
+			"vars":           true,
+			"from":           true,
+			"buildArgs":      true,
+			"service":        true,
+			"exposureHttp":   true,
+			"exposurePorts":  true,
+			"secrets":        true,
+			"install":        true,
+			"upgrade":        true,
+			"tui":            true,
+			"applyCheck":     true,
+			"applyDiff":      true,
+			"applyVerify":    true,
+			"nonInteractive": true,
+		},
+		Commands: []string{
+			"init", "install", "validate", "apply", "build", "push",
+			"secret", "schema", "capabilities", "version", "upgrade",
+		},
+	}
+}
+
 func newCapabilitiesCommand(app *App) *cobra.Command {
-	return &cobra.Command{
+	var host string
+	cmd := &cobra.Command{
 		Use:   "capabilities",
 		Short: "Print the client's capabilities for automation",
 		Long: "Report local CLI, platform, manifest schema and feature capabilities.\n" +
-			"This is intentionally local-only; client/host compatibility checks are a\n" +
-			"separate feature.",
-		Example: "  menina capabilities --json",
+			"With --host, also query the host binary over SSH and report compatibility.\n" +
+			"Use --json for a stable machine-readable document.",
+		Example: "  menina capabilities --json\n  menina capabilities --host root@vps --json",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			info := version.Get()
-			caps := map[string]any{
-				"version": info,
-				"os":      runtime.GOOS,
-				"arch":    runtime.GOARCH,
-				"manifestSchema": map[string]any{
-					"version": manifest.CurrentVersion,
-					"url":     schema.ManifestURL,
-				},
-				"features": map[string]bool{
-					"manifest":       true,
-					"vars":           true,
-					"from":           true,
-					"buildArgs":      true,
-					"service":        true,
-					"exposureHttp":   true,
-					"exposurePorts":  true,
-					"secrets":        true,
-					"install":        true,
-					"upgrade":        true,
-					"tui":            true,
-					"applyCheck":     true,
-					"applyDiff":      false,
-					"applyVerify":    false,
-					"nonInteractive": true,
-				},
-				"commands": []string{
-					"init", "install", "validate", "apply", "build", "push",
-					"secret", "schema", "capabilities", "version", "upgrade",
-				},
+			local := localCapabilities()
+			out := map[string]any{}
+			encoded, _ := json.Marshal(local)
+			_ = json.Unmarshal(encoded, &out)
+			var warnings []string
+
+			if host != "" {
+				if strings.HasPrefix(host, "-") {
+					return fmt.Errorf("invalid SSH host %q", host)
+				}
+				hostDoc, err := remoteCapabilities(cmd, host)
+				if err != nil {
+					return clierr.WithHint(clierr.Wrap(clierr.CodeUnsupported, err), "the host may be older or missing `menina capabilities`; upgrade the host binary")
+				}
+				compat := compatibilityDoc{
+					SchemaMatch:  local.ManifestSchema.Version == hostDoc.ManifestSchema.Version,
+					VersionMatch: local.Version.Version == hostDoc.Version.Version,
+					Compatible:   local.ManifestSchema.Version == hostDoc.ManifestSchema.Version,
+				}
+				if !compat.SchemaMatch {
+					compat.Warnings = append(compat.Warnings, fmt.Sprintf("manifest schema mismatch: client v%d, host v%d", local.ManifestSchema.Version, hostDoc.ManifestSchema.Version))
+				}
+				if !compat.VersionMatch {
+					compat.Warnings = append(compat.Warnings, fmt.Sprintf("client/host version differs: client %s, host %s", local.Version.Version, hostDoc.Version.Version))
+				}
+				out["host"] = hostDoc
+				out["compatibility"] = compat
+				warnings = compat.Warnings
 			}
+
 			if app.jsonOutput() {
-				return app.printJSON(caps)
+				return app.printJSON(out)
 			}
-			app.infof("menina %s (%s/%s)", info.Version, runtime.GOOS, runtime.GOARCH)
-			app.infof("manifest schema: v%d %s", manifest.CurrentVersion, schema.ManifestURL)
+			app.infof("menina %s (%s/%s)", local.Version.Version, local.OS, local.Arch)
+			app.infof("manifest schema: v%d %s", local.ManifestSchema.Version, local.ManifestSchema.URL)
+			if host != "" {
+				app.infof("host %s: menina %s (%s/%s), schema v%d", host, out["host"].(capabilityDoc).Version.Version, out["host"].(capabilityDoc).OS, out["host"].(capabilityDoc).Arch, out["host"].(capabilityDoc).ManifestSchema.Version)
+				for _, w := range warnings {
+					app.infof("warning: %s", w)
+				}
+				if len(warnings) == 0 {
+					app.infof("compatibility: ok")
+				}
+			}
 			app.infof("features: buildArgs, exposure.http, exposure.ports, secrets, install, upgrade, non-interactive")
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&host, "host", "", "SSH host to query for host capabilities")
+	return cmd
+}
+
+func remoteCapabilities(cmd *cobra.Command, host string) (capabilityDoc, error) {
+	var doc capabilityDoc
+	c := exec.CommandContext(cmd.Context(), "ssh", "-T", host, "menina", "capabilities", "--json")
+	out, err := c.CombinedOutput()
+	if err != nil {
+		return doc, fmt.Errorf("ssh %s: %v: %s", host, err, strings.TrimSpace(string(out)))
+	}
+	if err := json.Unmarshal(out, &doc); err != nil {
+		return doc, fmt.Errorf("parse host capabilities: %w", err)
+	}
+	return doc, nil
 }

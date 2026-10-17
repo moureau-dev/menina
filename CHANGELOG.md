@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `menina capabilities --host user@vps --json` queries the host over SSH and
+  reports schema/version compatibility (schema mismatch is incompatible; a
+  version difference is a warning).
+- `apply --diff` / `--dry-run` shows create/update file plans and line diffs
+  without writing; `--json` adds `changes: [{path, action, diff}]`. `apply
+  --verify` re-reads the written project and confirms apps and overrides exist.
+- Classified CLI errors: with `--json`, failures use
+  `{"error":{"code","message","hint"}}`; exit codes are stable
+  (1 generic, 2 validation, 3 not found, 4 auth, 5 timeout, 6 conflict,
+  7 unsupported). Validation and deployment-timeout paths are classified.
+
 - `menina schema [--json] [--url]` prints the embedded `.menina.yml` JSON
   Schema; `menina capabilities --json` reports version, OS/arch, schema version,
   feature flags and commands for agents/CI.

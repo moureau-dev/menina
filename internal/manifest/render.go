@@ -469,44 +469,84 @@ func (r *Rendered) ProjectModel() *config.Project {
 // environment files but never rewrites an existing environment definition
 // (other repositories may contribute to it). Apps and per-app overrides are
 // written.
+// PlannedFile is a config file apply would write.
+type PlannedFile struct {
+	Path    string
+	Content []byte
+}
+
+// Plan returns the files apply would write, without touching disk. Existing
+// project.yml and environment definition files are preserved, matching Write.
+func (r *Rendered) Plan(configDir string) ([]PlannedFile, error) {
+	var files []PlannedFile
+	add := func(path string, v any) error {
+		data, err := yaml.Marshal(v)
+		if err != nil {
+			return err
+		}
+		files = append(files, PlannedFile{Path: path, Content: data})
+		return nil
+	}
+
+	projectPath := filepath.Join(config.ProjectDir(configDir, r.Project.Name), "project.yml")
+	if !fileExists(projectPath) {
+		if err := add(projectPath, r.Project); err != nil {
+			return nil, err
+		}
+	}
+	names := make([]string, 0, len(r.Apps))
+	for name := range r.Apps {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		path := filepath.Join(config.ProjectDir(configDir, r.Project.Name), "apps", name+".yml")
+		if err := add(path, r.Apps[name]); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := os.Stat(config.EnvironmentPath(configDir, r.Project.Name, r.Environment.Name)); os.IsNotExist(err) {
+		path := config.EnvironmentPath(configDir, r.Project.Name, r.Environment.Name)
+		if err := add(path, &config.EnvironmentFile{Name: r.Environment.Name, Apps: map[string]*config.AppOverride{}}); err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, err
+	}
+	names = names[:0]
+	for name := range r.Overrides {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		path := config.AppOverridePath(configDir, r.Project.Name, r.Environment.Name, name)
+		if err := add(path, r.Overrides[name]); err != nil {
+			return nil, err
+		}
+	}
+	return files, nil
+}
+
+// Write persists the rendered configuration.
 func (r *Rendered) Write(configDir string) error {
 	if err := config.EnsureProjectDirs(configDir, r.Project.Name); err != nil {
 		return err
 	}
-	projectPath := filepath.Join(config.ProjectDir(configDir, r.Project.Name), "project.yml")
-	if !fileExists(projectPath) {
-		if err := writeYAMLFile(projectPath, r.Project); err != nil {
-			return err
-		}
-	}
-	for name, app := range r.Apps {
-		path := filepath.Join(config.ProjectDir(configDir, r.Project.Name), "apps", name+".yml")
-		if err := writeYAMLFile(path, app); err != nil {
-			return err
-		}
-	}
-	if _, err := os.Stat(config.EnvironmentPath(configDir, r.Project.Name, r.Environment.Name)); os.IsNotExist(err) {
-		if err := config.SaveEnvironment(configDir, r.Project.Name, &config.EnvironmentFile{Name: r.Environment.Name, Apps: map[string]*config.AppOverride{}}); err != nil {
-			return err
-		}
-	} else if err != nil {
+	files, err := r.Plan(configDir)
+	if err != nil {
 		return err
 	}
-	for name, override := range r.Overrides {
-		if err := config.SaveAppOverride(configDir, r.Project.Name, r.Environment.Name, name, override); err != nil {
+	for _, file := range files {
+		if err := writeFileBytes(file.Path, file.Content); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeYAMLFile(path string, v any) error {
+func writeFileBytes(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o770|os.ModeSetgid); err != nil {
-		return err
-	}
-	data, err := yaml.Marshal(v)
-	if err != nil {
 		return err
 	}
 	if err := os.WriteFile(path, data, 0o640); err != nil {

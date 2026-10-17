@@ -362,6 +362,9 @@ Nothing is written.
 ```bash
 menina apply                       # local (host binary)
 menina apply --check               # render + validate, write nothing
+menina apply --diff                # show file changes, write nothing
+menina apply --dry-run --json      # same plan as structured JSON
+menina apply --verify              # write, then re-read and verify apps/overrides
 menina apply --host deploy@vps     # pipe over SSH
 menina apply --host deploy@vps -e staging
 ```
@@ -369,6 +372,12 @@ menina apply --host deploy@vps -e staging
 `apply` is an upsert: it creates the project directory, `project.yml`, missing
 environment definition, `apps/<name>.yml`, and per-app overrides. It preserves
 an existing `project.yml` and environment definition. It performs no pruning.
+
+`--diff`/`--dry-run` print `create`/`update` changes and a line diff; with
+`--json` the response adds `changes: [{path, action, diff}]` and
+`applied: false`. `--verify` re-loads the written project and checks that every
+manifest app and environment override exists. `--diff` and `--verify` are
+mutually exclusive in effect (verify only runs after a write).
 
 Without `--host`, it applies to the local config directory
 (`--config-dir`, default `/etc/menina`) and requires `config.yml`. With
@@ -419,11 +428,14 @@ menina schema                  # embedded manifest JSON Schema
 menina schema --json           # {schemaVersion, schemaUrl, schema}
 menina schema --url
 menina capabilities --json     # version, os/arch, schema version, feature flags, commands
+menina capabilities --host root@vps --json
 ```
 
-These are local-only and work without a host. `capabilities` is intended for
-agents and CI so they can detect support (for example `buildArgs`,
-`exposurePorts`, `nonInteractive`) before authoring a manifest.
+`capabilities` is local by default. With `--host` it runs
+`ssh <host> menina capabilities --json`, includes the host document and a
+`compatibility` object (`schemaMatch`, `versionMatch`, `compatible`, `warnings`).
+A schema mismatch is a hard incompatibility; a plain version difference is a
+warning. This is the intended preflight for agents and CI.
 
 ### Common flags
 

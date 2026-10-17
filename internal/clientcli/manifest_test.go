@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/moureau-dev/menina/internal/manifest"
 )
 
 func writeTestManifest(t *testing.T, body string) string {
@@ -71,5 +73,44 @@ func TestParseBuildArgs(t *testing.T) {
 	flags := buildArgFlags(map[string]string{"B": "2", "A": "1"}, map[string]string{"B": "override"})
 	if strings.Join(flags, ",") != "A=1,B=override" {
 		t.Fatalf("flags = %#v", flags)
+	}
+}
+
+func TestApplyPlanDiffAndVerify(t *testing.T) {
+	dir := t.TempDir()
+	doc := `project: demo
+environment: production
+apps:
+  web:
+    dockerfile: Dockerfile
+    service: { port: 8080 }
+`
+	f, err := manifest.Load([]byte(doc), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := f.Render(manifest.RenderOptions{ConfigDir: dir, Registry: "registry.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes, err := planApply(dir, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) == 0 || changes[0].Action != "create" {
+		t.Fatalf("initial plan = %+v", changes)
+	}
+	if err := r.Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	changes, err = planApply(dir, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 0 {
+		t.Fatalf("expected no changes after write, got %+v", changes)
+	}
+	if err := verifyApply(dir, r); err != nil {
+		t.Fatalf("verify: %v", err)
 	}
 }

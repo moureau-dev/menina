@@ -31,6 +31,18 @@ See also: [Configuration](CONFIGURATION.md) · [Proxy](PROXY.md) ·
   retained either way. Soft deletion is recorded on the target's `observed` row
   (`deleted_at`); `deleted_at IS NULL` means active.
 
+## Automation errors
+
+With `--json`, failures are written to stderr as a stable envelope:
+
+```json
+{"error":{"code":"validation","message":"...","hint":"..."}}
+```
+
+Exit codes: `1` generic, `2` validation, `3` not found, `4` auth, `5` timeout,
+`6` conflict, `7` unsupported. Not every command is classified yet; unwrapped
+errors use the generic code/exit.
+
 ## Platform
 
 | Command | Purpose |

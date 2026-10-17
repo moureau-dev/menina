@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/moureau-dev/menina/internal/clientcli"
+	"github.com/moureau-dev/menina/internal/clierr"
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/platform"
@@ -135,10 +136,30 @@ func Execute() int {
 		if errors.Is(err, errExit) || errors.Is(err, errBack) {
 			return 0
 		}
-		fmt.Fprintln(os.Stderr, "error:", err)
-		return 1
+		printCLIError(root, err)
+		_, _, _, exit := clierr.Info(err)
+		return exit
 	}
 	return 0
+}
+
+func printCLIError(root *cobra.Command, err error) {
+	code, message, hint, _ := clierr.Info(err)
+	jsonOut, _ := root.PersistentFlags().GetBool("json")
+	if jsonOut {
+		enc := json.NewEncoder(os.Stderr)
+		enc.SetIndent("", "  ")
+		body := map[string]any{"code": code, "message": message}
+		if hint != "" {
+			body["hint"] = hint
+		}
+		_ = enc.Encode(map[string]any{"error": body})
+		return
+	}
+	fmt.Fprintln(os.Stderr, "error:", message)
+	if hint != "" {
+		fmt.Fprintln(os.Stderr, "hint:", hint)
+	}
 }
 
 func envOr(key, fallback string) string {

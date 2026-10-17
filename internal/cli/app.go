@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/moureau-dev/menina/internal/clierr"
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/deployment"
 	"github.com/moureau-dev/menina/internal/platform"
@@ -558,7 +559,7 @@ func waitForDeploy(ctx context.Context, client *platform.ControlClient, jobID st
 			}
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out after %s waiting for deployment job %s; retry with a larger --timeout (for example --timeout 10m), or use --no-wait and poll `menina app status`", timeout, jobID)
+			return clierr.New(clierr.CodeTimeout, fmt.Sprintf("timed out after %s waiting for deployment job %s", timeout, jobID), "retry with a larger --timeout (for example --timeout 10m), or use --no-wait and poll `menina app status`")
 		}
 		select {
 		case <-ctx.Done():
