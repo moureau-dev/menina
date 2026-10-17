@@ -97,8 +97,8 @@ const steps = [
   },
   {
     n: "03",
-    title: "Push an image",
-    body: "Log in to registry.<domain> and push host/<project>/<app>:<tag> from any build machine or CI pipeline.",
+    title: "Build and push",
+    body: "The client builds each Dockerfile in .menina.yml and pushes the tagged images. Plain docker push works too if you prefer CI or your own build pipeline.",
   },
   {
     n: "04",
@@ -112,13 +112,17 @@ curl -fsSL https://menina.moureau.dev/install.sh | sudo sh
 sudo menina setup
 sudo menina deploy
 
-# Registry push credential
-menina registry credential
+# On your build machine: install the client and log in once.
+# Get the registry username/password with \`menina registry credential\` on the server.
+curl -fsSL https://menina.moureau.dev/install-client.sh | sh
+# Windows: irm https://menina.moureau.dev/install-client.ps1 | iex
+docker login registry.example.com
 
-# From your build machine
-docker login registry.example.com -u menina
-docker build -t registry.example.com/my-app/api:production .
-docker push  registry.example.com/my-app/api:production`;
+# In your repository
+menina init --project my-app
+# edit .menina.yml: set defaults.registry and apps.*.host
+menina apply --host root@vps.example.com
+menina build --push`;
 
 function Header() {
   return (
