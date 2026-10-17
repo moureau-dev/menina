@@ -25,7 +25,7 @@ apps:
     env: { REDIS_URL: "redis://redis:6379" } # environment variables merged in the container
     secrets: [DATABASE_URL]  # names only, values stay on the host
     storage: [sqlite] # list of storage names, or a single name, or an object with the name and overrides ({ name: sqlite, path: /data }) or list of such objects
-    replicas: { min: 1, max: 3 } # optional, defaults to 1. can be a single number or an object with min and max values
+    replicas: 1 # optional, defaults to 1. can be a single number or an object with min and max values
 
   web:
     dockerfile: apps/web/Dockerfile
@@ -35,4 +35,25 @@ apps:
   redis:
     image: redis:7-alpine    # external image = plain app, no build
     port: 6379
-    storage: { size: 1Gi, mountPath: /data }
+    storage: { size: 512Mi, path: /data }
+
+  pg:
+    image: postgres:15-alpine
+    port: 5432
+    env: { POSTGRES_PASSWORD: secret }
+    storage: [pgdata]
+
+workers:
+  jobs:
+    from: api
+    command: ["/app/worker"]
+    replicas: 2
+    env: { QUEUE: default }
+
+  report:
+    dockerfile: apps/report/Dockerfile   # own image
+    replicas: { min: 2, max: 5 }
+    env: { 
+      DATABASE_URL: "postgres://postgres:secret@pg:5432/postgres",
+      REPORT_PATH: "/var/reports",
+    }
