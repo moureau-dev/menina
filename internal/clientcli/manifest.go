@@ -242,8 +242,8 @@ func newValidateCommand(app *App) *cobra.Command {
 func newApplyCommand(app *App) *cobra.Command {
 	o := &manifestOptions{}
 	var host string
-	var local, check, diff, dryRun, verify, prune, yes bool
-	var ifRevision, fromPlan string
+	var local, check, diff, dryRun, verify, prune bool
+	var ifRevision, ifStateToken, fromPlan string
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply a .menina.yml manifest to a host",
@@ -267,8 +267,11 @@ func newApplyCommand(app *App) *cobra.Command {
 							return err
 						}
 					}
-					return sshApply(cmd.Context(), app, target, data, o, check, diff, dryRun, verify, prune, yes, ifRevision, fromPlan)
+					return sshApply(cmd.Context(), app, target, data, o, check, diff, dryRun, verify, prune, ifRevision, fromPlan)
 				}
+			}
+			if ifStateToken != "" {
+				ifRevision = ifStateToken
 			}
 			if fromPlan != "" {
 				return applyFromPlan(cmd, app, fromPlan, ifRevision, diff, dryRun, verify)
@@ -348,8 +351,8 @@ func newApplyCommand(app *App) *cobra.Command {
 				app.infof("Plan: %s (apply with --from-plan %s)", plan.ID, plan.ID)
 				return nil
 			}
-			if prune && !yes {
-				return clierr.New(clierr.CodeValidation, "--prune requires --yes or a reviewed --from-plan", "run `apply --diff --prune` and then `apply --from-plan <id>`, or pass --yes")
+			if prune {
+				return clierr.New(clierr.CodeValidation, "apply --prune must be reviewed before execution", "run `apply --diff --prune`, then `apply --from-plan <plan-id>`")
 			}
 			lock, err := config.AcquireLock(app.configDir(), 10*time.Second)
 			if err != nil {
@@ -361,7 +364,10 @@ func newApplyCommand(app *App) *cobra.Command {
 				return err
 			}
 			if ifRevision != "" && ifRevision != baseState {
-				return clierr.New(clierr.CodeConflict, "configuration changed since --if-revision was read", "run `apply --diff` again and review the new plan")
+				return clierr.New(clierr.CodeConflict, "configuration changed since the state token was read", "run `apply --diff` again and review the new plan")
+			}
+			if err := lock.Check(); err != nil {
+				return clierr.Wrap(clierr.CodeConflict, err)
 			}
 			files, err := r.Plan(app.configDir())
 			if err != nil {
@@ -435,9 +441,9 @@ func newApplyCommand(app *App) *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "alias for --diff")
 	cmd.Flags().BoolVar(&verify, "verify", false, "re-read the written config and verify apps/environment overrides")
 	cmd.Flags().BoolVar(&prune, "prune", false, "remove owned apps not declared by this manifest")
-	cmd.Flags().StringVar(&ifRevision, "if-revision", "", "only apply if the current state token matches")
+	cmd.Flags().StringVar(&ifRevision, "if-revision", "", "only apply if the current state token matches (alias)")
+	cmd.Flags().StringVar(&ifStateToken, "if-state-token", "", "only apply if the current state token matches")
 	cmd.Flags().StringVar(&fromPlan, "from-plan", "", "apply a previously generated plan id")
-	cmd.Flags().BoolVar(&yes, "yes", false, "confirm destructive apply --prune")
 	return cmd
 }
 
@@ -771,7 +777,7 @@ func writeCachedHost(host string) error {
 	return os.Chmod(path, 0o600)
 }
 
-func sshApply(ctx context.Context, app *App, host string, data []byte, o *manifestOptions, check, diff, dryRun, verify, prune, yes bool, ifRevision, fromPlan string) error {
+func sshApply(ctx context.Context, app *App, host string, data []byte, o *manifestOptions, check, diff, dryRun, verify, prune bool, ifRevision, fromPlan string) error {
 	if strings.HasPrefix(host, "-") {
 		return fmt.Errorf("invalid SSH host %q", host)
 	}
@@ -816,9 +822,6 @@ func sshApply(ctx context.Context, app *App, host string, data []byte, o *manife
 	}
 	if prune {
 		args = append(args, "--prune")
-	}
-	if yes {
-		args = append(args, "--yes")
 	}
 	if ifRevision != "" {
 		args = append(args, "--if-revision", ifRevision)

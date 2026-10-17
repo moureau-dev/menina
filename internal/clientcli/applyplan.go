@@ -415,6 +415,9 @@ func applyFromPlan(cmd *cobra.Command, app *App, planID, ifRevision string, diff
 		return clierr.Wrap(clierr.CodeConflict, err)
 	}
 	defer lock.Release()
+	if err := lock.Check(); err != nil {
+		return clierr.Wrap(clierr.CodeConflict, err)
+	}
 	if err := verifyPlanBase(app.configDir(), plan); err != nil {
 		return err
 	}

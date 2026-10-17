@@ -68,6 +68,26 @@ func AcquireLock(configDir string, wait time.Duration) (*Lock, error) {
 	}
 }
 
+// Check verifies that this process still owns the lock. Call it immediately
+// before writing to fence a paused/stale holder.
+func (l *Lock) Check() error {
+	if l == nil {
+		return fmt.Errorf("no apply lock held")
+	}
+	data, err := os.ReadFile(l.path)
+	if err != nil {
+		return fmt.Errorf("apply lock lost: %w", err)
+	}
+	var info lockInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return fmt.Errorf("apply lock unreadable: %w", err)
+	}
+	if info.Token != l.token {
+		return fmt.Errorf("apply lock was acquired by %s@%s pid %d", info.User, info.Host, info.PID)
+	}
+	return nil
+}
+
 func (l *Lock) Release() {
 	if l == nil {
 		return

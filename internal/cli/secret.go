@@ -97,7 +97,7 @@ func secretSet(app *App) *cobra.Command {
 }
 
 func secretRotate(app *App) *cobra.Command {
-	var project, environment, fromFile string
+	var project, environment, fromFile, output string
 	var generate, restart, yes bool
 	var length int
 	cmd := &cobra.Command{
@@ -134,6 +134,14 @@ func secretRotate(app *App) *cobra.Command {
 			}
 			if value == "" {
 				return fmt.Errorf("refusing to store an empty secret value")
+			}
+			if output != "" {
+				if err := os.WriteFile(output, []byte(value), 0o600); err != nil {
+					return err
+				}
+				if err := os.Chmod(output, 0o600); err != nil {
+					return err
+				}
 			}
 			path := filepath.Join(appSecretsDir(app, project, environment), name)
 			if err := secrets.WriteSecretFile(path, value); err != nil {
@@ -182,6 +190,7 @@ func secretRotate(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
 	cmd.Flags().StringVar(&fromFile, "file", "", "read the value from a file instead of stdin")
+	cmd.Flags().StringVar(&output, "output", "", "also write the new value to this file (mode 0600)")
 	cmd.Flags().BoolVar(&generate, "generate", false, "generate a random value")
 	cmd.Flags().IntVar(&length, "length", 32, "generated value length")
 	cmd.Flags().BoolVar(&restart, "restart", false, "queue deployments for apps that reference this secret")

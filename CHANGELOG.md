@@ -77,7 +77,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bundled-registry images (external images deploy by tag), mention repository
   manifests in the app-definition step, and describe the installer's full scope.
 - Add a `.menina.yml` JSON Schema at
-  `https://menina.moureau.dev/schema/menina.schema.json`, serve it from the
+  `https://menina.moureau.dev/schema/v1/menina.schema.json` (unversioned alias
+  kept), serve it from the
   website, and add the `yaml-language-server` header to `menina init` and the
   example manifest.
 - Quickstart now follows the manifest flow (`init` → `apply` → `build --push`)

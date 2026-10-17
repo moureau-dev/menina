@@ -134,7 +134,7 @@ prompt for the environment (auto-selected when the project has exactly one).
 | Command | Purpose |
 | --- | --- |
 | `menina secret set <name> --project P --environment E [--file F]` | Store a secret value at `secrets/P/E/<name>` (read from stdin — hidden on a terminal — or `--file`). Prints the `file:` reference to use in `apps/*.yml` |
-| `menina secret rotate <name> --project P --environment E [--file F] [--generate] [--restart]` | Replace a secret value; `--restart` queues deploys for referencing apps (production needs `--yes`) |
+| `menina secret rotate <name> --project P --environment E [--file F] [--generate] [--output F] [--restart]` | Replace a secret value; `--output` writes it to a file (0600), `--restart` queues deploys for referencing apps (production needs `--yes`) |
 | `menina secret list --project P --environment E [--json] [--references]` | List secret names (values are never shown); `--references` shows referencing apps |
 | `menina secret remove <name> --project P --environment E [--yes]` | Delete a stored secret value |
 | `menina secret verify [name] --project P --environment E [--json]` | Check that secret files exist, are readable and are not empty |

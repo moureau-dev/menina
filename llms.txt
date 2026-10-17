@@ -39,10 +39,10 @@ menina validate             # parse + render without writing
 menina apply --host user@vps  # desired state over SSH (config only)
 menina apply --diff           # show create/update plan, write nothing
 menina apply --verify         # write, then re-read and verify
-menina apply --prune          # remove owned apps no longer declared (needs source.repo)
-menina apply --diff --json    # prints planId + stateToken
+menina apply --diff --prune   # review planned deletions + planId
 menina apply --from-plan ID   # execute the reviewed plan (checks hashes/base token)
-menina apply --if-revision TOKEN  # compare-and-swap on resolved config state
+menina apply --diff --json    # prints planId + stateToken
+menina apply --if-state-token TOKEN  # compare-and-swap on resolved config state
 menina build --push         # build/push images locally; push triggers deploys
 menina push --build --filter api,web
 menina build --build-arg VITE_API_URL="$VITE_API_URL"

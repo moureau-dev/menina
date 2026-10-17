@@ -371,10 +371,9 @@ menina apply --check               # render + validate, write nothing
 menina apply --diff                # show file changes, write nothing
 menina apply --dry-run --json      # same plan as structured JSON
 menina apply --verify              # write, then re-read and verify apps/overrides
-menina apply --prune --yes         # remove owned apps not declared here
 menina apply --diff --prune --json # planId + stateToken for review
 menina apply --from-plan <plan-id> # execute exactly the reviewed plan
-menina apply --if-revision <token> # compare-and-swap on current state
+menina apply --if-state-token <t>  # compare-and-swap on current state
 menina apply --host deploy@vps     # pipe over SSH
 menina apply --host deploy@vps -e staging
 ```
@@ -394,7 +393,9 @@ hash; retention defaults to 50 and is configurable with
 `planId` plus the current `stateToken`. `--from-plan` re-checks the base state
 token and every written/deleted file hash before executing, so the reviewed
 plan is exactly what runs. `--if-revision` compares the canonical resolved
-state token, not the latest pre-apply revision id.
+state token, not the latest pre-apply revision id. `--if-revision` is kept as an
+old alias; prefer `--if-state-token`. Plans are kept in `.plans/` (mode 0640,
+last 50) and are not included in backups.
 
 `--prune` removes environment overrides for owned apps that this manifest no
 longer declares, and removes the app definition when no other environment uses

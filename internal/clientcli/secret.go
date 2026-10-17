@@ -75,7 +75,7 @@ func clientSecretSet(app *App, hostFlag *string) *cobra.Command {
 }
 
 func clientSecretRotate(app *App, hostFlag *string) *cobra.Command {
-	var project, environment, fromFile string
+	var project, environment, fromFile, output string
 	var generate, restart, yes bool
 	cmd := &cobra.Command{
 		Use:   "rotate <name>",
@@ -104,6 +104,9 @@ func clientSecretRotate(app *App, hostFlag *string) *cobra.Command {
 			if yes {
 				remoteArgs = append(remoteArgs, "--yes")
 			}
+			if output != "" {
+				remoteArgs = append(remoteArgs, "--output", output)
+			}
 			if !generate {
 				value, err := readClientSecret(cmd, app, fromFile)
 				if err != nil {
@@ -123,6 +126,7 @@ func clientSecretRotate(app *App, hostFlag *string) *cobra.Command {
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
 	cmd.Flags().StringVar(&fromFile, "file", "", "read the value from a local file instead of stdin")
+	cmd.Flags().StringVar(&output, "output", "", "also write the new value to this host path (mode 0600)")
 	cmd.Flags().BoolVar(&generate, "generate", false, "generate a random value on the host")
 	cmd.Flags().BoolVar(&restart, "restart", false, "queue deployments for apps referencing the secret")
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm restarting production apps")
