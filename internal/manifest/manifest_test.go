@@ -329,3 +329,109 @@ workers:
 		t.Fatalf("expected build-arg conflict, got %v", err)
 	}
 }
+
+func TestRenderNestedServiceAndExposure(t *testing.T) {
+	doc := `project: demo
+environment: production
+apps:
+  game:
+    dockerfile: Dockerfile
+    service: { port: 8080 }
+    exposure:
+      http:
+        hosts: [game.example.com]
+        pathPrefix: /play
+        redirectHttp: true
+        headers: { X-Test: yes }
+        compression: true
+        h2c: true
+        streaming: true
+        maxBodyBytes: 1024
+        timeouts: { read: 30s, write: 60s, idle: 120s }
+      ports: { tcp: [25565], udp: [19132] }
+`
+	f, err := Load([]byte(doc), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := f.Render(RenderOptions{ConfigDir: "/etc/menina", Registry: "registry.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Apps["game"].Workload.Port; got != 8080 {
+		t.Fatalf("service port = %d", got)
+	}
+	exp := r.Overrides["game"].Exposure
+	if exp == nil || !exp.Enabled || len(exp.Hosts) != 1 || exp.Hosts[0] != "game.example.com" {
+		t.Fatalf("exposure = %+v", exp)
+	}
+	if exp.PathPrefix != "/play" || !exp.RedirectHTTP || !exp.Compression || !exp.H2C || !exp.Streaming || exp.MaxBodyBytes != 1024 {
+		t.Fatalf("http exposure = %+v", exp)
+	}
+	if exp.Timeouts.Read != "30s" || exp.Headers["X-Test"] != "yes" {
+		t.Fatalf("http details = %+v", exp)
+	}
+	if len(exp.Ports.TCP) != 1 || exp.Ports.TCP[0] != 25565 || len(exp.Ports.UDP) != 1 || exp.Ports.UDP[0] != 19132 {
+		t.Fatalf("ports = %+v", exp.Ports)
+	}
+}
+
+func TestRenderL4OnlyExposure(t *testing.T) {
+	doc := `project: demo
+environment: production
+apps:
+  game:
+    image: itzg/minecraft-server
+    service: { port: 25565 }
+    exposure:
+      ports: 25565
+`
+	f, err := Load([]byte(doc), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := f.Render(RenderOptions{ConfigDir: "/etc/menina", Registry: "registry.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp := r.Overrides["game"].Exposure
+	if exp == nil || exp.Enabled || len(exp.Ports.TCP) != 1 || exp.Ports.TCP[0] != 25565 {
+		t.Fatalf("exposure = %+v", exp)
+	}
+}
+
+func TestRenderRejectsBadExposure(t *testing.T) {
+	tests := []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{
+			name: "http without hosts",
+			doc:  "project: p\nenvironment: production\napps:\n  a:\n    image: nginx\n    service: { port: 80 }\n    exposure:\n      http: { compression: true }\n",
+			want: "requires at least one host",
+		},
+		{
+			name: "conflicting ports",
+			doc:  "project: p\nenvironment: production\napps:\n  a:\n    image: nginx\n    port: 8080\n    service: { port: 9090 }\n",
+			want: "must match",
+		},
+		{
+			name: "worker exposure",
+			doc:  "project: p\nenvironment: production\nworkers:\n  w:\n    image: busybox\n    exposure:\n      ports: 9000\n",
+			want: "cannot declare exposure",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := Load([]byte(tc.doc), ".")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = f.Render(RenderOptions{ConfigDir: "/etc/menina", Registry: "registry.test"})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q, got %v", tc.want, err)
+			}
+		})
+	}
+}

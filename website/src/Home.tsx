@@ -120,7 +120,7 @@ docker login registry.example.com
 
 # In your repository
 menina init --project my-app
-# edit .menina.yml: set defaults.registry and apps.*.host
+# edit .menina.yml: set defaults.registry and exposure.http.hosts
 menina apply --host root@vps.example.com
 menina build --push`;
 

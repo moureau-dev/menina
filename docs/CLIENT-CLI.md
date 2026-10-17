@@ -72,16 +72,26 @@ storages:
 apps:
   api:
     dockerfile: apps/api/Dockerfile
-    port: 8080
-    host: api.${DOMAIN}
+    service: { port: 8080 }
+    exposure:
+      http:
+        hosts: ["api.${DOMAIN}"]
     env: { REDIS_URL: "redis://redis:6379" }
     secrets: [DATABASE_URL]
     storage: [data]
     replicas: 1
 
+  game:
+    dockerfile: apps/game/Dockerfile
+    service: { port: 8080 }
+    exposure:
+      http:
+        hosts: ["game.${DOMAIN}"]
+      ports: { tcp: [25565], udp: [19132] }
+
   redis:
     image: redis:7-alpine
-    port: 6379
+    service: { port: 6379 }
 
 workers:
   jobs:
@@ -158,15 +168,17 @@ project and apply must run for that project too.
 
 ### Apps and workers
 
-`apps` are services: they must have a `port` and get a cluster Service. Add
-`host` to publish them; without `host` they are internal-only (for example
-Postgres or Redis). `workers` have no port, no Service, no `host`, and no HTTP
-health probe.
+`apps` are services: they must have `service.port` and get a cluster Service.
+Add `exposure.http.hosts` to publish them over HTTP; without that they are
+cluster-internal (for example Postgres or Redis). `workers` have no Service,
+port or exposure, and no HTTP health probe.
 
 Each workload accepts:
 
 - `dockerfile` (build it) and/or `image` (pull it, or override the repository)
 - `context` (build context; defaults to `defaults.context`)
+- `service` — `{ port: 8080 }`, the primary container/Service port
+- `exposure` — HTTP and raw L4 exposure (see below)
 - `command` / `args`
 - `env`
 - `secrets` — names only, never values
@@ -177,10 +189,49 @@ Each workload accepts:
 - `resources` — `{ cpu, memory }`
 - `health` — `{ readiness: /path }` (services only)
 
+`port` and `host` are still accepted as legacy shorthands for
+`service.port` and `exposure.http.hosts`; new manifests should use the nested
+form.
+
+### Exposure
+
+`exposure` splits proxied HTTP traffic from raw L4 ports:
+
+```yaml
+apps:
+  game:
+    dockerfile: apps/game/Dockerfile
+    service: { port: 8080 }        # container/Service port
+    exposure:
+      http:
+        hosts: [game.example.com]
+        pathPrefix: /
+        redirectHttp: true
+        headers: { X-Frame-Options: DENY }
+        compression: true
+        h2c: false                 # gRPC over cleartext HTTP/2
+        streaming: true            # SSE/WebSockets
+        maxBodyBytes: 0
+        timeouts: { read: 30s, write: 60s, idle: 120s }
+      ports:
+        tcp: [25565]
+        udp: [19132]
+```
+
+- `exposure.http` goes through the Menina proxy (routing, TLS, headers, proxy
+  behavior).
+- `exposure.ports` publishes raw ports on the node via `hostPort`, bypassing the
+  proxy. Keep L4 apps at one replica.
+- `ports` accepts a number, a list (TCP), or `{tcp, udp}` with numbers/lists.
+  Port ranges are not supported.
+- `exposure.http` requires at least one host. Omit `exposure` for internal-only
+  services.
+- L4 apps still need `service.port` for the workload's cluster Service.
+
 A worker may use `from: <app>` to reuse the app's image/build, env, secrets and
-resources. It does **not** inherit storage: a worker mounting the app's SQLite
-volume would be a second writer. Set `storage` explicitly on the worker if it
-needs one.
+resources. It does **not** inherit storage or exposure: a worker mounting the
+app's SQLite volume would be a second writer, and workers are non-listening. Set
+`storage` explicitly on the worker if it needs one.
 
 ### Images
 

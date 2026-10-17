@@ -43,30 +43,34 @@ storages:
     access: single-writer
 
 # Application definitions.
-# Each app has a dockerfile or an image, a port, and optional environment variables,
-# secrets, storage, and replicas.
+# Each app has a dockerfile or an image, a service port, and optional exposure,
+# environment variables, secrets, storage, and replicas.
 apps:
   api:
     dockerfile: apps/api/Dockerfile
-    port: 8080
-    host: api.${DOMAIN}
+    service: { port: 8080 }
+    exposure:
+      http:
+        hosts: ["api.${DOMAIN}"]
     env: { REDIS_URL: "redis://redis:6379", DB_PATH: "${MOUNT_BASE}/sqlite/data" } # environment variables merged in the container
     storage: [sqlite] # list of storage names, or a single name, or an object with the name and overrides ({ use: sqlite, path: /data }) or list of such objects
     replicas: 1 # optional, defaults to 1. can be a single number or an object with min and max values
 
   web:
     dockerfile: apps/web/Dockerfile
-    port: 3000
-    host: demo.${DOMAIN}
+    service: { port: 3000 }
+    exposure:
+      http:
+        hosts: ["demo.${DOMAIN}"]
 
   redis:
     image: redis:7-alpine    # external image = plain app, no build
-    port: 6379
+    service: { port: 6379 }
     storage: { size: 512Mi, path: /data }
 
   pg:
     image: postgres:15-alpine
-    port: 5432
+    service: { port: 5432 }
     env: { POSTGRES_DB: demo, POSTGRES_USER: demo }   # non-sensitive
     secrets: [POSTGRES_PASSWORD]                      # value lives on the host
     storage: pgdata

@@ -124,6 +124,30 @@ func (r *StorageRef) UnmarshalYAML(value *yaml.Node) error {
 	}
 }
 
+// ServiceSpec is the app's primary container/Service port.
+type ServiceSpec struct {
+	Port int `yaml:"port,omitempty"`
+}
+
+// Exposure groups how an app is reachable from outside the cluster.
+type Exposure struct {
+	HTTP  *HTTPExposure    `yaml:"http,omitempty"`
+	Ports config.PortsSpec `yaml:"ports,omitempty"`
+}
+
+// HTTPExposure is the proxied HTTP edge configuration.
+type HTTPExposure struct {
+	Hosts        []string             `yaml:"hosts,omitempty"`
+	PathPrefix   string               `yaml:"pathPrefix,omitempty"`
+	RedirectHTTP bool                 `yaml:"redirectHttp,omitempty"`
+	Headers      map[string]string    `yaml:"headers,omitempty"`
+	Compression  bool                 `yaml:"compression,omitempty"`
+	H2C          bool                 `yaml:"h2c,omitempty"`
+	Streaming    bool                 `yaml:"streaming,omitempty"`
+	MaxBodyBytes int64                `yaml:"maxBodyBytes,omitempty"`
+	Timeouts     config.RouteTimeouts `yaml:"timeouts,omitempty"`
+}
+
 // Workload is an app (service) or worker definition.
 type Workload struct {
 	Dockerfile string               `yaml:"dockerfile,omitempty"`
@@ -131,8 +155,10 @@ type Workload struct {
 	Context    string               `yaml:"context,omitempty"`
 	From       string               `yaml:"from,omitempty"`
 	Type       string               `yaml:"type,omitempty"`
-	Port       int                  `yaml:"port,omitempty"`
-	Host       string               `yaml:"host,omitempty"`
+	Service    *ServiceSpec         `yaml:"service,omitempty"`
+	Exposure   *Exposure            `yaml:"exposure,omitempty"`
+	Port       int                  `yaml:"port,omitempty"` // legacy shorthand for service.port
+	Host       string               `yaml:"host,omitempty"` // legacy shorthand for exposure.http.hosts
 	Command    []string             `yaml:"command,omitempty"`
 	Args       []string             `yaml:"args,omitempty"`
 	Env        map[string]string    `yaml:"env,omitempty"`

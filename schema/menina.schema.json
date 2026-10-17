@@ -5,11 +5,16 @@
   "description": "Schema for .menina.yml, the repository manifest read by the Menina client.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["project", "environment"],
+  "required": [
+    "project",
+    "environment"
+  ],
   "properties": {
     "version": {
       "type": "integer",
-      "enum": [1],
+      "enum": [
+        1
+      ],
       "default": 1
     },
     "project": {
@@ -38,7 +43,9 @@
     "apps": {
       "type": "object",
       "description": "Listening workloads (services).",
-      "propertyNames": { "$ref": "#/$defs/workloadName" },
+      "propertyNames": {
+        "$ref": "#/$defs/workloadName"
+      },
       "additionalProperties": {
         "$ref": "#/$defs/workload"
       }
@@ -46,7 +53,9 @@
     "workers": {
       "type": "object",
       "description": "Non-listening workloads (queues, background jobs).",
-      "propertyNames": { "$ref": "#/$defs/workloadName" },
+      "propertyNames": {
+        "$ref": "#/$defs/workloadName"
+      },
       "additionalProperties": {
         "$ref": "#/$defs/workload"
       }
@@ -96,7 +105,10 @@
     "storage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["size", "path"],
+      "required": [
+        "size",
+        "path"
+      ],
       "properties": {
         "size": {
           "type": "string",
@@ -110,7 +122,10 @@
         },
         "access": {
           "type": "string",
-          "enum": ["single-writer", "multi-writer"],
+          "enum": [
+            "single-writer",
+            "multi-writer"
+          ],
           "default": "single-writer"
         }
       }
@@ -130,20 +145,37 @@
         }
       },
       "anyOf": [
-        { "required": ["use"] },
-        { "required": ["size", "path"] }
+        {
+          "required": [
+            "use"
+          ]
+        },
+        {
+          "required": [
+            "size",
+            "path"
+          ]
+        }
       ]
     },
     "storageRef": {
       "oneOf": [
-        { "$ref": "#/$defs/workloadName" },
-        { "$ref": "#/$defs/storageEntry" },
+        {
+          "$ref": "#/$defs/workloadName"
+        },
+        {
+          "$ref": "#/$defs/storageEntry"
+        },
         {
           "type": "array",
           "items": {
             "oneOf": [
-              { "$ref": "#/$defs/workloadName" },
-              { "$ref": "#/$defs/storageEntry" }
+              {
+                "$ref": "#/$defs/workloadName"
+              },
+              {
+                "$ref": "#/$defs/storageEntry"
+              }
             ]
           }
         }
@@ -159,9 +191,19 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "min": { "type": "integer", "minimum": 0 },
-            "max": { "type": "integer", "minimum": 0 },
-            "targetCPU": { "type": "integer", "minimum": 1, "maximum": 100 }
+            "min": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "targetCPU": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
           }
         }
       ]
@@ -170,16 +212,24 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "cpu": { "type": "string" },
-        "memory": { "type": "string" }
+        "cpu": {
+          "type": "string"
+        },
+        "memory": {
+          "type": "string"
+        }
       }
     },
     "health": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "readiness": { "type": "string" },
-        "liveness": { "type": "string" }
+        "readiness": {
+          "type": "string"
+        },
+        "liveness": {
+          "type": "string"
+        }
       }
     },
     "workload": {
@@ -204,34 +254,46 @@
         },
         "type": {
           "type": "string",
-          "enum": ["service", "worker"]
+          "enum": [
+            "service",
+            "worker"
+          ]
         },
         "port": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 65535
+          "maximum": 65535,
+          "description": "Legacy shorthand for service.port."
         },
         "host": {
           "type": "string",
-          "description": "Public hostname. Apps without a host are cluster-internal."
+          "description": "Legacy shorthand for exposure.http.hosts."
         },
         "command": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "args": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "env": {
           "type": "object",
           "description": "Runtime environment variables.",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "secrets": {
           "type": "array",
           "description": "Secret names. Values live on the host, never in the manifest.",
-          "items": { "$ref": "#/$defs/secretName" }
+          "items": {
+            "$ref": "#/$defs/secretName"
+          }
         },
         "buildArgs": {
           "$ref": "#/$defs/buildArgs"
@@ -247,8 +309,155 @@
         },
         "health": {
           "$ref": "#/$defs/health"
+        },
+        "service": {
+          "$ref": "#/$defs/service"
+        },
+        "exposure": {
+          "$ref": "#/$defs/exposure"
         }
       }
+    },
+    "service": {
+      "type": "object",
+      "description": "The app's primary container/Service port.",
+      "additionalProperties": false,
+      "required": [
+        "port"
+      ],
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "portNumber": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "portOrList": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/portNumber"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/portNumber"
+          }
+        }
+      ]
+    },
+    "ports": {
+      "description": "Raw L4 ports published on the node via hostPort.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/portNumber"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/portNumber"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "tcp": {
+              "$ref": "#/$defs/portOrList"
+            },
+            "udp": {
+              "$ref": "#/$defs/portOrList"
+            }
+          }
+        }
+      ]
+    },
+    "routeTimeouts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "read": {
+          "type": "string"
+        },
+        "write": {
+          "type": "string"
+        },
+        "idle": {
+          "type": "string"
+        }
+      }
+    },
+    "httpExposure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hosts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "pathPrefix": {
+          "type": "string"
+        },
+        "redirectHttp": {
+          "type": "boolean"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "compression": {
+          "type": "boolean"
+        },
+        "h2c": {
+          "type": "boolean"
+        },
+        "streaming": {
+          "type": "boolean"
+        },
+        "maxBodyBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timeouts": {
+          "$ref": "#/$defs/routeTimeouts"
+        }
+      }
+    },
+    "exposure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "http": {
+          "$ref": "#/$defs/httpExposure"
+        },
+        "ports": {
+          "$ref": "#/$defs/ports"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "http"
+          ]
+        },
+        {
+          "required": [
+            "ports"
+          ]
+        }
+      ]
     }
   }
 }

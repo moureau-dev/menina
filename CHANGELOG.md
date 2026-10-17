@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Manifest `service: { port }` and an `exposure` block: `exposure.http`
+  (`hosts`, `pathPrefix`, `redirectHttp`, `headers`, `compression`, `h2c`,
+  `streaming`, `maxBodyBytes`, `timeouts`) and `exposure.ports` for raw
+  TCP/UDP (`hostPort`). Legacy `port`/`host` remain supported as shorthands.
+
 ### Docs
 - Website copy: clarify that digest pinning/immutable releases apply to
   bundled-registry images (external images deploy by tag), mention repository
@@ -16,6 +22,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   example manifest.
 - Quickstart now follows the manifest flow (`init` → `apply` → `build --push`)
   instead of skipping the app definition.
+- Manifest JSON Schema now documents `service`, `exposure.http`, and
+  `exposure.ports`; the example and `init` template use the nested form.
 
 ## [0.0.12] - 2026-10-17
 

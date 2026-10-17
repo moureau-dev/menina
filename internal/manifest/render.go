@@ -184,20 +184,38 @@ func (f *File) renderWorkload(name string, w Workload, worker bool, tag, registr
 			return nil, nil, nil, nil, fmt.Errorf("%q is in apps but declares type %q; move it to workers", name, base.Type)
 		}
 	}
+	servicePort := 0
+	if base.Service != nil {
+		servicePort = base.Service.Port
+	}
+	if base.Port != 0 {
+		if servicePort != 0 && servicePort != base.Port {
+			return nil, nil, nil, nil, fmt.Errorf("%q: service.port and the legacy port must match", name)
+		}
+		servicePort = base.Port
+	}
 	if worker {
-		if base.Port != 0 {
+		if base.Service != nil {
+			return nil, nil, nil, nil, fmt.Errorf("worker %q cannot declare service", name)
+		}
+		if servicePort != 0 {
 			return nil, nil, nil, nil, fmt.Errorf("worker %q cannot declare port", name)
 		}
-		if base.Host != "" {
-			return nil, nil, nil, nil, fmt.Errorf("worker %q cannot declare host", name)
+		if base.Host != "" || base.Exposure != nil {
+			return nil, nil, nil, nil, fmt.Errorf("worker %q cannot declare exposure", name)
 		}
 		if base.Health != nil {
 			return nil, nil, nil, nil, fmt.Errorf("worker %q cannot declare health probes", name)
 		}
 	} else {
-		if base.Port <= 0 || base.Port > 65535 {
-			return nil, nil, nil, nil, fmt.Errorf("app %q must declare a valid port", name)
+		if servicePort <= 0 || servicePort > 65535 {
+			return nil, nil, nil, nil, fmt.Errorf("app %q must declare a valid service.port", name)
 		}
+	}
+
+	exposure, err := resolveExposure(name, base)
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
 
 	repository, imageTag, built, err := f.resolveImage(name, base, tag, registry)
@@ -222,7 +240,7 @@ func (f *File) renderWorkload(name string, w Workload, worker bool, tag, registr
 	app := &config.AppFile{
 		Name:      name,
 		Image:     config.ImageSpec{Repository: repository, Tag: imageTag},
-		Workload:  config.WorkloadSpec{Type: kind, Port: base.Port, Command: base.Command, Args: base.Args},
+		Workload:  config.WorkloadSpec{Type: kind, Port: servicePort, Command: base.Command, Args: base.Args},
 		Resources: config.ResourceSpec{},
 		Env:       mergeEnv(nil, base.Env),
 		Secrets:   secrets,
@@ -241,8 +259,8 @@ func (f *File) renderWorkload(name string, w Workload, worker bool, tag, registr
 	if built {
 		override.Image = &config.ImageSpec{Tag: imageTag}
 	}
-	if !worker && base.Host != "" {
-		override.Exposure = &config.ExposureSpec{Enabled: true, Hosts: []string{base.Host}}
+	if exposure != nil {
+		override.Exposure = exposure
 	}
 
 	var targets []Target
@@ -262,6 +280,60 @@ func (f *File) renderWorkload(name string, w Workload, worker bool, tag, registr
 		})
 	}
 	return app, override, targets, used, nil
+}
+
+func resolveExposure(name string, w Workload) (*config.ExposureSpec, error) {
+	hosts := []string{}
+	if w.Host != "" {
+		hosts = append(hosts, w.Host)
+	}
+	var http *HTTPExposure
+	if w.Exposure != nil {
+		http = w.Exposure.HTTP
+	}
+	if http != nil {
+		hosts = append(hosts, http.Hosts...)
+	}
+	hosts = uniqueStrings(hosts)
+	if http != nil && len(hosts) == 0 {
+		return nil, fmt.Errorf("%q: exposure.http requires at least one host", name)
+	}
+
+	exp := &config.ExposureSpec{}
+	if w.Exposure != nil {
+		exp.Ports = w.Exposure.Ports
+	}
+	if len(hosts) > 0 {
+		exp.Enabled = true
+		exp.Hosts = hosts
+		if http != nil {
+			exp.PathPrefix = http.PathPrefix
+			exp.RedirectHTTP = http.RedirectHTTP
+			exp.Headers = http.Headers
+			exp.Compression = http.Compression
+			exp.H2C = http.H2C
+			exp.Streaming = http.Streaming
+			exp.MaxBodyBytes = http.MaxBodyBytes
+			exp.Timeouts = http.Timeouts
+		}
+	}
+	if !exp.Enabled && exp.Ports.IsZero() {
+		return nil, nil
+	}
+	return exp, nil
+}
+
+func uniqueStrings(in []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
 }
 
 func (f *File) resolveImage(name string, w Workload, tag, registry string) (repository, imageTag string, built bool, err error) {

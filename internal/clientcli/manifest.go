@@ -159,8 +159,10 @@ defaults:
 apps:
   web:
     dockerfile: Dockerfile
-    port: 8080
-    # host: app.example.com
+    service: { port: 8080 }
+    # exposure:
+    #   http:
+    #     hosts: [app.example.com]
 `
 
 func defaultProjectName() string {
