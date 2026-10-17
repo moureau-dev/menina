@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Docs
+- Rewrote `llms.txt` role-first: choose client vs host, client manifest/apply
+  safety contract, shared deployment model, then host platform details. Detailed
+  reference remains in the subdocs.
+
 ## [0.0.14] - 2026-10-17
 
 ### Added

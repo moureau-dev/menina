@@ -3,327 +3,205 @@
 > Self-hosted application platform: point container images at it, it runs them on
 > k3s and routes public hostnames (HTTP + raw TCP/UDP) through its own proxy.
 
-The Menina host is one Linux Go binary with distinct modes. Desired state is
-human-editable YAML (`/etc/menina`); operational state is SQLite
-(`/var/lib/menina`). `menina serve` is the control plane (single SQLite writer,
-config watcher, registry listener, reconciler); `menina proxy` serves traffic.
-Deploys happen by pushing images to the bundled registry. A cross-platform
-client (same binary on the host, or a standalone `menina`/`menina-client` on a
-laptop or CI) applies repository manifests — see "Client (laptop/CI)".
+Menina has two surfaces:
 
-## Install and provision
+- **Host** — a Linux Go binary that provisions k3s, runs the control plane
+  (`menina serve`) and proxy (`menina proxy`), and owns desired state under
+  `/etc/menina` plus SQLite under `/var/lib/menina`.
+- **Client** — a cross-platform binary (`menina` / `menina-client`) for laptops
+  and CI. It validates and applies repository `.menina.yml` manifests over SSH
+  and builds/pushes images. The host binary includes the client commands.
 
-```bash
-curl -fsSL https://menina.moureau.dev/install.sh | sudo sh   # installs binary + systemd units (does not provision)
-sudo menina setup            # write config.yml (interactive; --non-interactive for defaults)
-sudo menina deploy           # provision k3s, registry, control plane, proxy (idempotent)
-```
+Menina is **single-node today**: one k3s node, one control plane, one proxy, one
+registry. There is no multi-node/HA support. See [`ROADMAP.md`](https://github.com/moureau-dev/menina/blob/main/ROADMAP.md).
 
-Root is needed for `install`, `setup`, `deploy`, `upgrade`, and
-`backup --with-volumes/--with-images`. Day-to-day commands run as any user in
-the `menina` group. Interactive menus/prompts need a TTY; automation must use
-flags (see "Automation: SSH and CI").
+## Choose your path
 
-## Client (laptop/CI)
+| You are… | Use | Start here |
+| --- | --- | --- |
+| Working in an application repo | Client | `.menina.yml` + `menina validate/apply/build/push` |
+| Operating the VPS/platform | Host CLI | `menina setup`, `deploy`, `app`, `config`, `doctor` |
+| Running CI | Client or plain Docker | registry credential + `docker build/push` |
 
-The client is cross-platform (Linux, macOS, Windows) and is also included in the
-host binary. It works from a repository manifest, `.menina.yml`:
+## Client contract (app repos)
+
+Install on Linux/macOS:
 
 ```bash
-curl -fsSL https://menina.moureau.dev/install-client.sh | sh   # Linux/macOS
+curl -fsSL https://menina.moureau.dev/install-client.sh | sh
 # Windows: irm https://menina.moureau.dev/install-client.ps1 | iex
-
-menina init                 # scaffold .menina.yml
-menina install              # install this downloaded binary on PATH
-menina validate             # parse + render without writing
-menina apply --host user@vps  # desired state over SSH (config only)
-menina apply --diff           # show create/update plan, write nothing
-menina apply --verify         # write, then re-read and verify
-menina apply --diff --prune   # review planned deletions + planId
-menina apply --from-plan ID   # execute the reviewed plan (checks hashes/base token)
-menina apply --diff --json    # prints planId + stateToken
-menina apply --if-state-token TOKEN  # compare-and-swap on resolved config state
-menina build --push         # build/push images locally; push triggers deploys
-menina push --build --filter api,web
-menina build --build-arg VITE_API_URL="$VITE_API_URL"
-printf '%s' "$DATABASE_URL" | menina secret set DATABASE_URL --host user@vps --project demo --environment production
-menina secret rotate API_KEY --host user@vps --project demo --environment production --generate
-menina secret list --host user@vps --project demo --environment production --references
-menina secret rotate DATABASE_URL --host user@vps --project demo --environment production --restart --yes
-menina schema --json        # embedded manifest JSON Schema
-menina capabilities --json  # local version, os/arch, schema + feature flags
-menina capabilities --host user@vps --json  # host capabilities + compatibility
-menina version --check      # compare with the latest release
-menina upgrade              # checksum-verified self-update
 ```
 
-`apply` is an upsert of project/app/environment YAML and does not build or
-push; `build`/`push` need only Docker and registry credentials. `project` and
-`environment` may be `${VARS}`; `--project`, `-e/--environment`, and repeatable
-`--var KEY=VALUE` override them before rendering. `buildArgs` (manifest) and
-`--build-arg KEY=VALUE` pass Docker build args; they are not secrets. Client
-`secret set|list|remove|verify` proxies the host command over SSH stdin and
-requires a host (`--host`, `MENINA_HOST`, or the cached host). Add
-`--non-interactive` to any command to fail instead of prompting or opening the
-TUI. With `--json`, failures use `{"error":{"code","message","hint"}}` and exit
-codes: 1 generic, 2 validation, 3 not_found, 4 auth, 5 timeout, 6 conflict,
-7 unsupported. The installed
-command is `menina`, falling back to `menina-client` when a host `menina` is
-already present. Running `menina` with no subcommand on a terminal opens the
-client TUI (same style as the host menu, labelled client). Manifest JSON Schema:
-`https://menina.moureau.dev/schema/v1/menina.schema.json` (`menina init` adds the
-`yaml-language-server` header). Full manifest schema,
-flags, CI patterns, and limitations: `docs/CLIENT-CLI.md`.
+The installed command is `menina`, falling back to `menina-client` when a host
+`menina` is already present. The standalone client's `menina install` command
+installs a directly downloaded binary onto `PATH`.
 
-## Concepts
+### Manifest
 
-- **Project** — a unit of config (`projects/<name>/`). Has a namespace (default
-  `menina-apps`).
-- **Environment** — a deployment target (`production`, `staging`, ...). Each env
-  gets its own namespace `<project-ns>-<env>` unless overridden. Holds per-app
-  overrides and exposure.
-- **App** — a container image + workload (service or worker) + scaling/storage.
-- **Registry** — bundled Zot at `registry.<domain>`; pushing an image triggers
-  an automatic deploy of matching apps. There is **one shared push/pull
-  credential** (k3s pulls with the same username/password). Digests are resolved
-  only for bundled-registry images; apps pointing at another registry (e.g.
-  `docker.io/library/redis`) deploy by tag, with no digest pinning, release
-  history, or push-event auto-deploy.
+A repository manifest is `.menina.yml`. JSON Schema (versioned):
+`https://menina.moureau.dev/schema/v1/menina.schema.json` (unversioned alias
+`/schema/menina.schema.json`). `menina init` adds the `yaml-language-server`
+header. See [`docs/CLIENT-CLI.md`](docs/CLIENT-CLI.md) for the full schema.
 
-## Config layout
+Top-level: `version`, `project`, `environment`, `vars`, `source`,
+`defaults` (`context`, `tag`, `registry`, `buildArgs`), `storages`, `apps`,
+`workers`.
+
+- `apps` are services: `service: {port}`, optional `exposure.http` and/or
+  `exposure.ports`.
+- `workers` are non-listening: no service/port/exposure; may use
+  `from: <app>` (inherits image/build/env/secrets, not storage).
+- `${VAR}` interpolates from `vars`; `--var`, `--project`, `-e/--environment`
+  override before rendering.
+
+### Commands
+
+```bash
+menina init
+menina validate
+menina apply --host user@vps --diff       # review create/update/delete plan
+menina apply --host user@vps              # write desired state only
+menina build --push                       # build/push; push triggers deploy
+menina push --build --filter api,web
+menina schema --json                      # embedded manifest schema
+menina capabilities --json                # version, os/arch, features, commands
+menina capabilities --host user@vps --json  # host compatibility
+```
+
+### Apply safety
+
+- `apply` takes a config-dir lock and a canonical resolved `stateToken`.
+- `--diff`/`--dry-run` save a reviewed plan and print `planId` + `stateToken`;
+  `--from-plan <id>` re-checks the base state token and every file hash first.
+- `--prune` is review-only: generate with `--diff --prune`, execute with
+  `--from-plan`. It requires `source.repo` and never prunes another repo’s apps.
+- `--if-state-token <token>` is compare-and-swap (`--if-revision` is an alias).
+- `--verify` re-reads written config and confirms apps/overrides.
+- `source.repo` is an ownership hint, not authorization. `source.revision` is
+  informational.
+- Every apply records a revision. `menina config revisions` /
+  `config rollback <id> --yes` restore YAML, not deployed images; the client can
+  proxy them with `--host`.
+
+### Secrets
+
+```bash
+printf '%s' "$DATABASE_URL" | menina secret set DATABASE_URL \
+  --host user@vps --project demo --environment production
+
+menina secret list --host user@vps --project demo --environment production --references
+menina secret verify DATABASE_URL --host user@vps --project demo --environment production
+menina secret rotate DATABASE_URL --host user@vps --project demo --environment production --generate --output /root/value.txt   # host path
+```
+
+`--restart` explicitly queues deployments for apps referencing the secret
+(production requires `--yes`). Values are read from stdin, a hidden prompt, or
+`--file`, and are never printed. Secret files are mode 0660.
+
+### Jobs over SSH
+
+```bash
+menina job list --host user@vps --json
+menina job watch <id> --host user@vps --json --timeout 10m   # NDJSON
+```
+
+### Automation
+
+- Prefer `--json`.
+- `--non-interactive` never prompts or opens the TUI.
+- JSON failures: `{"error":{"code","message","hint"}}` on stderr.
+- Exit codes: `1` generic, `2` validation, `3` not found, `4` auth, `5` timeout,
+  `6` conflict, `7` unsupported. Classification is not yet exhaustive.
+
+## Shared model
+
+- **Project → Environment → App.**
+- **Registry:** bundled Zot at `registry.<domain>`. Pushing a bundled-registry
+  image auto-deploys matching enabled apps; the tag resolves to a digest.
+- **External images** (for example `redis:7-alpine`) deploy by tag, with no
+  digest pinning, release history, or push-event auto-deploy.
+- **HTTP reachability:** env override must set `enabled: true` and
+  `exposure.hosts`.
+- **Raw L4:** `exposure.ports` (`tcp`/`udp`) binds node ports via `hostPort`,
+  bypasses the proxy, and does not require HTTP hosts. Keep L4 apps at one
+  replica.
+- Apps with neither HTTP hosts nor L4 ports are cluster-internal.
+
+## Host platform
+
+Install/provision:
+
+```bash
+curl -fsSL https://menina.moureau.dev/install.sh | sudo sh
+sudo menina setup
+sudo menina deploy
+```
+
+Root-only: the installer, `setup`, `deploy`, `upgrade`, and
+`backup --with-volumes/--with-images`. Day-to-day commands run as a user in the
+`menina` group.
+
+Config layout:
 
 ```text
 /etc/menina/
   config.yml
   projects/<project>/
-    project.yml                 # name, namespace, description
-    apps/<app>.yml              # shared app definition
-    environments/<env>.yml      # environment definition (optional)
-    environments/<env>/<app>.yml  # per-app override (one file per app)
-/var/lib/menina/                # menina.db, certs/, releases/, backups/
+    project.yml
+    apps/<app>.yml
+    environments/<env>.yml
+    environments/<env>/<app>.yml
+/var/lib/menina/   # DB, certs, releases, backups
 ```
 
-## App definition (`apps/<app>.yml`)
+Desired state is human-editable YAML; operational state is SQLite. The app
+definition holds image, workload, resources, replicas, storage, health, env and
+secret references. Environment overrides can opt in to exposure and change
+mergeable fields. See [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for the merge model and
+[`docs/CLI.md`](docs/CLI.md) for the full host command reference.
 
-```yaml
-name: api
-source: { repo: github.com/acme/api }                    # owning repo; blank/omitted = locally owned
-image: { repository: registry.example.com/my-app/api }   # repository is immutable (per app)
-workload: { type: service, port: 8080 }                  # type: service|worker; command/args optional
-resources: { cpu: 250m, memory: 256Mi }                  # requests == limits
-replicas: 1                                              # or {min: 2, max: 10, targetCPU: 70} -> HPA
-storage: { enabled: true, size: 1Gi, mountPath: /data }  # PVC <app>-data
-health: { readiness: /healthz }                          # HTTP probes
-env: { RUST_LOG: info }
-secrets: { DATABASE_URL: "file:/etc/menina/secrets/db" } # env var -> secret ref (never plaintext)
-```
-
-`menina app create` defaults `image.repository` to the bundled registry as
-`registry.<domain>/<project>/<app>`; `--repository` overrides it.
-
-## Environment (`environments/<env>.yml` + `environments/<env>/<app>.yml`)
-
-Only config here opts a host in (exposure is environment-level). An environment
-may be declared by a definition file (`<env>.yml`) and/or a directory of
-per-app override files (`<env>/<app>.yml`, one app per file); directory
-overrides win over an inline `apps:` map. Splitting per app lets several repos
-contribute to one environment without writing the same file. `image.repository`
-cannot be overridden; other fields merge (override wins).
-
-```yaml
-name: production
-apps:
-  api:
-    enabled: true
-    image: { tag: production }        # default tag = environment name (defaults.imageTagStrategy)
-    replicas: { min: 2, max: 10 }
-    exposure:
-      enabled: true
-      hosts: [api.example.com]
-      pathPrefix: /
-      headers: { X-Frame-Options: DENY }
-      compression: false
-      h2c: false                      # cleartext HTTP/2 to the backend (gRPC)
-      maxBodyBytes: 0
-      timeouts: { read: 30s, write: 60s, idle: 120s }
-      ports: { tcp: [25565], udp: [19132] }   # raw L4 ports (bypass proxy)
-```
-
-An app is only reachable when its env override sets `enabled: true` **and**
-`exposure.hosts` (or `exposure.ports`); then run `menina app deploy <app>
---project <p> --environment <env>`.
-
-## Common tasks
+Host commands (summary):
 
 ```bash
-# Create a project (+ environments), then an app, then make it public
-menina create my-app --yes --environments production,staging   # or bare `menina` menu
-menina app create api --project my-app --port 8080 --yes       # repository defaults to the registry
-# edit my-app/environments/production.yml: api.enabled=true, api.exposure.hosts=[api.example.com]
-menina app deploy api --project my-app --environment production --yes
-
-# Get everything CI needs (registry host + push username/password)
-menina registry credential --json          # {"domain","username","password"}
-
-# Push an image -> auto-deploys matching enabled apps
-HOST=registry.<domain>
-USER=$(menina registry credential --username)
-menina registry credential --password | docker login "$HOST" -u "$USER" --password-stdin
-docker build -t "$HOST/my-app/api:production" .
-docker push  "$HOST/my-app/api:production"
+menina app deploy|status|logs|rollback|scale|delete|restore|reset-volume
+menina secret set|list|remove|rotate|verify
+menina config validate|revisions|rollback
+menina job list|watch|cancel
+menina status|routes|doctor
+menina registry status|credential
+menina notify list|test
+menina backup|restore|upgrade
 ```
 
-## CLI
+### Deploy pipeline
 
-```bash
-# projects / envs / apps
-menina create                                # guided: prompts name, environments
-menina create my-project --yes --environments development,staging,production
-menina project create <name> --environments a,b  |  menina project list
-menina environment create <env> --project <p>    |  menina environment list --project <p>
-menina app create api --project <p> --repository <repo> --port 8080 --yes
-menina app list --project <p>
-menina app edit api --project <p>            # $EDITOR
-
-# deploy / operate
-menina app deploy api --project <p> --environment <env> --yes   # waits for rollout
-menina app deploy api --project <p> --environment <env> --no-wait   # queue + return (track below)
-menina app status api --project <p> --environment <env>         # last job, digest, phase
-menina app logs api --project <p> --environment <env> --follow
-menina app rollback api --project <p> --environment <env> [--digest sha256:...]
-menina app reset-volume api --project <p> --environment <env> --yes   # wipe app PVC (data lost)
-menina app scale api --project <p> --min 2 --max 10              # baseline (all envs)
-menina app scale api --project <p> -e production --replicas 4    # one environment
-menina app delete api --project <p>            # soft: stop + keep config; --hard removes+prunes
-menina app restore api --project <p>
-
-# secrets (values read from stdin, never printed)
-printf '%s' "$DATABASE_URL" | menina secret set DATABASE_URL --project <p> --environment <env>
-menina secret list --project <p> --environment <env>      # names only
-menina secret remove DATABASE_URL --project <p> --environment <env> --yes
-
-# observe / infra
-menina status [--json]               # includes the registry host
-menina routes [--json]               # HTTP routes + L4 TCP/UDP exposures
-menina job list [--status S] [--json] | menina job watch <id> | menina job cancel <id>   # deployment queue/events
-menina job list --host user@vps | menina job watch <id> --host user@vps --json           # client SSH proxy
-menina config revisions [--project P] | menina config rollback <id> --yes   # desired-state snapshots (host or client --host)
-menina config validate [--json]      # resolve+validate the config tree (non-zero if invalid)
-menina doctor                        # config, k8s, registry, routes, TLS checks
-menina registry status
-menina registry credential [--username | --password | --regenerate]
-menina notify list | menina notify test [--project <p>]
-menina backup [--out f.tgz --with-secrets --with-volumes --with-images --consistent --passphrase]
-menina restore <f.tgz> --force [--with-volumes --with-images]
-menina upgrade [--check]
-```
-
-Most list/status commands accept `--json` for machine-readable output.
-`menina registry credential --username`/`--password` print just that field;
-`--regenerate` rotates the shared credential (and re-applies it to Zot and k3s);
-`--new-username`/`--new-password` set explicit values when regenerating.
-
-## Automation: SSH and CI
-
-**SSH / remote VPS.** Menina runs on the host; drive it over SSH. Interactive
-flows need a real TTY (`ssh -t`); a command without `-t` gets no TTY and falls
-back to flags/help, so scripts must pass flags. Use `--json` instead of parsing
-tables, and `sudo` for root-only commands.
-
-```bash
-ssh host sudo menina deploy                  # root-only, non-interactive
-ssh host menina status --json                # machine-readable; includes "registry"
-ssh -t host menina                           # interactive menu (needs a TTY)
-```
-
-**CI (build & push only).** CI needs no Menina binary, no `/etc/menina`, no root
-and no TTY — just the registry host plus the username/password. Discover them
-once on the host and store them as CI secrets:
-
-```bash
-menina registry credential --json   # {"domain":"registry.<domain>","username":"...","password":"..."}
-```
-
-Then the job is plain Docker:
-
-```bash
-echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
-docker build -t "$REGISTRY_HOST/$PROJECT/$APP:$TAG" .
-docker push  "$REGISTRY_HOST/$PROJECT/$APP:$TAG"     # triggers a deploy of matching apps
-```
-
-For the push to deploy, the app's `image.repository` must equal
-`$REGISTRY_HOST/$PROJECT/$APP` and `image.tag` must equal `$TAG` (tag defaults to
-the environment name). If the registry serves **HTTP** (`tls.mode: none`), the
-CI Docker daemon must list `$REGISTRY_HOST` in `insecure-registries`.
-
-## Interactive (TTY only)
-
-Bare `menina` opens a full-screen menu (Setup / Deploy / apps / status / ...).
-`menina app` / `project` / `environment` open project → app → action menus
-(`Deploy · Scale · Edit · Logs · Rollback · Delete · Back`); selectors include
-`Exit`. Arrow keys move **one row at a time**, `/` filters, `Enter` selects,
-`Shift+Tab`/`Esc` goes **back** (menus step up; inline flows like "new app name"
-return to their list), and **`Ctrl+C` must be pressed twice** to quit. Once the
-platform is ready the one-time Setup/Deploy entries are hidden unless
-`--show-all` is passed. Non-TTY/pipes and `--yes` use flags only.
-
-## Deploy pipeline
-
-1. `docker push registry.<domain>/<project>/<app>:<tag>`.
+1. Push to `registry.<domain>/<project>/<app>:<tag>`.
 2. Zot emits an event; `menina serve` matches enabled apps by repository + tag.
-3. The tag is resolved to an immutable **digest**; the Deployment is updated to
-   `repo@sha256:...` (rollback restores a recorded digest).
-4. `menina deploy` reconciles k3s/Zot/services; a periodic reconciler applies
-   desired state and prunes removed workloads (PVCs and history are retained).
+3. Bundled-registry tags resolve to immutable digests; the Deployment is updated
+   to `repo@sha256:...` (rollback restores a recorded digest).
+4. The reconciler applies desired state and prunes removed workloads (PVCs and
+   release history are retained).
 
-## Scaling
+## SSH and TUI
 
-- Baseline `replicas` in the app file; per-environment override in the env file.
-- `{min,max,targetCPU}` ⇒ a `HorizontalPodAutoscaler`; a fixed count removes any
-  stale HPA. `menina app scale` writes baseline or `-e <env>` override;
-  `--reset` removes the override.
-
-## TLS and networking
-
-- `tls.terminate: true` + `tls.mode: acme` ⇒ Menina issues a **per-hostname**
-  Let's Encrypt cert automatically for every routed host and **auto-renews**
-  (`httpRedirect: false` serves `:80` and `:443` with no forced redirect/HSTS).
-- `tls.mode: none` ⇒ HTTP only (e.g. behind a proxy). Pushing to an HTTP registry
-  requires `insecure-registries` on the client.
-- Wildcards are **not** supported (ACME is HTTP-01/TLS-ALPN-01, not DNS-01).
-- Cloudflare: orange cloud + **Flexible** if the origin is HTTP-only; or run
-  origin ACME and use **Full (strict)**. Keep `registry.<domain>` **DNS-only
-  (grey)** so pushes aren't capped by the CF proxy (100 MB / ~100 s).
-
-## L4 (non-HTTP) exposure
-
-`exposure.ports` binds raw ports on the node via `hostPort` (bypassing the proxy)
-— for game servers, TURN/STUN, etc. Accepts a number, list, or `{tcp, udp}`.
-Ports 80/443 are reserved; duplicate host ports are rejected. `menina deploy`
-opens them with `ufw` when active. Keep L4 apps at 1 replica (hostPort is
-per-pod). gRPC works over the HTTP proxy via `exposure.h2c: true`.
-
-## Backup and migration
-
-`menina backup` → portable `tar.gz` (DB + `config.yml` + `projects/`; opt-in
-`--with-secrets` [encryptable via `--passphrase`], `--with-volumes`,
-`--with-images`; `--consistent` quiesces writers). `menina restore <f.tgz>
---force` applies it (stop the writer first: `systemctl stop menina-serve`).
+Menina runs on the host; drive it over SSH. Interactive menus/prompts need a
+real TTY (`ssh -t`); scripts must pass flags and `--non-interactive`. A command
+without a TTY must not prompt. Bare `menina` opens the TUI on a TTY.
 
 ## Not supported (today)
 
-No HTTP/3/QUIC, no ACME wildcards, no built-in auth/rate-limiting/WAF, no
-multi-node k3s or HA control plane (SQLite is a single writer; `local-path`
-volumes are node-local), no canary/blue-green strategies, no cron/one-off jobs,
-and no per-user registry credentials (one shared push/pull credential).
+No HTTP/3/QUIC, ACME wildcards, built-in auth/RBAC/SSO, rate limiting/WAF,
+multi-node k3s or HA control plane, replicated/RWX storage by default, canary or
+blue-green deploys, cron/one-off jobs, automatic rollback on failed verification,
+or per-user registry credentials (one shared push/pull credential).
 
 ## Docs
 
-- `docs/CLIENT-CLI.md` — cross-platform client, manifest schema, apply/build/push, CI.
-- `docs/CLI.md` — commands, interactive flows, environment/scaling model.
-- `docs/CONFIGURATION.md` — layout, merge rules, scaling, deploy notifications.
-- `docs/PROXY.md` — routing, TLS, caching, security, protocols, L4 exposure.
-- `docs/KUBERNETES.md` — k3s provisioning, namespaces, RBAC, workloads.
-- `docs/REGISTRY.md` — Zot, auth, digest pinning, retention, push→deploy.
-- `docs/OPERATIONS.md` — privileges, security, backups, upgrades, Docker.
+- [`docs/CLIENT-CLI.md`](docs/CLIENT-CLI.md) — client, manifest, apply/build/push, CI.
+- [`docs/CLI.md`](docs/CLI.md) — host commands, interactive flows, scaling.
+- [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — config layout, merge rules, notifications.
+- [`docs/PROXY.md`](docs/PROXY.md) — routing, TLS, caching, protocols, L4 exposure.
+- [`docs/KUBERNETES.md`](docs/KUBERNETES.md) — k3s, namespaces, RBAC, workloads.
+- [`docs/REGISTRY.md`](docs/REGISTRY.md) — Zot, auth, digest pinning, retention, push→deploy.
+- [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — privileges, security, backups, upgrades, Docker.
+- [`ROADMAP.md`](https://github.com/moureau-dev/menina/blob/main/ROADMAP.md) — next tiers, multi-node/HA decomposition.
