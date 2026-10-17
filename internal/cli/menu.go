@@ -100,7 +100,7 @@ func runMainMenu(root *cobra.Command, app *App, showAll bool) error {
 		if selected >= len(entries) {
 			selected = 0
 		}
-		idx, action := tui.SelectWithPrelude("Menina", opts, selected, false, prelude)
+		idx, action := tui.SelectWithPreludeBadge("Menina", "HOST", opts, selected, false, prelude)
 		switch action {
 		case tui.ActionBack:
 			continue // Esc on the root menu: stay put instead of closing.

@@ -32,6 +32,13 @@ shadowing it. Useful environment variables:
 | `MENINA_CLIENT_NO_MODIFY_PATH=1` | Do not edit shell profiles |
 | `MENINA_REPO` | GitHub repository |
 
+Run `menina` with no subcommand on a terminal to open the client TUI. It uses
+the same menu style as the host, labelled **CLIENT** (the host menu is labelled
+**HOST**), and offers Init / Validate / Apply / Build / Push / Version /
+Upgrade / Quit. Without a terminal it prints help instead. The TUI re-executes
+the binary for the chosen action, so flags and output behave exactly like the
+non-interactive commands.
+
 The client needs `curl` (or PowerShell on Windows) for installation, `ssh` for
 `apply --host`, and `docker` for `build`/`push`.
 

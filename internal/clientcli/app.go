@@ -76,6 +76,9 @@ func NewRootCommand() *cobra.Command {
 			"plane commands.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runClientMenu(cmd, app)
+		},
 	}
 	root.PersistentFlags().StringVar(&configDir, "config-dir", envOr("MENINA_CONFIG_DIR", "/etc/menina"), "host configuration directory (used for secret refs)")
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output machine-readable JSON")

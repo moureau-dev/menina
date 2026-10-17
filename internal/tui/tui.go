@@ -33,6 +33,11 @@ var (
 			Padding(0, 1)
 	blockTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("170"))
 	dirStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	badgeStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFFDF5")).
+			Background(lipgloss.Color("#3C3C3C")).
+			Bold(true).
+			Padding(0, 1)
 )
 
 const (
@@ -42,6 +47,7 @@ const (
 
 type selectModel struct {
 	title     string
+	badge     string
 	options   []Option
 	filtered  []int // indices into options matching the current filter
 	cursor    int   // position within filtered
@@ -248,6 +254,14 @@ func (m selectModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m selectModel) header() string {
+	title := titleStyle.Render(m.title)
+	if m.badge != "" {
+		title += " " + badgeStyle.Render(m.badge)
+	}
+	return title
+}
+
 func (m selectModel) footer() string {
 	if m.armed {
 		return helpStyle.Render("press ctrl+c again to exit")
@@ -282,7 +296,7 @@ func (m selectModel) View() string {
 	if m.done {
 		return ""
 	}
-	lines := []string{titleStyle.Render(m.title), ""} // blank line under the title
+	lines := []string{m.header(), ""} // blank line under the title
 	if m.filtering || m.filter != "" {
 		lines = append(lines, filterStyle.Render("/ "+m.filter))
 	}
@@ -319,6 +333,22 @@ func Select(title string, options []Option, def int, canGoBack bool) (int, Actio
 // the output of the previous action), so it stays visible on screen.
 func SelectWithPrelude(title string, options []Option, def int, canGoBack bool, prelude string) (int, Action) {
 	return selectProgram(title, options, def, canGoBack, prelude)
+}
+
+// SelectWithPreludeBadge is SelectWithPrelude with a small badge next to the
+// title (for example HOST or CLIENT).
+func SelectWithPreludeBadge(title, badge string, options []Option, def int, canGoBack bool, prelude string) (int, Action) {
+	m := newSelectModel(title, options, def, canGoBack, prelude)
+	m.badge = badge
+	res, err := tea.NewProgram(m).Run()
+	if err != nil {
+		return def, ActionQuit
+	}
+	fm, ok := res.(selectModel)
+	if !ok {
+		return def, ActionQuit
+	}
+	return fm.choice, fm.action
 }
 
 func selectProgram(title string, options []Option, def int, canGoBack bool, prelude string) (int, Action) {

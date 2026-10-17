@@ -87,7 +87,8 @@ The installers verify the release checksum and install the command as `menina`
 Windows it is added to the user-level `PATH`. `menina apply --host user@vps`
 sends the manifest over SSH; build/push use the local Docker daemon.
 `menina version --check` compares with the latest release and `menina upgrade`
-performs a checksum-verified self-update.
+performs a checksum-verified self-update. Run `menina` with no subcommand for
+the CLIENT-labelled TUI.
 
 **Prerequisites for a clean Ubuntu Server VPS**: `amd64` or `arm64`, systemd,
 `curl`, network access to `get.k3s.io` / GitHub Releases / `ghcr.io` /

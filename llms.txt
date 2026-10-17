@@ -45,8 +45,9 @@ menina upgrade              # checksum-verified self-update
 `apply` is an upsert of project/app/environment YAML and does not build or
 push; `build`/`push` need only Docker and registry credentials. The installed
 command is `menina`, falling back to `menina-client` when a host `menina` is
-already present. Full manifest schema, flags, CI patterns, and limitations:
-`docs/CLIENT-CLI.md`.
+already present. Running `menina` with no subcommand on a terminal opens the
+client TUI (same style as the host menu, labelled CLIENT). Full manifest schema,
+flags, CI patterns, and limitations: `docs/CLIENT-CLI.md`.
 
 ## Concepts
 

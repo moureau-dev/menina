@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func newModel(n int) selectModel {
@@ -18,6 +19,15 @@ func newModel(n int) selectModel {
 func press(m selectModel, key tea.KeyType) selectModel {
 	nm, _ := m.Update(tea.KeyMsg{Type: key})
 	return nm.(selectModel)
+}
+
+func TestBadgeAppearsInHeader(t *testing.T) {
+	m := newModel(1)
+	m.badge = "CLIENT"
+	header := ansi.Strip(m.header())
+	if !strings.Contains(header, "Menina") || !strings.Contains(header, "CLIENT") {
+		t.Fatalf("header = %q", header)
+	}
 }
 
 func TestEnterReturnsCursoredIndex(t *testing.T) {
