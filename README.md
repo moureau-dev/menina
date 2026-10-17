@@ -13,6 +13,7 @@ Detailed docs live in [`docs/`](docs/README.md):
 
 | Doc | Covers |
 | --- | --- |
+| [Client CLI](docs/CLIENT-CLI.md) | Cross-platform client, manifests, apply/build/push, CI |
 | [CLI reference](docs/CLI.md) | Every command, interactive flows, environment/scaling model |
 | [Configuration](docs/CONFIGURATION.md) | File layout, merge rules, scaling, deploy notifications |
 | [Proxy](docs/PROXY.md) | Routing, TLS, networking modes, caching, security, protocols |

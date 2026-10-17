@@ -3,11 +3,13 @@
 > Self-hosted application platform: point container images at it, it runs them on
 > k3s and routes public hostnames (HTTP + raw TCP/UDP) through its own proxy.
 
-Menina is one Go binary with distinct modes. Desired state is human-editable YAML
-(`/etc/menina`); operational state is SQLite (`/var/lib/menina`). `menina serve`
-is the control plane (single SQLite writer, config watcher, registry listener,
-reconciler); `menina proxy` serves traffic. Deploys happen by pushing images to
-the bundled registry.
+The Menina host is one Linux Go binary with distinct modes. Desired state is
+human-editable YAML (`/etc/menina`); operational state is SQLite
+(`/var/lib/menina`). `menina serve` is the control plane (single SQLite writer,
+config watcher, registry listener, reconciler); `menina proxy` serves traffic.
+Deploys happen by pushing images to the bundled registry. A cross-platform
+client (same binary on the host, or a standalone `menina`/`menina-client` on a
+laptop or CI) applies repository manifests — see "Client (laptop/CI)".
 
 ## Install and provision
 
@@ -21,6 +23,28 @@ Root is needed for `install`, `setup`, `deploy`, `upgrade`, and
 `backup --with-volumes/--with-images`. Day-to-day commands run as any user in
 the `menina` group. Interactive menus/prompts need a TTY; automation must use
 flags (see "Automation: SSH and CI").
+
+## Client (laptop/CI)
+
+The client is cross-platform (Linux, macOS, Windows) and is also included in the
+host binary. It works from a repository manifest, `.menina.yml`:
+
+```bash
+curl -fsSL https://menina.moureau.dev/install-client.sh | sh   # Linux/macOS
+# Windows: irm https://menina.moureau.dev/install-client.ps1 | iex
+
+menina init                 # scaffold .menina.yml
+menina validate             # parse + render without writing
+menina apply --host user@vps  # desired state over SSH (config only)
+menina build --push         # build/push images locally; push triggers deploys
+menina push --build --filter api,web
+```
+
+`apply` is an upsert of project/app/environment YAML and does not build or
+push; `build`/`push` need only Docker and registry credentials. The installed
+command is `menina`, falling back to `menina-client` when a host `menina` is
+already present. Full manifest schema, flags, CI patterns, and limitations:
+`docs/CLIENT-CLI.md`.
 
 ## Concepts
 
@@ -265,6 +289,7 @@ and no per-user registry credentials (one shared push/pull credential).
 
 ## Docs
 
+- `docs/CLIENT-CLI.md` — cross-platform client, manifest schema, apply/build/push, CI.
 - `docs/CLI.md` — commands, interactive flows, environment/scaling model.
 - `docs/CONFIGURATION.md` — layout, merge rules, scaling, deploy notifications.
 - `docs/PROXY.md` — routing, TLS, caching, security, protocols, L4 exposure.

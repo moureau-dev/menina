@@ -1,5 +1,7 @@
 # Menina documentation
 
+- [Client CLI](CLIENT-CLI.md) — cross-platform client, `.menina.yml` manifests,
+  apply over SSH, build/push, CI patterns, and limitations.
 - [CLI reference](CLI.md) — commands, interactive flows, and the
   environment/scaling model.
 - [Configuration & notifications](CONFIGURATION.md) — file layout, merge rules,
