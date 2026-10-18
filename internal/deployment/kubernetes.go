@@ -582,9 +582,22 @@ func (k *KubernetesCluster) buildDeployment(w Workload) *kube.Deployment {
 		container.Resources = &kube.ResourceRequirements{Requests: req, Limits: lim}
 	}
 	if w.HealthPath != "" {
-		probe := &kube.Probe{HTTPGet: &kube.HTTPGetAction{Path: w.HealthPath, Port: w.Port}}
-		container.ReadinessProbe = probe
-		container.LivenessProbe = &kube.Probe{HTTPGet: &kube.HTTPGetAction{Path: w.HealthPath, Port: w.Port}}
+		container.ReadinessProbe = &kube.Probe{
+			HTTPGet:             &kube.HTTPGetAction{Path: w.HealthPath, Port: w.Port},
+			InitialDelaySeconds: 5,
+			TimeoutSeconds:      5,
+			PeriodSeconds:       5,
+			FailureThreshold:    3,
+		}
+		// Liveness is more forgiving than readiness: a startup or a short
+		// control-plane stall must not kill an app that is still booting.
+		container.LivenessProbe = &kube.Probe{
+			HTTPGet:             &kube.HTTPGetAction{Path: w.HealthPath, Port: w.Port},
+			InitialDelaySeconds: 30,
+			TimeoutSeconds:      5,
+			PeriodSeconds:       10,
+			FailureThreshold:    3,
+		}
 	}
 	podSpec := kube.PodSpec{Containers: []kube.Container{container}}
 	if w.PullSecret != "" {

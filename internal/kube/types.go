@@ -55,7 +55,12 @@ type HTTPGetAction struct {
 }
 
 type Probe struct {
-	HTTPGet *HTTPGetAction `json:"httpGet,omitempty"`
+	HTTPGet             *HTTPGetAction `json:"httpGet,omitempty"`
+	InitialDelaySeconds int32          `json:"initialDelaySeconds,omitempty"`
+	TimeoutSeconds      int32          `json:"timeoutSeconds,omitempty"`
+	PeriodSeconds       int32          `json:"periodSeconds,omitempty"`
+	FailureThreshold    int32          `json:"failureThreshold,omitempty"`
+	SuccessThreshold    int32          `json:"successThreshold,omitempty"`
 }
 
 type VolumeMount struct {
