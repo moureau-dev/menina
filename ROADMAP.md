@@ -14,7 +14,7 @@ makes the multi-node/HA work explicit instead of hiding it under “HA/DR”.
 - **Design bias:** one small system you can understand and operate yourself.
   Add capabilities without turning Menina into a generic Kubernetes distro.
 
-## Landed recently (through v0.0.14)
+## Landed recently (through v0.1.1)
 
 - Repository manifests (`.menina.yml`), client installers, manifest schema,
   `init`/`validate`/`apply`/`build`/`push`, `--json`, `--non-interactive`.
@@ -30,6 +30,9 @@ makes the multi-node/HA work explicit instead of hiding it under “HA/DR”.
 - Versioned manifest schema (`/schema/v1/...`), capabilities/compatibility,
   classified errors with stable exit codes.
 - Host/client TUI, cross-platform client builds and installers.
+- Per-app release states, pinned job configuration, verification, hooks,
+  recovery policies, digest promotion, secret-staleness reporting, scheduled
+  backups, metrics/alert guidance, and probe-timing hardening (v0.1.0/v0.1.1).
 
 Guiding principle: **make failure paths as deliberate and predictable as the
 happy path.** A release must be identifiable, verifiable, recoverable, and
@@ -37,8 +40,8 @@ honest about what was and was not rolled back.
 
 ## Tier 1 — release model, determinism, and operations (landed)
 
-Tier 1 landed in the unreleased line after v0.0.14. It is recorded here as the
-baseline the higher tiers build on, not as remaining work.
+Tier 1 landed in v0.1.0 and v0.1.1. It is recorded here as the baseline the
+higher tiers build on, not as remaining work.
 
 - **App releases** have pinned image and resolved configuration (`stateToken`
   plus a stored config snapshot), verification and migration status, a
