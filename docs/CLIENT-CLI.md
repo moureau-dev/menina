@@ -197,9 +197,8 @@ Each workload accepts:
 - `recovery` — explicit failure policy for the app
 - `dependsOn` — apps in the same environment that must be ready first
 
-`port` and `host` are still accepted as legacy shorthands for
-`service.port` and `exposure.http.hosts`; new manifests should use the nested
-form.
+`port` and `host` are shorthands for `service.port` and
+`exposure.http.hosts`.
 
 ### Exposure
 

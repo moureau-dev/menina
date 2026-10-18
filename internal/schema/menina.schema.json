@@ -384,11 +384,11 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65535,
-          "description": "Legacy shorthand for service.port."
+          "description": "Shorthand for service.port."
         },
         "host": {
           "type": "string",
-          "description": "Legacy shorthand for exposure.http.hosts."
+          "description": "Shorthand for exposure.http.hosts."
         },
         "command": {
           "type": "array",

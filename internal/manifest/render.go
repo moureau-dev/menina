@@ -190,7 +190,7 @@ func (f *File) renderWorkload(name string, w Workload, worker bool, tag, registr
 	}
 	if base.Port != 0 {
 		if servicePort != 0 && servicePort != base.Port {
-			return nil, nil, nil, nil, fmt.Errorf("%q: service.port and the legacy port must match", name)
+			return nil, nil, nil, nil, fmt.Errorf("%q: service.port and port must match", name)
 		}
 		servicePort = base.Port
 	}

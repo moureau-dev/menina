@@ -83,8 +83,8 @@ apps:
         hosts: [api.example.com]
 ```
 
-`port` and `host` are still accepted as legacy shorthands for `service.port`
-and `exposure.http.hosts`; new manifests should use the nested form.
+`port` and `host` are shorthands for `service.port` and
+`exposure.http.hosts`.
 
 ### Commands
 

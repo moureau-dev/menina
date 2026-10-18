@@ -160,8 +160,8 @@ type Workload struct {
 	Type       string               `yaml:"type,omitempty"`
 	Service    *ServiceSpec         `yaml:"service,omitempty"`
 	Exposure   *Exposure            `yaml:"exposure,omitempty"`
-	Port       int                  `yaml:"port,omitempty"` // legacy shorthand for service.port
-	Host       string               `yaml:"host,omitempty"` // legacy shorthand for exposure.http.hosts
+	Port       int                  `yaml:"port,omitempty"` // shorthand for service.port
+	Host       string               `yaml:"host,omitempty"` // shorthand for exposure.http.hosts
 	Command    []string             `yaml:"command,omitempty"`
 	Args       []string             `yaml:"args,omitempty"`
 	Env        map[string]string    `yaml:"env,omitempty"`
