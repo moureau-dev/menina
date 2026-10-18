@@ -130,6 +130,10 @@
             "multi-writer"
           ],
           "default": "single-writer"
+        },
+        "snapshotBeforeDeploy": {
+          "type": "boolean",
+          "description": "Request a CSI VolumeSnapshot before a release changes the workload."
         }
       }
     },
@@ -145,6 +149,9 @@
         },
         "path": {
           "type": "string"
+        },
+        "snapshotBeforeDeploy": {
+          "type": "boolean"
         }
       },
       "anyOf": [
@@ -235,6 +242,117 @@
         }
       }
     },
+    "hook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "type": "string",
+          "description": "Go duration, for example 5m. Bounded by the host."
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "path": {
+          "type": "string",
+          "description": "HTTP path checked through the app's public route."
+        },
+        "method": {
+          "type": "string",
+          "default": "GET"
+        },
+        "expectStatus": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 599
+          }
+        },
+        "expectBody": {
+          "type": "string"
+        },
+        "expectHeader": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "type": "string"
+        },
+        "smokeTest": {
+          "$ref": "#/$defs/hook"
+        },
+        "failurePolicy": {
+          "type": "string",
+          "enum": [
+            "recover",
+            "keep"
+          ],
+          "default": "recover"
+        }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preDeploy": {
+          "$ref": "#/$defs/hook"
+        },
+        "migrate": {
+          "$ref": "#/$defs/hook"
+        },
+        "postDeploy": {
+          "$ref": "#/$defs/hook"
+        }
+      }
+    },
+    "recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "policy": {
+          "type": "string",
+          "enum": [
+            "previous",
+            "none",
+            "require-approval"
+          ],
+          "default": "none"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "deploy-error",
+              "verification-failure",
+              "timeout",
+              "interrupted"
+            ]
+          }
+        }
+      }
+    },
     "workload": {
       "type": "object",
       "additionalProperties": false,
@@ -312,6 +430,22 @@
         },
         "health": {
           "$ref": "#/$defs/health"
+        },
+        "verification": {
+          "$ref": "#/$defs/verification"
+        },
+        "hooks": {
+          "$ref": "#/$defs/hooks"
+        },
+        "recovery": {
+          "$ref": "#/$defs/recovery"
+        },
+        "dependsOn": {
+          "type": "array",
+          "description": "Apps in the same environment that must deploy first.",
+          "items": {
+            "$ref": "#/$defs/workloadName"
+          }
         },
         "service": {
           "$ref": "#/$defs/service"

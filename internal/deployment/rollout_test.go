@@ -75,9 +75,13 @@ func (s *stubCluster) EnsureSecret(_ context.Context, namespace, name string, da
 func (s *stubCluster) EnsureConfigMap(context.Context, string, string, map[string]string) error {
 	return nil
 }
-func (s *stubCluster) EnsurePVC(context.Context, string, string, string, string) error { return nil }
-func (s *stubCluster) DeletePVC(context.Context, string, string) error                 { return nil }
-func (s *stubCluster) Ping(context.Context) error                                      { return nil }
+func (s *stubCluster) EnsurePVC(context.Context, string, string, string, string) error    { return nil }
+func (s *stubCluster) DeletePVC(context.Context, string, string) error                    { return nil }
+func (s *stubCluster) Ping(context.Context) error                                         { return nil }
+func (s *stubCluster) CreateVolumeSnapshot(context.Context, string, string, string) error { return nil }
+func (s *stubCluster) RunJob(context.Context, JobRequest) (*JobResult, error) {
+	panic("unexpected RunJob call")
+}
 
 func TestWaitForRolloutSucceeds(t *testing.T) {
 	c := &stubCluster{status: &WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2}}

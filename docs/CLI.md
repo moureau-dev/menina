@@ -40,8 +40,10 @@ With `--json`, failures are written to stderr as a stable envelope:
 ```
 
 Exit codes: `1` generic, `2` validation, `3` not found, `4` auth, `5` timeout,
-`6` conflict, `7` unsupported. Not every command is classified yet; unwrapped
-errors use the generic code/exit.
+`6` conflict, `7` unsupported. Control-plane failures are classified by HTTP
+status (auth, not found, conflict, validation, unsupported, timeout); apply
+plans and state-token mismatches use `conflict`, and schema incompatibilities use
+`unsupported`. Unwrapped errors use the generic code/exit.
 
 ## Platform
 
@@ -67,7 +69,7 @@ errors use the generic code/exit.
 | `menina registry credential [--regenerate]` | Show or rotate the registry push credential |
 | `menina app status <name> --project P --environment E [--json]` | Last deployment job, release digest and observed phase for an app |
 | `menina job list [--status S] [--limit N] [--json]` | List deployment jobs, newest first |
-| `menina job watch <id> [--json] [--timeout D]` | Stream NDJSON job snapshots until a terminal state |
+| `menina job watch <id> [--cursor N] [--json] [--timeout D]` | Stream NDJSON job events until a terminal state. `--cursor` resumes after the last event ID; the terminal event carries the remote exit code |
 | `menina job list/watch --host` (client) | Proxy job list/watch over SSH |
 | `menina job cancel <id>` | Cancel a pending or processing deployment job |
 | `menina config validate [--json]` | Resolve the whole config tree and validate it without applying (non-zero exit when invalid) |
@@ -77,6 +79,8 @@ errors use the generic code/exit.
 | `menina capabilities [--json]` | Local version, OS/arch, manifest schema version, feature flags and command list |
 | `menina notify list` | Configured deploy webhooks |
 | `menina notify test [--project P] [--event E]` | Send a test deploy notification |
+| `menina notify deliveries [--status S] [--limit N] [--json]` | Delivery history, including failures (dead letters) |
+| `menina notify replay <delivery-id>` | Re-send a stored delivery; retries share an idempotency key per event |
 
 ## Projects
 

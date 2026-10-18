@@ -46,7 +46,7 @@ type DeployWebhook struct {
 
 // DefaultDeployEvents are emitted when a deploy webhook is enabled but does not
 // specify an event list.
-var DefaultDeployEvents = []string{"deploy.succeeded", "deploy.failed", "deploy.rolled_back"}
+var DefaultDeployEvents = []string{"deploy.succeeded", "deploy.failed", "deploy.rolled_back", "deploy.recovery_pending", "deploy.recovery_failed"}
 
 type Host struct {
 	Hostname  string `yaml:"hostname"`
@@ -141,6 +141,9 @@ type Security struct {
 	ControlTokenFile  string   `yaml:"controlTokenFile"`
 	TrustedProxies    []string `yaml:"trustedProxies"`
 	EnforceProdPolicy bool     `yaml:"enforceProdPolicy"`
+	// AllowAppHooks permits manifests to declare pre/post/migration hooks.
+	// Hooks run commands inside the app image and are disabled by default.
+	AllowAppHooks bool `yaml:"allowAppHooks"`
 }
 
 type Defaults struct {

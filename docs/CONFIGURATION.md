@@ -56,6 +56,10 @@ The resolver combines a shared app definition with per-environment overrides:
 | `replicas` | Environment override wins; else the app value; else platform default. Fixed count (`3`) or range (`{min, max, targetCPU}`), realized as an HPA |
 | `env` | Merged; environment keys win |
 | `secrets` | Merged; environment keys win. Values are secret references, never plaintext (see [Secret references](#secret-references)) |
+| `verification` | Environment override replaces the app's verification block |
+| `hooks` | Environment override replaces the app's hooks block |
+| `recovery` | Environment override replaces the app's recovery policy |
+| `dependsOn` | Environment override replaces the app's dependency list |
 
 The resolved configuration is validated as a whole **before any cluster
 change**. If a file is invalid, the last valid resolved snapshot is retained and
@@ -127,6 +131,10 @@ don't set them.
 Menina can POST a generic, provider-agnostic JSON event to an operator-supplied
 receiver whenever something deploys. It does **not** speak Slack/Discord/Sentry
 directly; point it at your own relay, which fans out to whatever you use.
+Payloads carry `version: 1`, the event/action/status, project/environment/app,
+digest/image, release id and pinned config version where available.
+Deliveries are stored with an idempotency key and can be inspected or replayed
+with `menina notify deliveries` / `menina notify replay`.
 
 ```yaml
 # config.yml (platform default)
@@ -220,8 +228,10 @@ reference fails the deploy rather than starting the app with an empty value.
 - `platform`: `dbPath`, `namespace`, `controlSocket`, `eventsListen` (`:9000`),
   `httpListen` (`:80`), `httpsListen` (`:443`), `reconcileInterval`,
   `workers`.
-- `security`: `controlTokenFile`, `trustedProxies`, `enforceProdPolicy` (`true`).
-  `enforceProdPolicy` makes `app deploy`/`app rollback` require `--yes` (and the
-  control plane reject unconfirmed requests) for `production`.
+- `security`: `controlTokenFile`, `trustedProxies`, `enforceProdPolicy` (`true`),
+  `allowAppHooks` (`false`). `enforceProdPolicy` makes `app deploy`/`app
+  rollback` require `--yes` (and the control plane reject unconfirmed requests)
+  for `production`. `allowAppHooks` is required before a manifest may declare
+  `hooks`; hooks run commands in the app image.
 - `defaults`: `namespace`, `imageTagStrategy`, `replicas`, `cpu`, `memory`.
 - `webhooks`: `deploy` (this document).

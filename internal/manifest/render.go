@@ -238,16 +238,20 @@ func (f *File) renderWorkload(name string, w Workload, worker bool, tag, registr
 	}
 
 	app := &config.AppFile{
-		Name:      name,
-		Source:    f.Source,
-		Image:     config.ImageSpec{Repository: repository, Tag: imageTag},
-		Workload:  config.WorkloadSpec{Type: kind, Port: servicePort, Command: base.Command, Args: base.Args},
-		Resources: config.ResourceSpec{},
-		Env:       mergeEnv(nil, base.Env),
-		Secrets:   secrets,
-		Storage:   storage,
-		Replicas:  replicas,
-		Health:    cloneHealth(base.Health),
+		Name:         name,
+		Source:       f.Source,
+		Image:        config.ImageSpec{Repository: repository, Tag: imageTag},
+		Workload:     config.WorkloadSpec{Type: kind, Port: servicePort, Command: base.Command, Args: base.Args},
+		Resources:    config.ResourceSpec{},
+		Env:          mergeEnv(nil, base.Env),
+		Secrets:      secrets,
+		Storage:      storage,
+		Replicas:     replicas,
+		Health:       cloneHealth(base.Health),
+		Verification: cloneVerification(base.Verification),
+		Hooks:        cloneHooks(base.Hooks),
+		Recovery:     cloneRecovery(base.Recovery),
+		DependsOn:    append([]string(nil), base.DependsOn...),
 	}
 	if base.Resources != nil {
 		app.Resources = *base.Resources
@@ -378,6 +382,7 @@ func (f *File) resolveStorage(name string, refs StorageRefs, replicas **config.R
 	ref := refs[0]
 	used := map[string]string{}
 	size, path, access := ref.Size, ref.Path, AccessSingleWriter
+	snapshot := ref.Snapshot
 	if ref.Use != "" {
 		storage, ok := f.Storages[ref.Use]
 		if !ok {
@@ -390,6 +395,7 @@ func (f *File) resolveStorage(name string, refs StorageRefs, replicas **config.R
 			path = storage.Path
 		}
 		access = storage.Access
+		snapshot = snapshot || storage.Snapshot
 		used[ref.Use] = name
 	}
 	if size == "" {
@@ -415,7 +421,7 @@ func (f *File) resolveStorage(name string, refs StorageRefs, replicas **config.R
 	default:
 		return nil, nil, fmt.Errorf("%q: invalid storage access %q (single-writer|multi-writer)", name, access)
 	}
-	return &config.StorageSpec{Enabled: true, Size: size, MountPath: path}, used, nil
+	return &config.StorageSpec{Enabled: true, Size: size, MountPath: path, SnapshotBeforeDeploy: snapshot}, used, nil
 }
 
 func resolvePath(baseDir, path string) string {
@@ -601,6 +607,61 @@ func cloneHealth(in *config.HealthSpec) *config.HealthSpec {
 		return nil
 	}
 	out := *in
+	return &out
+}
+
+func cloneVerification(in *config.VerificationSpec) *config.VerificationSpec {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if in.Enabled != nil {
+		enabled := *in.Enabled
+		out.Enabled = &enabled
+	}
+	if in.ExpectStatus != nil {
+		out.ExpectStatus = append([]int(nil), in.ExpectStatus...)
+	}
+	if in.ExpectHeader != nil {
+		out.ExpectHeader = map[string]string{}
+		for k, v := range in.ExpectHeader {
+			out.ExpectHeader[k] = v
+		}
+	}
+	out.SmokeTest = cloneHook(in.SmokeTest)
+	return &out
+}
+
+func cloneHooks(in *config.HooksSpec) *config.HooksSpec {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.PreDeploy = cloneHook(in.PreDeploy)
+	out.Migrate = cloneHook(in.Migrate)
+	out.PostDeploy = cloneHook(in.PostDeploy)
+	return &out
+}
+
+func cloneHook(in *config.HookSpec) *config.HookSpec {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if in.Command != nil {
+		out.Command = append([]string(nil), in.Command...)
+	}
+	return &out
+}
+
+func cloneRecovery(in *config.RecoverySpec) *config.RecoverySpec {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if in.Triggers != nil {
+		out.Triggers = append([]string(nil), in.Triggers...)
+	}
 	return &out
 }
 

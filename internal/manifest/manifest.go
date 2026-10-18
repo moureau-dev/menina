@@ -56,17 +56,19 @@ type Defaults struct {
 }
 
 type Storage struct {
-	Size   string `yaml:"size"`
-	Path   string `yaml:"path"`
-	Access string `yaml:"access,omitempty"`
+	Size     string `yaml:"size"`
+	Path     string `yaml:"path"`
+	Access   string `yaml:"access,omitempty"`
+	Snapshot bool   `yaml:"snapshotBeforeDeploy,omitempty"`
 }
 
 // StorageRef references a named storage, or declares an inline one when Use is
 // empty.
 type StorageRef struct {
-	Use  string `yaml:"use,omitempty"`
-	Size string `yaml:"size,omitempty"`
-	Path string `yaml:"path,omitempty"`
+	Use      string `yaml:"use,omitempty"`
+	Size     string `yaml:"size,omitempty"`
+	Path     string `yaml:"path,omitempty"`
+	Snapshot bool   `yaml:"snapshotBeforeDeploy,omitempty"`
 }
 
 type StorageRefs []StorageRef
@@ -169,6 +171,14 @@ type Workload struct {
 	Replicas   *config.ReplicasSpec `yaml:"replicas,omitempty"`
 	Resources  *config.ResourceSpec `yaml:"resources,omitempty"`
 	Health     *config.HealthSpec   `yaml:"health,omitempty"`
+	// Verification declares deterministic checks run after rollout.
+	Verification *config.VerificationSpec `yaml:"verification,omitempty"`
+	// Hooks are opt-in one-off commands; the host must allow app hooks.
+	Hooks *config.HooksSpec `yaml:"hooks,omitempty"`
+	// Recovery is the explicit failure policy for this workload.
+	Recovery *config.RecoverySpec `yaml:"recovery,omitempty"`
+	// DependsOn names apps that must deploy first in the same environment.
+	DependsOn []string `yaml:"dependsOn,omitempty"`
 }
 
 var (

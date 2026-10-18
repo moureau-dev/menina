@@ -90,9 +90,13 @@ func (f *fakeCluster) EnsureSecret(context.Context, string, string, map[string][
 func (f *fakeCluster) EnsureConfigMap(context.Context, string, string, map[string]string) error {
 	return nil
 }
-func (f *fakeCluster) EnsurePVC(context.Context, string, string, string, string) error { return nil }
-func (f *fakeCluster) DeletePVC(context.Context, string, string) error                 { return nil }
-func (f *fakeCluster) Ping(context.Context) error                                      { return nil }
+func (f *fakeCluster) EnsurePVC(context.Context, string, string, string, string) error    { return nil }
+func (f *fakeCluster) DeletePVC(context.Context, string, string) error                    { return nil }
+func (f *fakeCluster) Ping(context.Context) error                                         { return nil }
+func (f *fakeCluster) CreateVolumeSnapshot(context.Context, string, string, string) error { return nil }
+func (f *fakeCluster) RunJob(context.Context, deployment.JobRequest) (*deployment.JobResult, error) {
+	panic("unexpected RunJob call")
+}
 
 type stubResolver struct{ digest string }
 

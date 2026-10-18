@@ -178,7 +178,7 @@ func TestRoutesReplaceAndQuery(t *testing.T) {
 func TestHasRelease(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
-	if err := db.RecordRelease(ctx, Release{Project: "p", Environment: "prod", App: "api", Repository: "r/api", Tag: "prod", Digest: "sha256:one", Status: "deployed"}); err != nil {
+	if err := db.RecordRelease(ctx, Release{Project: "p", Environment: "prod", App: "api", Repository: "r/api", Tag: "prod", Digest: "sha256:one", State: "active"}); err != nil {
 		t.Fatal(err)
 	}
 	ok, err := db.HasRelease(ctx, "p", "prod", "api", "sha256:one")
@@ -196,10 +196,10 @@ func TestHasRelease(t *testing.T) {
 func TestReleases(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
-	if err := db.RecordRelease(ctx, Release{Project: "p", Environment: "prod", App: "api", Repository: "r/api", Tag: "prod", Digest: "sha256:one", Status: "deployed"}); err != nil {
+	if err := db.RecordRelease(ctx, Release{Project: "p", Environment: "prod", App: "api", Repository: "r/api", Tag: "prod", Digest: "sha256:one", State: "active"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.RecordRelease(ctx, Release{Project: "p", Environment: "prod", App: "api", Repository: "r/api", Tag: "prod", Digest: "sha256:two", Status: "rolled-back"}); err != nil {
+	if err := db.RecordRelease(ctx, Release{Project: "p", Environment: "prod", App: "api", Repository: "r/api", Tag: "prod", Digest: "sha256:two", State: "rolled_back"}); err != nil {
 		t.Fatal(err)
 	}
 	releases, err := db.Releases(ctx, "p", "prod", "api")

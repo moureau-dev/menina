@@ -75,7 +75,7 @@ func newAppCommand(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment for the action menu")
-	cmd.AddCommand(appCreate(app), appEdit(app), appList(app), appStatus(app), appDeploy(app), appLogs(app), appRollback(app), appDelete(app), appRestore(app), appScale(app), appResetVolume(app))
+	cmd.AddCommand(appCreate(app), appEdit(app), appList(app), appStatus(app), appDeploy(app), appLogs(app), appRollback(app), appDelete(app), appRestore(app), appScale(app), appResetVolume(app), appPromote(app))
 	return cmd
 }
 
@@ -116,7 +116,11 @@ func appStatus(app *App) *cobra.Command {
 				app.Infof("  last job:    (none)")
 			}
 			if rel, ok := resp["latestRelease"].(map[string]any); ok {
-				app.Infof("  release:     %v", rel["Digest"])
+				app.Infof("  release:     %v (%v)", rel["Digest"], rel["State"])
+				app.Infof("  config:      version %v", rel["ConfigVersion"])
+			}
+			if stale, _ := resp["secretStale"].(bool); stale {
+				app.Infof("  secrets:     %v", resp["secretHint"])
 			}
 			if obs, ok := resp["observed"].(map[string]any); ok {
 				app.Infof("  phase:       %v", obs["Status"])
@@ -500,15 +504,22 @@ func appRollback(app *App) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				releases, err := db.Releases(cmd.Context(), project, environment, args[0])
+				latest, ok, err := db.LatestRelease(cmd.Context(), project, environment, args[0])
 				if err != nil {
 					return err
 				}
-				if len(releases) < 2 {
-					return fmt.Errorf("no earlier release to roll back to for %s/%s/%s", project, environment, args[0])
+				if !ok {
+					return fmt.Errorf("no release to roll back from for %s/%s/%s", project, environment, args[0])
 				}
-				digest = releases[1].Digest
-				app.Infof("Rolling back to digest %s (release #%d)", digest, releases[1].ID)
+				previous, ok, err := db.PreviousRelease(cmd.Context(), project, environment, args[0], latest.ID)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return fmt.Errorf("no earlier known-good release to roll back to for %s/%s/%s", project, environment, args[0])
+				}
+				digest = previous.Digest
+				app.Infof("Rolling back to digest %s (release %s)", digest, previous.ID)
 			}
 			client, err := app.Control(cfg)
 			if err != nil {

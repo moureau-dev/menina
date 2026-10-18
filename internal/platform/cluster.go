@@ -190,3 +190,19 @@ func (d *deferredCluster) Ping(ctx context.Context) error {
 	}
 	return c.Ping(ctx)
 }
+
+func (d *deferredCluster) RunJob(ctx context.Context, req deployment.JobRequest) (*deployment.JobResult, error) {
+	c, err := d.get()
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes unavailable: %w", err)
+	}
+	return c.RunJob(ctx, req)
+}
+
+func (d *deferredCluster) CreateVolumeSnapshot(ctx context.Context, namespace, pvcName, snapshotName string) error {
+	c, err := d.get()
+	if err != nil {
+		return fmt.Errorf("kubernetes unavailable: %w", err)
+	}
+	return c.CreateVolumeSnapshot(ctx, namespace, pvcName, snapshotName)
+}

@@ -18,15 +18,24 @@ import (
 // jobView is the subset of a deployment job shown by the CLI. The control plane
 // serialises database.Job with its Go field names.
 type jobView struct {
-	ID          string    `json:"ID"`
-	Kind        string    `json:"Kind"`
-	Project     string    `json:"Project"`
-	Environment string    `json:"Environment"`
-	App         string    `json:"App"`
-	Status      string    `json:"Status"`
-	Attempts    int       `json:"Attempts"`
-	LastError   string    `json:"LastError"`
-	UpdatedAt   time.Time `json:"UpdatedAt"`
+	ID            string    `json:"ID"`
+	Kind          string    `json:"Kind"`
+	Project       string    `json:"Project"`
+	Environment   string    `json:"Environment"`
+	App           string    `json:"App"`
+	Status        string    `json:"Status"`
+	Attempts      int       `json:"Attempts"`
+	LastError     string    `json:"LastError"`
+	ConfigVersion int64     `json:"ConfigVersion"`
+	ReleaseID     string    `json:"ReleaseID"`
+	ExitCode      int       `json:"ExitCode"`
+	UpdatedAt     time.Time `json:"UpdatedAt"`
+}
+
+type jobStreamEvent struct {
+	EventID  int64   `json:"eventId"`
+	Terminal bool    `json:"terminal"`
+	Job      jobView `json:"job"`
 }
 
 func newJobCommand(app *App) *cobra.Command {
@@ -134,12 +143,15 @@ func jobCancel(app *App) *cobra.Command {
 
 func jobWatch(app *App) *cobra.Command {
 	var timeout time.Duration
+	var cursor int64
 	cmd := &cobra.Command{
 		Use:   "watch <id>",
 		Short: "Stream a deployment job until it reaches a terminal state",
-		Long: "Reads NDJSON job snapshots from the control plane. With --json, each line\n" +
-			"is emitted as a standalone JSON object. Timeouts use the timeout error class.",
-		Example: "  menina job watch <id>\n  menina job watch <id> --json --timeout 10m",
+		Long: "Reads NDJSON job events from the control plane. --cursor resumes after\n" +
+			"the last event ID (for example after an SSH drop). The final event carries\n" +
+			"terminal=true and the remote exit code. With --json each event is emitted\n" +
+			"as a standalone JSON object.",
+		Example: "  menina job watch <id>\n  menina job watch <id> --json --timeout 10m\n  menina job watch <id> --cursor 42",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := app.LoadConfig()
@@ -152,7 +164,11 @@ func jobWatch(app *App) *cobra.Command {
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
-			body, err := client.GetStream(ctx, "/jobs/watch?id="+url.QueryEscape(args[0]))
+			watchPath := "/jobs/watch?id=" + url.QueryEscape(args[0])
+			if cursor > 0 {
+				watchPath += fmt.Sprintf("&cursor=%d", cursor)
+			}
+			body, err := client.GetStream(ctx, watchPath)
 			if err != nil {
 				if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
 					return clierr.Wrap(clierr.CodeNotFound, err)
@@ -169,29 +185,36 @@ func jobWatch(app *App) *cobra.Command {
 				if len(line) == 0 {
 					continue
 				}
-				var job jobView
-				if err := json.Unmarshal(line, &job); err != nil {
+				var event jobStreamEvent
+				if err := json.Unmarshal(line, &event); err != nil {
 					continue
 				}
+				job := event.Job
 				if app.Opts.JSON {
-					if err := enc.Encode(job); err != nil {
+					if err := enc.Encode(event); err != nil {
 						return err
 					}
 				} else if job.Status != lastStatus || job.LastError != "" {
-					app.Infof("%s %s", job.ID, job.Status)
+					app.Infof("%s %s (event %d, config v%d)", job.ID, job.Status, event.EventID, job.ConfigVersion)
+					if job.ReleaseID != "" {
+						app.Infof("  release: %s", job.ReleaseID)
+					}
 					if job.LastError != "" {
 						app.Infof("  error: %s", job.LastError)
 					}
 				}
 				lastStatus = job.Status
+				if !event.Terminal {
+					continue
+				}
 				switch job.Status {
 				case "done":
 					return nil
 				case "failed", "cancelled", "superseded":
 					if job.LastError != "" {
-						return fmt.Errorf("job %s %s: %s", job.ID, job.Status, job.LastError)
+						return fmt.Errorf("job %s %s (exit %d): %s", job.ID, job.Status, job.ExitCode, job.LastError)
 					}
-					return fmt.Errorf("job %s %s", job.ID, job.Status)
+					return fmt.Errorf("job %s %s (exit %d)", job.ID, job.Status, job.ExitCode)
 				}
 			}
 			if err := scanner.Err(); err != nil {
@@ -204,5 +227,6 @@ func jobWatch(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "how long to watch before failing")
+	cmd.Flags().Int64Var(&cursor, "cursor", 0, "resume after this event ID")
 	return cmd
 }

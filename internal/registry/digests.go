@@ -44,33 +44,29 @@ func NewClient(baseURL, username, password string, insecure bool) *Client {
 	}
 }
 
-// Handles reports whether repository is hosted by this (bundled) registry. A
-// repository without an explicit host (e.g. "project/app") is assumed bundled;
-// one whose host differs (e.g. "docker.io/library/redis") is not.
+// Handles reports whether repository is hosted by this (bundled) registry.
+// A repository reference is bundled only when its first path component matches
+// the configured registry host. Names such as `traefik/whoami` or
+// `library/redis` are Docker Hub repositories, not bundled namespaces.
 func (c *Client) Handles(repository string) bool {
 	repo := strings.TrimPrefix(strings.TrimSpace(repository), "/")
 	slash := strings.IndexByte(repo, '/')
-	if slash < 0 {
-		// A bare name such as "redis" (from image: redis:alpine) is an external
-		// Docker Hub image, not a bundled registry repository. Assuming it was
-		// bundled made digest resolution request /v2/redis/manifests/alpine
-		// from Zot and fail with 404.
+	if slash < 0 || c.BaseURL == "" {
 		return false
 	}
 	host := repo[:slash]
-	if !strings.ContainsAny(host, ".:") {
-		return true // first segment is a namespace, not a registry host
+	u, err := neturl.Parse(c.BaseURL)
+	if err != nil || u.Host == "" {
+		return false
 	}
-	if c.BaseURL != "" {
-		hostOnly := host
-		if i := strings.LastIndex(host, ":"); i >= 0 {
-			hostOnly = host[:i]
-		}
-		if u, err := neturl.Parse(c.BaseURL); err == nil && (u.Host == host || u.Hostname() == hostOnly) {
-			return true
-		}
+	if host == u.Host {
+		return true
 	}
-	return false
+	hostOnly := host
+	if i := strings.LastIndex(hostOnly, ":"); i >= 0 {
+		hostOnly = hostOnly[:i]
+	}
+	return hostOnly == u.Hostname()
 }
 
 // BundledResolver resolves tags only for images in the bundled registry. Images

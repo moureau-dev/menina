@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/moureau-dev/menina/internal/config"
@@ -123,6 +124,8 @@ func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Servic
 	}
 	svc.jobs = NewJobs(db, engine, cluster, snapFn, cfg.Registry.Domain, log)
 	svc.jobs.SetSender(svc.sender)
+	svc.jobs.SetTLS(cfg.TLS.Terminate)
+	svc.jobs.SetAllowHooks(cfg.Security.AllowAppHooks)
 	svc.reconciler = NewReconciler(db, cluster, engine, snapFn, cfg, log)
 	svc.reconciler.OnPublish(svc.bus.publish)
 	if cfg.Registry.Enabled {
@@ -150,6 +153,8 @@ func (s *Service) SetDigestResolver(r deployment.DigestResolver) {
 		return nil
 	}, s.cfg.Registry.Domain, s.log)
 	s.jobs.SetSender(s.sender)
+	s.jobs.SetTLS(s.cfg.TLS.Terminate)
+	s.jobs.SetAllowHooks(s.cfg.Security.AllowAppHooks)
 	s.reconciler = NewReconciler(s.db, s.cluster, s.engine, func() *config.ResolvedConfig {
 		if snap := s.watcher.Snapshot(); snap != nil {
 			return snap.Resolved
@@ -202,13 +207,14 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 		s.reconciler.ReconcileWorkloads(ctx, snap.Resolved)
 	}
+	s.sweepInterrupted(ctx)
+	go s.runInterruptedSweep(ctx)
 
-	if s.cfg.Registry.Notifications.Enabled {
-		if err := s.startEventsServer(ctx); err != nil {
-			return err
-		}
-	} else {
-		s.log.Info("registry notifications are disabled; event listener not started")
+	if err := s.startEventsServer(ctx); err != nil {
+		return err
+	}
+	if !s.cfg.Registry.Notifications.Enabled {
+		s.log.Info("registry notifications are disabled; /v2/events will return 503")
 	}
 	s.jobs.RunWorkers(ctx, s.cfg.Platform.Workers)
 	go s.reconciler.Run(ctx, s.cfg.Platform.ReconcileInterval)
@@ -244,18 +250,69 @@ func (s *Service) startEventsServer(ctx context.Context) error {
 
 func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	fmt.Fprintf(w, "# HELP menina_up Control plane liveness\n# TYPE menina_up gauge\nmenina_up 1\n")
 	fmt.Fprintf(w, "# HELP menina_snapshot_version Current routing snapshot version\n# TYPE menina_snapshot_version gauge\nmenina_snapshot_version %d\n", s.bus.snapshotVersion())
 	fmt.Fprintf(w, "# HELP menina_routes Number of configured proxy routes\n# TYPE menina_routes gauge\nmenina_routes %d\n", s.bus.snapshotRoutes())
+	snapshotOK := 0
+	if s.bus.snapshot() != nil {
+		snapshotOK = 1
+	}
+	fmt.Fprintf(w, "# HELP menina_proxy_snapshot_ready Whether a routing snapshot has been published\n# TYPE menina_proxy_snapshot_ready gauge\nmenina_proxy_snapshot_ready %d\n", snapshotOK)
+
 	if counts, err := s.db.CountJobsByStatus(r.Context()); err == nil {
 		fmt.Fprintf(w, "# HELP menina_jobs Deployment jobs by status\n# TYPE menina_jobs gauge\n")
 		statuses := make([]string, 0, len(counts))
+		queue := 0
 		for status := range counts {
 			statuses = append(statuses, status)
+			if status == database.JobStatusPending || status == database.JobStatusProcessing {
+				queue += counts[status]
+			}
 		}
 		sort.Strings(statuses)
 		for _, status := range statuses {
 			fmt.Fprintf(w, "menina_jobs{status=%q} %d\n", status, counts[status])
 		}
+		fmt.Fprintf(w, "# HELP menina_queue_depth Pending plus processing deployment jobs\n# TYPE menina_queue_depth gauge\nmenina_queue_depth %d\n", queue)
+	}
+
+	if stats, err := s.db.ReleaseStats(r.Context()); err == nil {
+		fmt.Fprintf(w, "# HELP menina_releases Releases by state\n# TYPE menina_releases gauge\n")
+		success, failure := 0, 0
+		sum, count := 0.0, 0
+		for _, stat := range stats {
+			fmt.Fprintf(w, "menina_releases{state=%q} %d\n", stat.State, stat.Count)
+			switch stat.State {
+			case "active", "rolled_back":
+				success += stat.Count
+			case "failed":
+				failure += stat.Count
+			}
+			sum += stat.SumSeconds
+			count += stat.FinishedCount
+		}
+		fmt.Fprintf(w, "# HELP menina_deploy_success_total Releases that reached active or rolled_back\n# TYPE menina_deploy_success_total counter\nmenina_deploy_success_total %d\n", success)
+		fmt.Fprintf(w, "# HELP menina_deploy_failure_total Releases that failed\n# TYPE menina_deploy_failure_total counter\nmenina_deploy_failure_total %d\n", failure)
+		fmt.Fprintf(w, "# HELP menina_deploy_duration_seconds_sum Sum of release durations\n# TYPE menina_deploy_duration_seconds_sum counter\nmenina_deploy_duration_seconds_sum %f\n", sum)
+		fmt.Fprintf(w, "# HELP menina_deploy_duration_seconds_count Number of releases with a duration\n# TYPE menina_deploy_duration_seconds_count counter\nmenina_deploy_duration_seconds_count %d\n", count)
+	}
+
+	if observed, err := s.db.Observed(r.Context()); err == nil {
+		fmt.Fprintf(w, "# HELP menina_app_ready_replicas Ready replicas per app\n# TYPE menina_app_ready_replicas gauge\n")
+		fmt.Fprintf(w, "# HELP menina_app_desired_replicas Desired replicas per app\n# TYPE menina_app_desired_replicas gauge\n")
+		for _, o := range observed {
+			labels := fmt.Sprintf("project=%q,environment=%q,app=%q", o.Project, o.Environment, o.App)
+			fmt.Fprintf(w, "menina_app_ready_replicas{%s} %d\n", labels, o.ReadyReplicas)
+			fmt.Fprintf(w, "menina_app_desired_replicas{%s} %d\n", labels, o.Replicas)
+		}
+	}
+
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(s.cfg.Host.DataDir, &stat); err == nil {
+		total := stat.Blocks * uint64(stat.Bsize)
+		avail := stat.Bavail * uint64(stat.Bsize)
+		fmt.Fprintf(w, "# HELP menina_node_disk_total_bytes Node data-dir filesystem size (also hosts the bundled registry)\n# TYPE menina_node_disk_total_bytes gauge\nmenina_node_disk_total_bytes %d\n", total)
+		fmt.Fprintf(w, "# HELP menina_node_disk_available_bytes Node data-dir filesystem free space\n# TYPE menina_node_disk_available_bytes gauge\nmenina_node_disk_available_bytes %d\n", avail)
 	}
 }
 
@@ -334,6 +391,10 @@ func (s *Service) controlMux() http.Handler {
 	mux.HandleFunc("/jobs/watch", s.handleJobWatch)
 	mux.HandleFunc("/deploy", s.handleDeploy)
 	mux.HandleFunc("/rollback", s.handleRollback)
+	mux.HandleFunc("/release", s.handleRelease)
+	mux.HandleFunc("/promote", s.handlePromote)
+	mux.HandleFunc("/webhook-deliveries", s.handleWebhookDeliveries)
+	mux.HandleFunc("/webhook-replay", s.handleWebhookReplay)
 	return mux
 }
 
@@ -374,32 +435,75 @@ func (s *Service) handleJobWatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "job not found", http.StatusNotFound)
 		return
 	}
+	cursor, _ := strconv.ParseInt(r.URL.Query().Get("cursor"), 10, 64)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
-	last := ""
+
+	writeEvent := func(eventID int64, terminal bool) bool {
+		job, ok, err := s.db.JobByID(r.Context(), id)
+		if err != nil || !ok {
+			return false
+		}
+		data, err := json.Marshal(map[string]any{
+			"eventId":  eventID,
+			"terminal": terminal,
+			"job":      job,
+		})
+		if err != nil {
+			return false
+		}
+		if _, err := w.Write(append(data, '\n')); err != nil {
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
+
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	sentLegacy := false
 	for {
-		job, ok, err := s.db.JobByID(r.Context(), id)
+		events, err := s.db.JobEventsAfter(r.Context(), id, cursor)
 		if err != nil {
 			return
 		}
-		if !ok {
-			return
+		if len(events) == 0 {
+			job, ok, err := s.db.JobByID(r.Context(), id)
+			if err != nil || !ok {
+				return
+			}
+			terminal := isTerminalJobStatus(job.Status)
+			if cursor == 0 && !sentLegacy {
+				// Jobs created before job events existed still stream their
+				// current state once, so a first watch is never silently empty.
+				sentLegacy = true
+				if !writeEvent(0, terminal) {
+					return
+				}
+			} else if terminal {
+				// Resuming at or past the last event of a finished job must not
+				// wait forever for another event.
+				if !writeEvent(cursor, true) {
+					return
+				}
+			}
+			if terminal && len(events) == 0 && (cursor > 0 || sentLegacy) {
+				return
+			}
 		}
-		data, err := json.Marshal(job)
-		if err == nil && string(data) != last {
-			last = string(data)
-			_, _ = w.Write(append(data, '\n'))
-			flusher.Flush()
-		}
-		switch job.Status {
-		case "done", "failed", "cancelled", "superseded":
-			return
+		for _, event := range events {
+			cursor = event.ID
+			terminal := isTerminalJobStatus(event.Status)
+			if !writeEvent(event.ID, terminal) {
+				return
+			}
+			if terminal {
+				return
+			}
 		}
 		select {
 		case <-r.Context().Done():
@@ -407,6 +511,14 @@ func (s *Service) handleJobWatch(w http.ResponseWriter, r *http.Request) {
 		case <-ticker.C:
 		}
 	}
+}
+
+func isTerminalJobStatus(status string) bool {
+	switch status {
+	case "done", "failed", "cancelled", "superseded":
+		return true
+	}
+	return false
 }
 
 func (s *Service) handleJobCancel(w http.ResponseWriter, r *http.Request) {
@@ -537,7 +649,7 @@ func (s *Service) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		Registry:   s.cfg.Registry.Domain,
 		Repository: app.Repository,
 		Tag:        app.Tag,
-	}, []database.Job{{
+	}, []database.Job{PinJob(database.Job{
 		DedupKey:    dedup,
 		Kind:        "manual",
 		Project:     req.Project,
@@ -545,7 +657,7 @@ func (s *Service) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		App:         req.App,
 		Repository:  app.Repository,
 		Tag:         app.Tag,
-	}})
+	}, app, snap.Version, "manual", "cli")})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -597,7 +709,7 @@ func (s *Service) handleRollback(w http.ResponseWriter, r *http.Request) {
 		Registry:   s.cfg.Registry.Domain,
 		Repository: app.Repository,
 		Digest:     req.Digest,
-	}, []database.Job{{
+	}, []database.Job{PinJob(database.Job{
 		DedupKey:      dedup,
 		Kind:          "rollback",
 		Project:       req.Project,
@@ -606,7 +718,7 @@ func (s *Service) handleRollback(w http.ResponseWriter, r *http.Request) {
 		Repository:    app.Repository,
 		Tag:           app.Tag,
 		DesiredDigest: req.Digest,
-	}})
+	}, app, snap.Version, "rollback", "cli")})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -640,6 +752,15 @@ func (s *Service) handleJobStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if releases, err := s.db.Releases(r.Context(), project, environment, app); err == nil && len(releases) > 0 {
 		resp["latestRelease"] = releases[0]
+		resp["release"] = releases[0]
+		if snap := s.watcher.Snapshot(); snap != nil && snap.Resolved != nil {
+			if ra, err := snap.Resolved.FindApp(project, environment, app); err == nil {
+				if stale, hint := s.secretStale(r, ra); stale {
+					resp["secretStale"] = true
+					resp["secretHint"] = hint
+				}
+			}
+		}
 	}
 	if observed, err := s.db.Observed(r.Context()); err == nil {
 		for _, o := range observed {
@@ -687,4 +808,70 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (s *Service) handleWebhookDeliveries(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	deliveries, err := s.db.WebhookDeliveries(r.Context(), q.Get("status"), limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deliveries": deliveries})
+}
+
+func (s *Service) handleWebhookReplay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.ID == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	id, err := s.jobs.ReplayWebhook(r.Context(), req.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"replayed": true, "id": id})
+}
+
+// sweepInterrupted marks releases left by a crashed control plane as failed and
+// applies the interrupted recovery trigger.
+func (s *Service) sweepInterrupted(ctx context.Context) {
+	interrupted, err := s.db.InterruptedReleases(ctx, 30*time.Minute)
+	if err != nil {
+		s.log.Warn("could not read interrupted releases", "error", err)
+		return
+	}
+	for _, rel := range interrupted {
+		rel := rel
+		go s.jobs.HandleInterruptedRelease(ctx, rel)
+	}
+}
+
+func (s *Service) runInterruptedSweep(ctx context.Context) {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.sweepInterrupted(ctx)
+		}
+	}
 }

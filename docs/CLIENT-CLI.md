@@ -192,6 +192,10 @@ Each workload accepts:
 - `replicas` — a number or `{ min, max, targetCPU }`
 - `resources` — `{ cpu, memory }`
 - `health` — `{ readiness: /path }` (services only)
+- `verification` — declarative checks after rollout (see below)
+- `hooks` — opt-in pre-deploy/migrate/post-deploy one-off commands
+- `recovery` — explicit failure policy for the app
+- `dependsOn` — apps in the same environment that must be ready first
 
 `port` and `host` are still accepted as legacy shorthands for
 `service.port` and `exposure.http.hosts`; new manifests should use the nested
@@ -287,6 +291,93 @@ different args is rejected.
 - One storage per workload; sharing a named storage between workloads is
   rejected. After translation the volume is still one PVC per app.
 - Unused storages produce a warning.
+
+### Verification
+
+Verification is separate from reachability. After a rollout, Menina runs the
+declared checks and only marks the release `active` when they pass:
+
+```yaml
+apps:
+  api:
+    verification:
+      path: /healthz
+      method: GET
+      expectStatus: [200]
+      expectBody: '"status":"ok"'
+      expectHeader: { Content-Type: application/json }
+      timeout: 10s
+      smokeTest:
+        command: ["/app/check"]
+        timeout: 2m
+      failurePolicy: recover      # recover | keep
+```
+
+- `path` is checked through the app's public HTTP route and requires HTTP
+  exposure.
+- `smokeTest` runs as a one-off Job in the app image and exits non-zero on
+  failure.
+- `failurePolicy: recover` hands the failure to the app's `recovery` policy;
+  `keep` leaves the failed release for inspection without restoring.
+- A verification failure is deterministic and is not retried.
+
+### Hooks and recovery
+
+Hooks are disabled unless the host sets `security.allowAppHooks: true`. They are
+opt-in, timeout-bounded, logged, and run in the app image that is being released:
+
+```yaml
+apps:
+  api:
+    hooks:
+      preDeploy:  { command: ["/app/preflight"], timeout: 2m }
+      migrate:    { command: ["/app/migrate"],   timeout: 5m }
+      postDeploy: { command: ["/app/warmup"],    timeout: 2m }
+    recovery:
+      policy: require-approval   # previous | none | require-approval
+      triggers: [deploy-error, verification-failure, timeout, interrupted]
+```
+
+- `previous` restores the previous known-good app image after a qualifying
+  terminal failure.
+- `none` keeps the failed release for inspection.
+- `require-approval` records a `deploy.recovery_pending` event and waits. An
+  operator approves it with `menina app rollback <app> --project P --environment E --yes`,
+  which restores the previous known-good digest.
+- An image rollback never reverses a migration. Apps that declare `migrate`
+  default to `require-approval` instead of `none`.
+- Recovery is per app; it is not a project-wide transaction.
+- After a rollback or recovery, reconciliation pauses for that app so it cannot
+  immediately redeploy the failed target. A new push or explicit `app deploy`
+  creates a newer release and resumes normal reconciliation.
+
+### Dependency ordering
+
+`dependsOn` is a short, explicit list. Menina waits (bounded) for those apps to
+be ready before applying this app and reconciles dependencies first. It does not
+build a general orchestration DAG:
+
+```yaml
+apps:
+  api: { dependsOn: [database] }
+workers:
+  jobs: { from: api, dependsOn: [api] }
+```
+
+### Volume snapshots
+
+Set `snapshotBeforeDeploy: true` on a storage to request a CSI `VolumeSnapshot`
+before a release changes the workload. This is opt-in and fails explicitly when
+the storage class has no snapshot support. Snapshots are not a substitute for
+scheduled backups.
+
+```yaml
+storages:
+  pgdata:
+    size: 10Gi
+    path: /var/lib/postgresql/data
+    snapshotBeforeDeploy: true
+```
 
 ### Secrets
 
@@ -461,6 +552,9 @@ triggers auto-deploy for enabled apps that were already applied.
 
 ### `job`
 
+`job watch <id> [--cursor N]` resumes after the last event ID, for example after
+an SSH drop. The final event carries `terminal: true` and the remote exit code.
+
 ```bash
 menina job list --host root@vps
 menina job watch <id> --host root@vps --json --timeout 10m
@@ -599,12 +693,13 @@ Constraints:
 
 ## Limitations
 
-- No git-diff selection (`--filter` is explicit), no automatic rollback, and no
-  multi-node/HA support. Prune requires a reviewed `--from-plan`; ownership is a
-  hint, not authorization.
+- No git-diff selection (`--filter` is explicit) and no multi-node/HA support.
+  Recovery is an explicit host-side per-app policy, not a client default. Prune
+  requires a reviewed `--from-plan`; ownership is a hint, not authorization.
 - One storage per workload; named volumes cannot be shared across workloads;
   multi-writer/RWX is not configured by Menina.
-- No compose semantics: no `depends_on`, no automatic database provisioning, no
-  networks. Services reach each other by Kubernetes Service name.
+- No compose semantics: `dependsOn` is only an explicit readiness ordering, not
+  automatic provisioning or networking. Services reach each other by Kubernetes
+  Service name.
 - No build on the host: `apply` is config-only; `build`/`push` use the local
   Docker daemon (or plain CI).

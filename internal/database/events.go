@@ -20,21 +20,33 @@ type Event struct {
 	ProcessedAt time.Time
 }
 
+// Job is a queued deployment action. Configuration fields are pinned when the
+// job is created so a slow job cannot deploy configuration written after it was
+// queued.
 type Job struct {
-	ID            string
-	DedupKey      string
-	Kind          string
-	Project       string
-	Environment   string
-	App           string
-	Repository    string
-	Tag           string
-	DesiredDigest string
-	Status        string
-	Attempts      int
-	LastError     string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID             string
+	DedupKey       string
+	Kind           string
+	Project        string
+	Environment    string
+	App            string
+	Repository     string
+	Tag            string
+	DesiredDigest  string
+	Status         string
+	Attempts       int
+	LastError      string
+	ConfigVersion  int64
+	ConfigSnapshot string `json:"-"`
+	ConfigHash     string
+	ReleaseID      string
+	Actor          string
+	Source         string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	StartedAt      time.Time
+	FinishedAt     time.Time
+	ExitCode       int
 }
 
 const (
@@ -47,6 +59,11 @@ const (
 )
 
 const maxJobAttempts = 10
+
+const jobSelect = `SELECT id, dedup_key, kind, project, environment, app, repository, tag,
+	desired_digest, status, attempts, last_error, config_version, config_snapshot,
+	config_hash, release_id, actor, source, created_at, updated_at, started_at,
+	finished_at, exit_code FROM jobs`
 
 func (db *DB) IngestRegistryEvent(ctx context.Context, e *Event, jobs []Job) (bool, error) {
 	tx, err := db.BeginTx(ctx, nil)
@@ -69,10 +86,12 @@ func (db *DB) IngestRegistryEvent(ctx context.Context, e *Event, jobs []Job) (bo
 	for i := range jobs {
 		j := &jobs[i]
 		if _, err := tx.ExecContext(ctx, `INSERT INTO jobs
-			(dedup_key, kind, project, environment, app, repository, tag, desired_digest, status)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+			(dedup_key, kind, project, environment, app, repository, tag, desired_digest, status,
+			 config_version, config_snapshot, config_hash, actor, source)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
 			ON CONFLICT(dedup_key) DO NOTHING`,
-			j.DedupKey, j.Kind, j.Project, j.Environment, j.App, j.Repository, j.Tag, j.DesiredDigest); err != nil {
+			j.DedupKey, j.Kind, j.Project, j.Environment, j.App, j.Repository, j.Tag, j.DesiredDigest,
+			j.ConfigVersion, j.ConfigSnapshot, j.ConfigHash, j.Actor, j.Source); err != nil {
 			return false, fmt.Errorf("insert job: %w", err)
 		}
 	}
@@ -107,8 +126,8 @@ func (db *DB) PendingEvents(ctx context.Context, limit int) ([]Event, error) {
 }
 
 func (db *DB) PendingJobs(ctx context.Context, limit int) ([]Job, error) {
-	rows, err := db.QueryContext(ctx, `SELECT id, dedup_key, kind, project, environment, app, repository, tag, desired_digest, status, attempts, last_error, created_at, updated_at
-		FROM jobs WHERE status = ? AND next_attempt_at <= unixepoch() AND `+activeWhere+` ORDER BY created_at ASC LIMIT ?`, JobStatusPending, limit)
+	rows, err := db.QueryContext(ctx, jobSelect+`
+		WHERE status = ? AND next_attempt_at <= unixepoch() AND `+activeWhere+` ORDER BY created_at ASC LIMIT ?`, JobStatusPending, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -117,8 +136,8 @@ func (db *DB) PendingJobs(ctx context.Context, limit int) ([]Job, error) {
 }
 
 func (db *DB) JobsByStatus(ctx context.Context, status string) ([]Job, error) {
-	rows, err := db.QueryContext(ctx, `SELECT id, dedup_key, kind, project, environment, app, repository, tag, desired_digest, status, attempts, last_error, created_at, updated_at
-		FROM jobs WHERE status = ? AND `+activeWhere+` ORDER BY created_at ASC`, status)
+	rows, err := db.QueryContext(ctx, jobSelect+`
+		WHERE status = ? AND `+activeWhere+` ORDER BY created_at ASC`, status)
 	if err != nil {
 		return nil, err
 	}
@@ -132,8 +151,7 @@ func (db *DB) ListJobs(ctx context.Context, status string, limit int) ([]Job, er
 	if limit <= 0 {
 		limit = 100
 	}
-	query := `SELECT id, dedup_key, kind, project, environment, app, repository, tag, desired_digest, status, attempts, last_error, created_at, updated_at
-		FROM jobs WHERE ` + activeWhere
+	query := jobSelect + ` WHERE ` + activeWhere
 	args := []any{}
 	if status != "" {
 		query += ` AND status = ?`
@@ -152,19 +170,22 @@ func (db *DB) ListJobs(ctx context.Context, status string, limit int) ([]Job, er
 // CancelJob marks a pending or processing job as cancelled. It returns false
 // when the job is not in a cancellable state (or does not exist).
 func (db *DB) CancelJob(ctx context.Context, id string) (bool, error) {
-	res, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, updated_at = unixepoch()
+	res, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, updated_at = unixepoch(), finished_at = unixepoch()
 		WHERE id = ? AND status IN (?, ?)`,
 		JobStatusCancelled, id, JobStatusPending, JobStatusProcessing)
 	if err != nil {
 		return false, err
 	}
 	n, _ := res.RowsAffected()
+	if n > 0 {
+		db.recordJobEvent(ctx, id)
+	}
 	return n > 0, nil
 }
 
 func (db *DB) LatestJobByTarget(ctx context.Context, project, environment, app string) (Job, bool, error) {
-	rows, err := db.QueryContext(ctx, `SELECT id, dedup_key, kind, project, environment, app, repository, tag, desired_digest, status, attempts, last_error, created_at, updated_at
-		FROM jobs WHERE project = ? AND environment = ? AND app = ? AND `+activeWhere+` ORDER BY created_at DESC LIMIT 1`,
+	rows, err := db.QueryContext(ctx, jobSelect+`
+		WHERE project = ? AND environment = ? AND app = ? AND `+activeWhere+` ORDER BY created_at DESC LIMIT 1`,
 		project, environment, app)
 	if err != nil {
 		return Job{}, false, err
@@ -178,8 +199,7 @@ func (db *DB) LatestJobByTarget(ctx context.Context, project, environment, app s
 }
 
 func (db *DB) JobByID(ctx context.Context, id string) (Job, bool, error) {
-	rows, err := db.QueryContext(ctx, `SELECT id, dedup_key, kind, project, environment, app, repository, tag, desired_digest, status, attempts, last_error, created_at, updated_at
-		FROM jobs WHERE id = ? AND `+activeWhere, id)
+	rows, err := db.QueryContext(ctx, jobSelect+` WHERE id = ? AND `+activeWhere, id)
 	if err != nil {
 		return Job{}, false, err
 	}
@@ -204,18 +224,35 @@ func (db *DB) JobIDByDedupKey(ctx context.Context, dedup string) (string, bool, 
 }
 
 func (db *DB) ClaimJob(ctx context.Context, id string) (bool, error) {
-	res, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, updated_at = unixepoch() WHERE id = ? AND status = ?`,
+	res, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, updated_at = unixepoch(), started_at = unixepoch() WHERE id = ? AND status = ?`,
 		JobStatusProcessing, id, JobStatusPending)
 	if err != nil {
 		return false, err
 	}
 	n, _ := res.RowsAffected()
+	if n > 0 {
+		db.recordJobEvent(ctx, id)
+	}
 	return n > 0, nil
 }
 
 func (db *DB) CompleteJob(ctx context.Context, id string, digest string) error {
-	_, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, desired_digest = ?, updated_at = unixepoch() WHERE id = ?`,
-		JobStatusDone, digest, id)
+	res, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, desired_digest = ?, updated_at = unixepoch(), finished_at = unixepoch(), exit_code = 0 WHERE id = ? AND status = ?`,
+		JobStatusDone, digest, id, JobStatusProcessing)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// The job was cancelled while it was running; keep the cancellation.
+		return nil
+	}
+	db.recordJobEvent(ctx, id)
+	return nil
+}
+
+// SetJobRelease links a job to the release it is driving.
+func (db *DB) SetJobRelease(ctx context.Context, id, releaseID string) error {
+	_, err := db.ExecContext(ctx, `UPDATE jobs SET release_id = ?, updated_at = unixepoch() WHERE id = ?`, releaseID, id)
 	return err
 }
 
@@ -228,13 +265,41 @@ func (db *DB) FailJob(ctx context.Context, id string, errmsg string) (bool, erro
 	}
 	next := attempts + 1
 	if next >= maxJobAttempts {
-		_, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, attempts = ?, last_error = ?, updated_at = unixepoch() WHERE id = ?`,
-			JobStatusFailed, next, errmsg, id)
-		return true, err
+		res, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, attempts = ?, last_error = ?, updated_at = unixepoch(), finished_at = unixepoch(), exit_code = 1 WHERE id = ? AND status = ?`,
+			JobStatusFailed, next, errmsg, id, JobStatusProcessing)
+		if err != nil {
+			return false, err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return false, nil
+		}
+		db.recordJobEvent(ctx, id)
+		return true, nil
 	}
-	_, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, attempts = ?, last_error = ?, next_attempt_at = unixepoch() + ?, updated_at = unixepoch() WHERE id = ?`,
-		JobStatusPending, next, errmsg, jobBackoffSeconds(next), id)
-	return false, err
+	res, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, attempts = ?, last_error = ?, next_attempt_at = unixepoch() + ?, updated_at = unixepoch() WHERE id = ? AND status = ?`,
+		JobStatusPending, next, errmsg, jobBackoffSeconds(next), id, JobStatusProcessing)
+	if err != nil {
+		return false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false, nil
+	}
+	db.recordJobEvent(ctx, id)
+	return false, nil
+}
+
+// FailJobTerminal marks a job failed without retrying. It is used when retrying
+// cannot help, for example a deterministic verification failure.
+func (db *DB) FailJobTerminal(ctx context.Context, id string, errmsg string) error {
+	res, err := db.ExecContext(ctx, `UPDATE jobs SET status = ?, attempts = attempts + 1, last_error = ?, updated_at = unixepoch(), finished_at = unixepoch(), exit_code = 1 WHERE id = ? AND status = ?`,
+		JobStatusFailed, errmsg, id, JobStatusProcessing)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		db.recordJobEvent(ctx, id)
+	}
+	return nil
 }
 
 func jobBackoffSeconds(attempt int) int {
@@ -261,7 +326,7 @@ func (db *DB) RequeueProcessingJobs(ctx context.Context) (int64, error) {
 }
 
 func (db *DB) SupersedePendingJobs(ctx context.Context, project, environment, app, keepID string) error {
-	_, err := db.ExecContext(ctx, `UPDATE jobs SET status = 'superseded', updated_at = unixepoch()
+	_, err := db.ExecContext(ctx, `UPDATE jobs SET status = 'superseded', updated_at = unixepoch(), finished_at = unixepoch()
 		WHERE project = ? AND environment = ? AND app = ? AND status = ? AND id != ?`,
 		project, environment, app, JobStatusPending, keepID)
 	return err
@@ -290,12 +355,69 @@ func scanJobs(rows *sql.Rows) ([]Job, error) {
 	for rows.Next() {
 		var j Job
 		var created, updated int64
-		if err := rows.Scan(&j.ID, &j.DedupKey, &j.Kind, &j.Project, &j.Environment, &j.App, &j.Repository, &j.Tag, &j.DesiredDigest, &j.Status, &j.Attempts, &j.LastError, &created, &updated); err != nil {
+		var started, finished sql.NullInt64
+		var exit sql.NullInt64
+		if err := rows.Scan(&j.ID, &j.DedupKey, &j.Kind, &j.Project, &j.Environment, &j.App,
+			&j.Repository, &j.Tag, &j.DesiredDigest, &j.Status, &j.Attempts, &j.LastError,
+			&j.ConfigVersion, &j.ConfigSnapshot, &j.ConfigHash, &j.ReleaseID, &j.Actor, &j.Source,
+			&created, &updated, &started, &finished, &exit); err != nil {
 			return nil, err
 		}
 		j.CreatedAt = time.Unix(created, 0)
 		j.UpdatedAt = time.Unix(updated, 0)
+		if started.Valid {
+			j.StartedAt = time.Unix(started.Int64, 0)
+		}
+		if finished.Valid {
+			j.FinishedAt = time.Unix(finished.Int64, 0)
+		}
+		j.ExitCode = -1
+		if exit.Valid {
+			j.ExitCode = int(exit.Int64)
+		}
 		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
+// JobEvent is one durable job status change. Its integer ID is a resume cursor
+// for job watch.
+type JobEvent struct {
+	ID        int64
+	JobID     string
+	Status    string
+	Attempts  int
+	Message   string
+	ExitCode  int
+	CreatedAt time.Time
+}
+
+func (db *DB) recordJobEvent(ctx context.Context, id string) {
+	job, ok, err := db.JobByID(ctx, id)
+	if err != nil || !ok {
+		return
+	}
+	_, _ = db.ExecContext(ctx, `INSERT INTO job_events (job_id, status, attempts, message, exit_code) VALUES (?, ?, ?, ?, ?)`,
+		job.ID, job.Status, job.Attempts, job.LastError, job.ExitCode)
+}
+
+// JobEventsAfter returns status change events after a cursor, oldest first.
+func (db *DB) JobEventsAfter(ctx context.Context, jobID string, after int64) ([]JobEvent, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, job_id, status, attempts, message, exit_code, created_at FROM job_events
+		WHERE job_id = ? AND id > ? ORDER BY id ASC LIMIT 100`, jobID, after)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []JobEvent
+	for rows.Next() {
+		var e JobEvent
+		var created int64
+		if err := rows.Scan(&e.ID, &e.JobID, &e.Status, &e.Attempts, &e.Message, &e.ExitCode, &created); err != nil {
+			return nil, err
+		}
+		e.CreatedAt = time.Unix(created, 0)
+		out = append(out, e)
 	}
 	return out, rows.Err()
 }

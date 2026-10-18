@@ -116,6 +116,7 @@ type PodSpec struct {
 	Volumes          []Volume               `json:"volumes,omitempty"`
 	ImagePullSecrets []LocalObjectReference `json:"imagePullSecrets,omitempty"`
 	SecurityContext  *PodSecurityContext    `json:"securityContext,omitempty"`
+	RestartPolicy    string                 `json:"restartPolicy,omitempty"`
 }
 
 type PodTemplateSpec struct {
@@ -307,4 +308,47 @@ type HorizontalPodAutoscaler struct {
 	TypeMeta
 	Metadata ObjectMeta `json:"metadata"`
 	Spec     HPASpec    `json:"spec"`
+}
+
+type JobSpec struct {
+	Template                PodTemplateSpec `json:"template"`
+	BackoffLimit            *int32          `json:"backoffLimit,omitempty"`
+	ActiveDeadlineSeconds   *int64          `json:"activeDeadlineSeconds,omitempty"`
+	TTLSecondsAfterFinished *int32          `json:"ttlSecondsAfterFinished,omitempty"`
+}
+
+type JobStatus struct {
+	Active     int32       `json:"active,omitempty"`
+	Succeeded  int32       `json:"succeeded,omitempty"`
+	Failed     int32       `json:"failed,omitempty"`
+	Conditions []Condition `json:"conditions,omitempty"`
+}
+
+type Job struct {
+	TypeMeta
+	Metadata ObjectMeta `json:"metadata"`
+	Spec     JobSpec    `json:"spec"`
+	Status   JobStatus  `json:"status"`
+}
+
+type VolumeSnapshotSpec struct {
+	Source PersistentVolumeClaimVolumeSource `json:"source"`
+}
+
+type PersistentVolumeClaimVolumeSource struct {
+	PersistentVolumeClaimName string `json:"persistentVolumeClaimName"`
+}
+
+type VolumeSnapshotStatus struct {
+	ReadyToUse *bool `json:"readyToUse,omitempty"`
+	Error      *struct {
+		Message string `json:"message,omitempty"`
+	} `json:"error,omitempty"`
+}
+
+type VolumeSnapshot struct {
+	TypeMeta
+	Metadata ObjectMeta           `json:"metadata"`
+	Spec     VolumeSnapshotSpec   `json:"spec"`
+	Status   VolumeSnapshotStatus `json:"status,omitempty"`
 }

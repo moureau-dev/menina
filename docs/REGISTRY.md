@@ -130,8 +130,9 @@ instead.
 Individual apps can also point at a public image (e.g. `docker.io/library/redis`)
 while the bundled registry is enabled. Menina resolves digests **only** for
 images hosted by the bundled registry; images from any other registry deploy by
-**tag** (no digest pinning, no release history for rollback, and no push-event
-auto-deploy). Use `image.tag` for those apps and deploy with `menina app deploy`.
+**tag** (no digest pinning and no digest-based rollback; releases record the
+tag/image but cannot pin it, and there is no push-event auto-deploy). Use
+`image.tag` for those apps and deploy with `menina app deploy`.
 
 > Note: Zot's **registry notifications** (Zot → Menina, this doc) are distinct
 > from Menina's outbound **deploy notifications** (`webhooks.deploy`,

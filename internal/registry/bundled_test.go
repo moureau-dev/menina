@@ -13,11 +13,12 @@ func TestClientHandles(t *testing.T) {
 	}{
 		{"registry.moureau.dev/my-project/api", true},
 		{"registry.moureau.dev:443/my-project/api", true},
-		{"my-project/api", true},
+		{"my-project/api", false},
 		{"api", false},
 		{"redis", false},
 		{"docker.io/library/redis", false},
-		{"library/redis", true},
+		{"library/redis", false},
+		{"traefik/whoami", false},
 		{"ghcr.io/foo/bar", false},
 		{"other.registry.io/project/app", false},
 	}
@@ -30,7 +31,7 @@ func TestClientHandles(t *testing.T) {
 
 func TestBundledResolverPassesThroughForeignImages(t *testing.T) {
 	r := BundledResolver{Client: &Client{BaseURL: "https://registry.moureau.dev"}}
-	for _, repo := range []string{"docker.io/library/redis", "redis"} {
+	for _, repo := range []string{"docker.io/library/redis", "redis", "traefik/whoami"} {
 		digest, err := r.ResolveTag(context.Background(), repo, "alpine")
 		if err != nil {
 			t.Fatalf("%s: foreign image must not error (no digest resolution): %v", repo, err)

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -119,6 +120,10 @@ type StorageSpec struct {
 	Enabled   bool   `yaml:"enabled"`
 	Size      string `yaml:"size"`
 	MountPath string `yaml:"mountPath"`
+	// SnapshotBeforeDeploy asks the cluster's CSI driver for a VolumeSnapshot
+	// before a release changes the workload. It is opt-in and fails the release
+	// explicitly when the storage class has no snapshot support.
+	SnapshotBeforeDeploy bool `yaml:"snapshotBeforeDeploy,omitempty"`
 }
 
 type HealthSpec struct {
@@ -126,17 +131,64 @@ type HealthSpec struct {
 	Liveness  string `yaml:"liveness"`
 }
 
+// VerificationSpec declares checks that run after a successful rollout.
+// Verification is not reachability: it asserts the app actually works.
+type VerificationSpec struct {
+	Enabled       *bool             `yaml:"enabled,omitempty"`
+	Path          string            `yaml:"path,omitempty"`
+	Method        string            `yaml:"method,omitempty"`
+	ExpectStatus  []int             `yaml:"expectStatus,omitempty"`
+	ExpectBody    string            `yaml:"expectBody,omitempty"`
+	ExpectHeader  map[string]string `yaml:"expectHeader,omitempty"`
+	Timeout       time.Duration     `yaml:"timeout,omitempty"`
+	SmokeTest     *HookSpec         `yaml:"smokeTest,omitempty"`
+	FailurePolicy string            `yaml:"failurePolicy,omitempty"`
+}
+
+const (
+	// VerificationFailureRecover hands the failure to the app's recovery policy.
+	VerificationFailureRecover = "recover"
+	// VerificationFailureKeep records the failed release and does not restore.
+	VerificationFailureKeep = "keep"
+)
+
+// HookSpec is a one-off command run in the app's image. Hooks are opt-in,
+// permissioned, timeout-bounded and never assumed reversible.
+type HookSpec struct {
+	Command []string      `yaml:"command"`
+	Timeout time.Duration `yaml:"timeout,omitempty"`
+}
+
+// HooksSpec declares app lifecycle hooks. A migration hook is not reversed by
+// an image rollback.
+type HooksSpec struct {
+	PreDeploy  *HookSpec `yaml:"preDeploy,omitempty"`
+	Migrate    *HookSpec `yaml:"migrate,omitempty"`
+	PostDeploy *HookSpec `yaml:"postDeploy,omitempty"`
+}
+
+// RecoverySpec is the explicit per-app recovery policy after qualifying
+// failures. It never implies a data rollback.
+type RecoverySpec struct {
+	Policy   string   `yaml:"policy,omitempty"`
+	Triggers []string `yaml:"triggers,omitempty"`
+}
+
 type AppFile struct {
-	Name      string            `yaml:"name"`
-	Source    SourceSpec        `yaml:"source,omitempty"`
-	Image     ImageSpec         `yaml:"image"`
-	Workload  WorkloadSpec      `yaml:"workload"`
-	Resources ResourceSpec      `yaml:"resources"`
-	Exposure  ExposureSpec      `yaml:"exposure"`
-	Storage   *StorageSpec      `yaml:"storage"`
-	Replicas  *ReplicasSpec     `yaml:"replicas"`
-	Health    *HealthSpec       `yaml:"health"`
-	Env       map[string]string `yaml:"env"`
+	Name         string            `yaml:"name"`
+	Source       SourceSpec        `yaml:"source,omitempty"`
+	Image        ImageSpec         `yaml:"image"`
+	Workload     WorkloadSpec      `yaml:"workload"`
+	Resources    ResourceSpec      `yaml:"resources"`
+	Exposure     ExposureSpec      `yaml:"exposure"`
+	Storage      *StorageSpec      `yaml:"storage"`
+	Replicas     *ReplicasSpec     `yaml:"replicas"`
+	Health       *HealthSpec       `yaml:"health"`
+	Verification *VerificationSpec `yaml:"verification,omitempty"`
+	Hooks        *HooksSpec        `yaml:"hooks,omitempty"`
+	Recovery     *RecoverySpec     `yaml:"recovery,omitempty"`
+	DependsOn    []string          `yaml:"dependsOn,omitempty"`
+	Env          map[string]string `yaml:"env"`
 	// Secrets maps an environment variable name to a secret reference
 	// (file:..., env:..., literal:...). Only the reference is stored in
 	// configuration; the resolved value never enters the config tree.
@@ -144,16 +196,20 @@ type AppFile struct {
 }
 
 type AppOverride struct {
-	Enabled   *bool             `yaml:"enabled"`
-	Image     *ImageSpec        `yaml:"image"`
-	Workload  *WorkloadSpec     `yaml:"workload"`
-	Resources *ResourceSpec     `yaml:"resources"`
-	Exposure  *ExposureSpec     `yaml:"exposure"`
-	Storage   *StorageSpec      `yaml:"storage"`
-	Replicas  *ReplicasSpec     `yaml:"replicas"`
-	Health    *HealthSpec       `yaml:"health"`
-	Env       map[string]string `yaml:"env"`
-	Secrets   map[string]string `yaml:"secrets,omitempty"`
+	Enabled      *bool             `yaml:"enabled"`
+	Image        *ImageSpec        `yaml:"image"`
+	Workload     *WorkloadSpec     `yaml:"workload"`
+	Resources    *ResourceSpec     `yaml:"resources"`
+	Exposure     *ExposureSpec     `yaml:"exposure"`
+	Storage      *StorageSpec      `yaml:"storage"`
+	Replicas     *ReplicasSpec     `yaml:"replicas"`
+	Health       *HealthSpec       `yaml:"health"`
+	Verification *VerificationSpec `yaml:"verification,omitempty"`
+	Hooks        *HooksSpec        `yaml:"hooks,omitempty"`
+	Recovery     *RecoverySpec     `yaml:"recovery,omitempty"`
+	DependsOn    []string          `yaml:"dependsOn,omitempty"`
+	Env          map[string]string `yaml:"env"`
+	Secrets      map[string]string `yaml:"secrets,omitempty"`
 }
 
 type EnvironmentFile struct {
@@ -203,6 +259,10 @@ type ResolvedApp struct {
 	Storage       *StorageSpec
 	Replicas      ReplicasSpec
 	Health        *HealthSpec
+	Verification  *VerificationSpec
+	Hooks         *HooksSpec
+	Recovery      *RecoverySpec
+	DependsOn     []string
 	Env           map[string]string
 	// Secrets holds secret references (never resolved values).
 	Secrets map[string]string

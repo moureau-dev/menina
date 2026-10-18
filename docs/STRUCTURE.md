@@ -24,6 +24,7 @@ internal/
   platform/               control plane, job workers, reconciler, control socket
   proxy/                  HTTP/L4 proxy, routing snapshots, TLS
   registry/               Zot client, digest resolution, push events, bundled resolver
+  release/                portable per-app release states and recovery policy
   schema/                 embedded versioned manifest JSON Schema
   secrets/                secret refs, file writing, resolution
   tui/                    Bubble Tea widgets and badges

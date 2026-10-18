@@ -28,6 +28,7 @@ storages:
     size: 2Gi
     path: ${MOUNT_BASE}/postgresql/data
     access: single-writer
+    # snapshotBeforeDeploy: true   # requires a CSI driver with VolumeSnapshot support
 
   sqlite:
     size: 1Gi
@@ -55,6 +56,16 @@ apps:
     env: { REDIS_URL: "redis://redis:6379", DB_PATH: "${MOUNT_BASE}/sqlite/data" } # environment variables merged in the container
     storage: [sqlite] # list of storage names, or a single name, or an object with the name and overrides ({ use: sqlite, path: /data }) or list of such objects
     replicas: 1 # optional, defaults to 1. can be a single number or an object with min and max values
+    dependsOn: [pg]    # ready before this app is applied; keep the list short
+    verification:      # optional post-rollout correctness checks
+      path: /healthz
+      expectStatus: [200]
+      timeout: 10s
+      failurePolicy: recover
+    recovery:          # explicit failure policy (previous | none | require-approval)
+      policy: previous
+    # hooks:           # opt-in; host must set security.allowAppHooks: true
+    #   migrate: { command: ["/app/migrate"], timeout: 5m }
 
   web:
     dockerfile: apps/web/Dockerfile
@@ -81,6 +92,7 @@ workers:
   jobs:
     from: api
     command: ["/app/worker"]
+    dependsOn: [api]
     replicas: 1
     storage: [jobsdata]               # workers do not inherit storage from `from`
     env: { QUEUE: default, DB_PATH: "${MOUNT_BASE}/jobs/data" }

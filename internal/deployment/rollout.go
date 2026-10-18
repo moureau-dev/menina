@@ -2,9 +2,13 @@ package deployment
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
+
+// ErrRolloutTimeout marks a rollout that did not complete before its deadline.
+var ErrRolloutTimeout = errors.New("rollout timed out")
 
 type RolloutOptions struct {
 	Timeout time.Duration
@@ -30,7 +34,7 @@ func WaitForRollout(ctx context.Context, cluster Cluster, namespace, name string
 			return st, nil
 		}
 		if time.Now().After(deadline) {
-			return last, fmt.Errorf("rollout of %s/%s did not complete within %s", namespace, name, opts.Timeout)
+			return last, fmt.Errorf("%w: %s/%s did not complete within %s", ErrRolloutTimeout, namespace, name, opts.Timeout)
 		}
 		select {
 		case <-ctx.Done():

@@ -2,6 +2,8 @@ package platform
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/database"
 )
 
 func serviceWithNotifyToken(t *testing.T, token string) *Service {
@@ -142,5 +145,96 @@ func TestRegistryWebhookRefusesWithoutToken(t *testing.T) {
 	svc.handleRegistryEvent(rr, req)
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 when no token is configured", rr.Code)
+	}
+}
+
+func TestReleaseStatusAggregate(t *testing.T) {
+	svc := serviceWithNotifyToken(t, "tok")
+	ctx := context.Background()
+	if _, err := svc.db.CreateRelease(ctx, database.Release{Project: "p", Environment: "prod", App: "api", Repository: "r/api", Digest: "sha256:a", State: "active", ConfigVersion: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.CreateRelease(ctx, database.Release{Project: "p", Environment: "prod", App: "admin", Repository: "r/admin", Digest: "sha256:b", State: "failed", Message: "verification failed", Migration: `{"command":["migrate"]}`}); err != nil {
+		t.Fatal(err)
+	}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/release?project=p&environment=prod", nil)
+	svc.handleRelease(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `"status":"partially_failed"`) {
+		t.Fatalf("aggregate must report partial failure: %s", body)
+	}
+	if !strings.Contains(body, `"data":"migration_not_reversed"`) {
+		t.Fatalf("aggregate must report migration state separately: %s", body)
+	}
+}
+
+func TestPromoteDryRunAndStateToken(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Registry.Enabled = false
+	cfg.Registry.Notifications.Enabled = false
+	cfg.Security.EnforceProdPolicy = false
+	cfg.Platform.DBPath = filepath.Join(dir, "menina.db")
+	if err := config.SavePlatform(dir, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	projectDir := filepath.Join(dir, "projects", "p")
+	for _, sub := range []string{"apps", "environments"} {
+		if err := os.MkdirAll(filepath.Join(projectDir, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write := func(path, body string) {
+		if err := os.WriteFile(filepath.Join(projectDir, path), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("project.yml", "name: p\n")
+	write("apps/api.yml", "name: api\nimage:\n  repository: registry.example.com/p/api\nworkload:\n  type: service\n  port: 8080\n")
+	write("environments/production.yml", "name: production\n")
+	write("environments/staging.yml", "name: staging\n")
+
+	svc, err := NewService(&cfg, dir, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.watcher.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.CreateRelease(context.Background(), database.Release{Project: "p", Environment: "production", App: "api", Repository: "registry.example.com/p/api", Digest: "sha256:abc", Image: "registry.example.com/p/api@sha256:abc", State: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	post := func(body string) *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/promote", strings.NewReader(body))
+		svc.handlePromote(rr, req)
+		return rr
+	}
+	rr := post(`{"project":"p","fromEnvironment":"production","toEnvironment":"staging","app":"api","dryRun":true}`)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "sha256:abc") {
+		t.Fatalf("dry run = %d %s", rr.Code, rr.Body.String())
+	}
+	var plan struct {
+		Plan struct {
+			StateToken string `json:"stateToken"`
+		} `json:"plan"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if plan.Plan.StateToken == "" {
+		t.Fatal("dry run must return a state token")
+	}
+	bad := post(`{"project":"p","fromEnvironment":"production","toEnvironment":"staging","app":"api","stateToken":"stale"}`)
+	if bad.Code != http.StatusConflict {
+		t.Fatalf("stale token = %d %s", bad.Code, bad.Body.String())
+	}
+	ok := post(fmt.Sprintf(`{"project":"p","fromEnvironment":"production","toEnvironment":"staging","app":"api","stateToken":%q}`, plan.Plan.StateToken))
+	if ok.Code != http.StatusAccepted {
+		t.Fatalf("promote = %d %s", ok.Code, ok.Body.String())
 	}
 }

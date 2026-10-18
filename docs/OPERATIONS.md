@@ -93,6 +93,101 @@ than trusting the restored database blindly.
 See [REGISTRY.md](REGISTRY.md#storage-and-backups) for the registry's storage
 layout.
 
+### Scheduled backups and offsite copies
+
+`menina deploy platform` installs `menina-backup.service` and a daily
+`menina-backup.timer` (03:17 with up to 30 minutes of jitter). The unit writes a
+timestamped archive under the data directory's backup path. It does not include
+secrets, volumes, or registry images by default; adjust the unit if you accept
+those costs:
+
+```bash
+systemctl list-timers menina-backup.timer
+journalctl -u menina-backup.service
+```
+
+Copy the resulting archive off the host (object storage, another server, or a
+backup service) and encrypt it when it contains secrets. A backup that only
+exists on the host it protects is not a disaster-recovery plan.
+
+The timer is only a schedule. Menina cannot promise a recovery point until you
+choose an **RPO** (how much data you can lose) and an **RTO** (how long a
+restore may take). A practical single-node baseline:
+
+| Target | Baseline |
+| --- | --- |
+| RPO | 24 hours for config/database, plus the last offsite volume snapshot |
+| RTO | 1-2 hours for a prepared replacement host with the same domain and credentials |
+
+Change the timer interval to tighten the RPO. Volumes and registry images need
+`--with-volumes`/`--with-images` (root, and ideally `--consistent`) or a
+storage-level snapshot; the database/config archive alone does not restore
+application data.
+
+### Restore test
+
+The backup round trip (`TestCreateRestoreRoundTrip`) runs in CI, but also test
+the full host path on a schedule:
+
+```bash
+sudo menina backup --out /root/drill.tgz --with-secrets --with-volumes --with-images
+# on a scratch host
+sudo systemctl stop menina-serve
+sudo menina restore /root/drill.tgz --force --with-volumes --with-images
+sudo systemctl start menina-serve menina-proxy
+menina status && menina release status --project <p> --environment production
+```
+
+Record the date, archive size, restore duration, and any manual steps. If a step
+is manual, write it down or automate it before calling the DR plan tested.
+
+## Metrics and alerts
+
+`menina serve` exposes Prometheus text metrics on its event listener
+(`/metrics`, default `:9000`). The listener runs even when registry
+notifications are disabled; in that case `/v2/events` returns 503.
+
+- deploy health: `menina_releases{state}`, `menina_deploy_success_total`,
+  `menina_deploy_failure_total`, `menina_deploy_duration_seconds_sum/count`
+- queue: `menina_jobs{status}`, `menina_queue_depth`
+- apps: `menina_app_ready_replicas`, `menina_app_desired_replicas`
+- edge/control plane: `menina_up`, `menina_proxy_snapshot_ready`,
+  `menina_routes`, `menina_snapshot_version`
+- node/registry storage: `menina_node_disk_total_bytes`,
+  `menina_node_disk_available_bytes` (the bundled registry shares this
+  filesystem)
+
+Reference rules (tune thresholds to the host):
+
+```yaml
+groups:
+  - name: menina
+    rules:
+      - alert: MeninaDeployFailures
+        expr: increase(menina_deploy_failure_total[30m]) > 0
+        labels: { severity: warning }
+        annotations: { summary: "A Menina release failed in the last 30m" }
+      - alert: MeninaQueueBacklog
+        expr: menina_queue_depth > 10
+        for: 15m
+        labels: { severity: warning }
+        annotations: { summary: "Deployment queue is backing up" }
+      - alert: MeninaAppNotReady
+        expr: menina_app_ready_replicas < menina_app_desired_replicas
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "An app has fewer ready replicas than desired" }
+      - alert: MeninaDiskLow
+        expr: menina_node_disk_available_bytes / menina_node_disk_total_bytes < 0.15
+        for: 30m
+        labels: { severity: critical }
+        annotations: { summary: "Menina data disk below 15% free" }
+      - alert: MeninaDown
+        expr: absent(menina_up) or menina_up == 0
+        for: 5m
+        labels: { severity: critical }
+```
+
 ## Upgrades
 
 `menina upgrade` verifies the artifact checksum, executes the staged binary

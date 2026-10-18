@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -70,9 +71,15 @@ func ValidateResolved(rc *ResolvedConfig) error {
 	seenPorts := map[string]string{}
 	for _, rp := range rc.Projects {
 		for _, re := range rp.Environments {
+			if err := ValidateDependencies(re); err != nil {
+				return err
+			}
 			for _, ra := range re.Apps {
 				if !ra.Enabled {
 					continue
+				}
+				if err := validateAppReleaseSpec(ra); err != nil {
+					return err
 				}
 				if ra.Repository == "" {
 					return fmt.Errorf("app %s/%s/%s has no image repository", ra.Project, ra.Environment, ra.Name)
@@ -107,6 +114,76 @@ func ValidateResolved(rc *ResolvedConfig) error {
 
 // validateExposedPorts checks the app's raw TCP/UDP exposure and records each
 // port so two apps cannot claim the same host port.
+func validateAppReleaseSpec(ra *ResolvedApp) error {
+	if ra.Verification != nil && ra.Verification.Enabled != nil && *ra.Verification.Enabled {
+		if ra.Verification.Path != "" {
+			if ra.Workload.Type != WorkloadService {
+				return fmt.Errorf("app %s/%s/%s is a worker and cannot verify an HTTP path", ra.Project, ra.Environment, ra.Name)
+			}
+			if !strings.HasPrefix(ra.Verification.Path, "/") {
+				return fmt.Errorf("app %s/%s/%s verification.path must start with /", ra.Project, ra.Environment, ra.Name)
+			}
+			if !ra.Exposure.Enabled || len(ra.Exposure.Hosts) == 0 {
+				return fmt.Errorf("app %s/%s/%s verification.path requires HTTP exposure with hosts", ra.Project, ra.Environment, ra.Name)
+			}
+		}
+		if len(ra.Verification.ExpectStatus) > 0 {
+			for _, status := range ra.Verification.ExpectStatus {
+				if status < 100 || status > 599 {
+					return fmt.Errorf("app %s/%s/%s verification.expectStatus %d is not an HTTP status", ra.Project, ra.Environment, ra.Name, status)
+				}
+			}
+		}
+	}
+	for _, state := range ra.DependsOn {
+		if state == "" {
+			return fmt.Errorf("app %s/%s/%s has an empty dependsOn entry", ra.Project, ra.Environment, ra.Name)
+		}
+	}
+	return nil
+}
+
+// ValidateDependencies rejects dependency cycles within an environment.
+func ValidateDependencies(re *ResolvedEnvironment) error {
+	visiting := map[string]bool{}
+	done := map[string]bool{}
+	var walk func(string, []string) error
+	walk = func(name string, path []string) error {
+		if done[name] {
+			return nil
+		}
+		if visiting[name] {
+			return fmt.Errorf("dependency cycle in %s/%s: %s", re.Project, re.Name, strings.Join(append(path, name), " -> "))
+		}
+		visiting[name] = true
+		app := re.Apps[name]
+		if app != nil {
+			for _, dep := range app.DependsOn {
+				if _, ok := re.Apps[dep]; !ok {
+					return fmt.Errorf("app %s/%s/%s depends on %q which is not in the environment", re.Project, re.Name, name, dep)
+				}
+				if err := walk(dep, append(path, name)); err != nil {
+					return err
+				}
+			}
+		}
+		visiting[name] = false
+		done[name] = true
+		return nil
+	}
+	names := make([]string, 0, len(re.Apps))
+	for name := range re.Apps {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if err := walk(name, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func validateExposedPorts(ra *ResolvedApp, seen map[string]string) error {
 	owner := fmt.Sprintf("%s/%s/%s", ra.Project, ra.Environment, ra.Name)
 	check := func(proto string, ports []int) error {

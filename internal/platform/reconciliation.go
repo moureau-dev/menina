@@ -14,6 +14,7 @@ import (
 	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/deployment"
 	"github.com/moureau-dev/menina/internal/proxy"
+	"github.com/moureau-dev/menina/internal/release"
 )
 
 type Reconciler struct {
@@ -211,8 +212,14 @@ func (r *Reconciler) ReconcileWorkloads(ctx context.Context, rc *config.Resolved
 	desired := map[string]bool{}
 	for _, rp := range rc.Projects {
 		for _, re := range rp.Environments {
-			for _, app := range re.Apps {
-				if !app.Enabled {
+			for _, name := range orderedApps(re) {
+				app := re.Apps[name]
+				if app == nil || !app.Enabled {
+					continue
+				}
+				if r.releaseHold(ctx, app) {
+					r.log.Info("release is rolled back; skipping reconciliation until a new deploy", "app", app.Name)
+					desired[app.Namespace+"/"+app.Name] = true
 					continue
 				}
 				image := r.desiredImage(ctx, app)
@@ -304,6 +311,11 @@ func (r *Reconciler) pruneWorkloads(ctx context.Context, desired map[string]bool
 		if err := r.cluster.DeleteAutoscaler(ctx, w.Namespace, w.Name); err != nil {
 			r.log.Warn("config reconcile: delete autoscaler failed", "name", w.Name, "error", err)
 		}
+		if w.App != "" {
+			if err := r.db.DeleteObserved(ctx, w.Project, w.Environment, w.App); err != nil {
+				r.log.Warn("config reconcile: delete observed row failed", "name", w.Name, "error", err)
+			}
+		}
 	}
 }
 
@@ -344,6 +356,9 @@ func (r *Reconciler) ReconcileTags(ctx context.Context) {
 				if !app.Enabled {
 					continue
 				}
+				if r.releaseHold(ctx, app) {
+					continue
+				}
 				digest, err := r.engine.ResolveDigest(ctx, app)
 				if err != nil {
 					r.log.Warn("tag reconciliation resolve failed", "app", app.Name, "error", err)
@@ -353,7 +368,7 @@ func (r *Reconciler) ReconcileTags(ctx context.Context) {
 				if err != nil {
 					continue
 				}
-				desiredImage := app.Repository + "@" + digest
+				desiredImage := deployment.ImageForDigest(app, digest)
 				status := "ready"
 				if st.ReadyReplicas < st.Replicas {
 					status = "progressing"
@@ -379,7 +394,7 @@ func (r *Reconciler) ReconcileTags(ctx context.Context) {
 					Repository: app.Repository,
 					Tag:        app.Tag,
 					Digest:     digest,
-				}, []database.Job{{
+				}, []database.Job{PinJob(database.Job{
 					DedupKey:    fmt.Sprintf("reconcile|%s|%s|%s|%d", app.Project, app.Environment, app.Name, time.Now().UnixNano()),
 					Kind:        "reconcile",
 					Project:     app.Project,
@@ -387,7 +402,7 @@ func (r *Reconciler) ReconcileTags(ctx context.Context) {
 					App:         app.Name,
 					Repository:  app.Repository,
 					Tag:         app.Tag,
-				}})
+				}, app, rc.Version, "reconcile", "config-reconcile")})
 				if err != nil {
 					r.log.Warn("enqueue reconciliation job failed", "app", app.Name, "error", err)
 				}
@@ -410,4 +425,54 @@ func indexByte(s string, b byte) int {
 		}
 	}
 	return -1
+}
+
+// orderedApps returns app names with explicit dependencies first. The order is
+// stable (alphabetical within independent groups) and does not imply a general
+// orchestration DAG.
+func orderedApps(re *config.ResolvedEnvironment) []string {
+	names := make([]string, 0, len(re.Apps))
+	for name := range re.Apps {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	seen := map[string]bool{}
+	var out []string
+	var visit func(string)
+	visit = func(name string) {
+		if seen[name] {
+			return
+		}
+		seen[name] = true
+		if app := re.Apps[name]; app != nil {
+			deps := append([]string(nil), app.DependsOn...)
+			sort.Strings(deps)
+			for _, dep := range deps {
+				if _, ok := re.Apps[dep]; ok {
+					visit(dep)
+				}
+			}
+		}
+		out = append(out, name)
+	}
+	for _, name := range names {
+		visit(name)
+	}
+	return out
+}
+
+// releaseHold reports whether the newest release is rolled back (manual or
+// policy-driven). Reconciliation must not immediately redeploy the failed
+// target and undo the restore; a new push or explicit deploy creates a newer
+// release and resumes normal reconciliation.
+func (r *Reconciler) releaseHold(ctx context.Context, app *config.ResolvedApp) bool {
+	rel, ok, err := r.db.LatestRelease(ctx, app.Project, app.Environment, app.Name)
+	if err != nil || !ok {
+		return false
+	}
+	switch release.State(rel.State) {
+	case release.RolledBack, release.Recovering:
+		return true
+	}
+	return false
 }

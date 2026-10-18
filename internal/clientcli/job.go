@@ -63,6 +63,7 @@ func clientJobList(app *App) *cobra.Command {
 func clientJobWatch(app *App) *cobra.Command {
 	var host string
 	var timeout time.Duration
+	var cursor int64
 	cmd := &cobra.Command{
 		Use:   "watch <id>",
 		Short: "Stream a deployment job from the host (NDJSON with --json)",
@@ -73,6 +74,9 @@ func clientJobWatch(app *App) *cobra.Command {
 				return err
 			}
 			remote := []string{"job", "watch", args[0], "--timeout", timeout.String()}
+			if cursor > 0 {
+				remote = append(remote, "--cursor", fmt.Sprintf("%d", cursor))
+			}
 			if app.jsonOutput() {
 				remote = append(remote, "--json")
 			}
@@ -81,6 +85,7 @@ func clientJobWatch(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&host, "host", "", "SSH host (user@host)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "how long to watch before failing")
+	cmd.Flags().Int64Var(&cursor, "cursor", 0, "resume after this event ID")
 	return cmd
 }
 

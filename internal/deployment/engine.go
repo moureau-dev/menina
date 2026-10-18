@@ -2,8 +2,11 @@ package deployment
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/moureau-dev/menina/internal/config"
@@ -77,12 +80,13 @@ func (e *Engine) applyResolved(ctx context.Context, app *config.ResolvedApp, ima
 		return nil, fmt.Errorf("ensure namespace %q: %w", app.Namespace, err)
 	}
 	if len(app.Secrets) > 0 {
-		secretName, err := e.ensureAppSecret(ctx, app)
+		secretName, secretHash, err := e.ensureAppSecret(ctx, app)
 		if err != nil {
 			return nil, err
 		}
 		w.SecretEnvName = secretName
 		w.SecretEnv = map[string]string{}
+		w.SecretHash = secretHash
 		for name := range app.Secrets {
 			w.SecretEnv[name] = name
 		}
@@ -115,24 +119,61 @@ func (e *Engine) applyResolved(ctx context.Context, app *config.ResolvedApp, ima
 	}, nil
 }
 
+// EnsureAppSecrets projects an app's secret references into a Kubernetes
+// Secret and returns the Secret name and a fingerprint of its values.
+func (e *Engine) EnsureAppSecrets(ctx context.Context, app *config.ResolvedApp) (string, string, error) {
+	if len(app.Secrets) == 0 {
+		return "", "", nil
+	}
+	return e.ensureAppSecret(ctx, app)
+}
+
 // ensureAppSecret resolves an app's secret references to values, projects them
 // into a Kubernetes Secret, and returns the Secret's name. Only references are
 // ever stored in configuration; resolved values stay out of the config tree.
-func (e *Engine) ensureAppSecret(ctx context.Context, app *config.ResolvedApp) (string, error) {
+func (e *Engine) ensureAppSecret(ctx context.Context, app *config.ResolvedApp) (string, string, error) {
 	name := app.Name + "-secrets"
-	resolver := secrets.NewResolver()
-	data := make(map[string][]byte, len(app.Secrets))
-	for envName, ref := range app.Secrets {
-		value, err := resolver.Resolve(ref)
-		if err != nil {
-			return "", fmt.Errorf("resolve secret %q for %s/%s: %w", envName, app.Namespace, app.Name, err)
-		}
-		data[envName] = []byte(value)
+	data, hash, err := resolveSecrets(app)
+	if err != nil {
+		return "", "", err
 	}
 	if err := e.cluster.EnsureSecret(ctx, app.Namespace, name, data); err != nil {
-		return "", fmt.Errorf("ensure secret for %s/%s: %w", app.Namespace, app.Name, err)
+		return "", "", fmt.Errorf("ensure secret for %s/%s: %w", app.Namespace, app.Name, err)
 	}
-	return name, nil
+	return name, hash, nil
+}
+
+// SecretFingerprint returns a stable hash of the resolved secret values that
+// are injected into an app. It never returns the values themselves.
+func SecretFingerprint(app *config.ResolvedApp) (string, error) {
+	_, hash, err := resolveSecrets(app)
+	return hash, err
+}
+
+func resolveSecrets(app *config.ResolvedApp) (map[string][]byte, string, error) {
+	resolver := secrets.NewResolver()
+	data := make(map[string][]byte, len(app.Secrets))
+	names := make([]string, 0, len(app.Secrets))
+	for envName := range app.Secrets {
+		names = append(names, envName)
+	}
+	sort.Strings(names)
+	h := sha256.New()
+	for _, envName := range names {
+		value, err := resolver.Resolve(app.Secrets[envName])
+		if err != nil {
+			return nil, "", fmt.Errorf("resolve secret %q for %s/%s: %w", envName, app.Namespace, app.Name, err)
+		}
+		data[envName] = []byte(value)
+		h.Write([]byte(envName))
+		h.Write([]byte{0})
+		h.Write([]byte(value))
+		h.Write([]byte{0})
+	}
+	if len(names) == 0 {
+		return data, "", nil
+	}
+	return data, "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func (e *Engine) buildWorkload(app *config.ResolvedApp, digest string) Workload {
@@ -199,6 +240,9 @@ func SanitizeName(name string) string {
 	out := strings.Trim(b.String(), "-")
 	if out == "" {
 		return "app"
+	}
+	if len(out) > 63 {
+		out = strings.Trim(out[:63], "-")
 	}
 	return out
 }

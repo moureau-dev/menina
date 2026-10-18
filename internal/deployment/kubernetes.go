@@ -21,8 +21,10 @@ const (
 	labelApp       = "menina.io/app"
 	managedByValue = "menina"
 
+	snapshotV1    = "/apis/snapshot.storage.k8s.io/v1"
 	coreV1        = "/api/v1"
 	appsV1        = "/apis/apps/v1"
+	batchV1       = "/apis/batch/v1"
 	rbacV1        = "/apis/rbac.authorization.k8s.io/v1"
 	autoscalingV2 = "/apis/autoscaling/v2"
 )
@@ -113,17 +115,25 @@ func (k *KubernetesCluster) ApplyWorkload(ctx context.Context, w Workload) error
 	collection := nsResource(appsV1, w.Namespace, "deployments")
 	item := collection + "/" + w.Name
 	desired := k.buildDeployment(w)
+	desiredMap := kube.ToMap(desired)
 
-	existing := map[string]any{}
-	err := k.client.Get(ctx, item, &existing)
-	if kube.IsNotFound(err) {
-		if err := k.client.Create(ctx, collection, desired, nil); err != nil {
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		existing := map[string]any{}
+		err := k.client.Get(ctx, item, &existing)
+		if kube.IsNotFound(err) {
+			if err := k.client.Create(ctx, collection, desired, nil); err != nil {
+				if kube.IsAlreadyExists(err) {
+					lastErr = err
+					continue
+				}
+				return err
+			}
+			return k.applyAutoscaler(ctx, w)
+		}
+		if err != nil {
 			return err
 		}
-	} else if err != nil {
-		return err
-	} else {
-		desiredMap := kube.ToMap(desired)
 		existing["spec"] = desiredMap["spec"]
 		meta, _ := existing["metadata"].(map[string]any)
 		if meta == nil {
@@ -132,10 +142,16 @@ func (k *KubernetesCluster) ApplyWorkload(ctx context.Context, w Workload) error
 		}
 		meta["labels"] = k.labels(w)
 		if err := k.client.Update(ctx, item, existing, nil); err != nil {
+			if kube.IsConflict(err) {
+				lastErr = err
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
 			return err
 		}
+		return k.applyAutoscaler(ctx, w)
 	}
-	return k.applyAutoscaler(ctx, w)
+	return lastErr
 }
 
 func (k *KubernetesCluster) applyAutoscaler(ctx context.Context, w Workload) error {
@@ -293,35 +309,54 @@ func (k *KubernetesCluster) ApplyService(ctx context.Context, w Workload) error 
 			Ports:    []kube.ServicePort{{Name: "http", Port: w.Port, TargetPort: w.Port, Protocol: "TCP"}},
 		},
 	}
-	existing := map[string]any{}
-	err := k.client.Get(ctx, item, &existing)
-	if kube.IsNotFound(err) {
-		return k.client.Create(ctx, collection, desired, nil)
-	}
-	if err != nil {
-		return err
-	}
 	desiredMap := kube.ToMap(desired)
 	desiredSpec, _ := desiredMap["spec"].(map[string]any)
-	spec, _ := existing["spec"].(map[string]any)
-	if spec == nil {
-		spec = map[string]any{}
-		existing["spec"] = spec
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		existing := map[string]any{}
+		err := k.client.Get(ctx, item, &existing)
+		if kube.IsNotFound(err) {
+			if err := k.client.Create(ctx, collection, desired, nil); err != nil {
+				if kube.IsAlreadyExists(err) {
+					lastErr = err
+					continue
+				}
+				return err
+			}
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		spec, _ := existing["spec"].(map[string]any)
+		if spec == nil {
+			spec = map[string]any{}
+			existing["spec"] = spec
+		}
+		// Preserve server-assigned/immutable fields (clusterIP, ipFamilies, ...):
+		// only replace selector and ports.
+		spec["selector"] = desiredSpec["selector"]
+		spec["ports"] = desiredSpec["ports"]
+		if _, ok := spec["type"]; !ok {
+			spec["type"] = "ClusterIP"
+		}
+		meta, _ := existing["metadata"].(map[string]any)
+		if meta == nil {
+			meta = map[string]any{}
+			existing["metadata"] = meta
+		}
+		meta["labels"] = k.labels(w)
+		if err := k.client.Update(ctx, item, existing, nil); err != nil {
+			if kube.IsConflict(err) {
+				lastErr = err
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+			return err
+		}
+		return nil
 	}
-	// Preserve server-assigned/immutable fields (clusterIP, ipFamilies, ...):
-	// only replace selector and ports.
-	spec["selector"] = desiredSpec["selector"]
-	spec["ports"] = desiredSpec["ports"]
-	if _, ok := spec["type"]; !ok {
-		spec["type"] = "ClusterIP"
-	}
-	meta, _ := existing["metadata"].(map[string]any)
-	if meta == nil {
-		meta = map[string]any{}
-		existing["metadata"] = meta
-	}
-	meta["labels"] = k.labels(w)
-	return k.client.Update(ctx, item, existing, nil)
+	return lastErr
 }
 
 func (k *KubernetesCluster) WorkloadStatus(ctx context.Context, namespace, name string) (*WorkloadStatus, error) {
@@ -337,6 +372,9 @@ func (k *KubernetesCluster) WorkloadStatus(ctx context.Context, namespace, name 
 	}
 	if len(d.Spec.Template.Spec.Containers) > 0 {
 		st.Image = d.Spec.Template.Spec.Containers[0].Image
+	}
+	if d.Spec.Template.Metadata.Annotations != nil {
+		st.SecretHash = d.Spec.Template.Metadata.Annotations["menina.io/secret-hash"]
 	}
 	for _, c := range d.Status.Conditions {
 		st.Conditions = append(st.Conditions, fmt.Sprintf("%s=%s", c.Type, c.Status))
@@ -579,6 +617,10 @@ func (k *KubernetesCluster) buildDeployment(w Workload) *kube.Deployment {
 		})
 		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, kube.VolumeMount{Name: "secret", MountPath: w.SecretMount, ReadOnly: true})
 	}
+	templateMeta := kube.ObjectMeta{Labels: k.selector(w)}
+	if w.SecretHash != "" {
+		templateMeta.Annotations = map[string]string{"menina.io/secret-hash": w.SecretHash}
+	}
 	return &kube.Deployment{
 		TypeMeta: kube.TypeMeta{APIVersion: "apps/v1", Kind: "Deployment"},
 		Metadata: kube.ObjectMeta{Name: w.Name, Namespace: w.Namespace, Labels: k.labels(w)},
@@ -586,7 +628,7 @@ func (k *KubernetesCluster) buildDeployment(w Workload) *kube.Deployment {
 			Replicas: &replicas,
 			Selector: &kube.LabelSelector{MatchLabels: k.selector(w)},
 			Template: kube.PodTemplateSpec{
-				Metadata: kube.ObjectMeta{Labels: k.selector(w)},
+				Metadata: templateMeta,
 				Spec:     podSpec,
 			},
 		},
@@ -634,4 +676,163 @@ func ParseMemoryToBytes(q string) (int64, error) {
 		return 0, err
 	}
 	return int64(n * float64(mult)), nil
+}
+
+// RunJob creates a one-off Kubernetes Job, waits for it to finish and returns
+// its logs and exit status. The Job is retained briefly for inspection.
+func (k *KubernetesCluster) RunJob(ctx context.Context, req JobRequest) (*JobResult, error) {
+	if err := k.EnsureNamespace(ctx, req.Namespace); err != nil {
+		return nil, fmt.Errorf("ensure namespace %q: %w", req.Namespace, err)
+	}
+	timeout := req.Timeout
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+	backoff := int32(0)
+	deadline := int64(timeout.Seconds())
+	ttl := int32(300)
+	labels := map[string]string{
+		labelManagedBy:  managedByValue,
+		labelProject:    req.Project,
+		labelEnv:        req.Environment,
+		labelApp:        req.App,
+		"menina.io/job": req.Name,
+	}
+	container := kube.Container{
+		Name:            req.Name,
+		Image:           req.Image,
+		Command:         req.Command,
+		Args:            req.Args,
+		ImagePullPolicy: req.PullPolicy,
+	}
+	if container.ImagePullPolicy == "" {
+		container.ImagePullPolicy = "IfNotPresent"
+	}
+	keys := make([]string, 0, len(req.Env))
+	for key := range req.Env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		container.Env = append(container.Env, kube.EnvVar{Name: key, Value: req.Env[key]})
+	}
+	if req.SecretEnvName != "" {
+		secretKeys := make([]string, 0, len(req.SecretEnv))
+		for name := range req.SecretEnv {
+			secretKeys = append(secretKeys, name)
+		}
+		sort.Strings(secretKeys)
+		for _, name := range secretKeys {
+			container.Env = append(container.Env, kube.EnvVar{
+				Name: name,
+				ValueFrom: &kube.EnvVarSource{SecretKeyRef: &kube.SecretKeySelector{
+					Name: req.SecretEnvName,
+					Key:  req.SecretEnv[name],
+				}},
+			})
+		}
+	}
+	podSpec := kube.PodSpec{Containers: []kube.Container{container}, RestartPolicy: "Never"}
+	if req.PullSecret != "" {
+		podSpec.ImagePullSecrets = []kube.LocalObjectReference{{Name: req.PullSecret}}
+	}
+	job := &kube.Job{
+		TypeMeta: kube.TypeMeta{APIVersion: "batch/v1", Kind: "Job"},
+		Metadata: kube.ObjectMeta{Name: req.Name, Namespace: req.Namespace, Labels: labels},
+		Spec: kube.JobSpec{
+			Template: kube.PodTemplateSpec{
+				Metadata: kube.ObjectMeta{Labels: labels},
+				Spec:     podSpec,
+			},
+			BackoffLimit:            &backoff,
+			ActiveDeadlineSeconds:   &deadline,
+			TTLSecondsAfterFinished: &ttl,
+		},
+	}
+	collection := nsResource(batchV1, req.Namespace, "jobs")
+	if err := k.client.Create(ctx, collection, job, nil); err != nil && !kube.IsAlreadyExists(err) {
+		return nil, fmt.Errorf("create job %s/%s: %w", req.Namespace, req.Name, err)
+	}
+	item := collection + "/" + req.Name
+	deadlineTime := time.Now().Add(timeout + 30*time.Second)
+	for {
+		var current kube.Job
+		if err := k.client.Get(ctx, item, &current); err != nil {
+			return nil, err
+		}
+		if current.Status.Succeeded > 0 {
+			logs := k.jobLogs(ctx, req.Namespace, req.Name)
+			return &JobResult{Name: req.Name, Logs: logs, ExitCode: 0, Message: "succeeded"}, nil
+		}
+		if current.Status.Failed > 0 {
+			logs := k.jobLogs(ctx, req.Namespace, req.Name)
+			return &JobResult{Name: req.Name, Logs: logs, ExitCode: 1, Message: "failed"}, fmt.Errorf("job %s/%s failed", req.Namespace, req.Name)
+		}
+		if time.Now().After(deadlineTime) {
+			_ = k.client.Delete(ctx, item)
+			return &JobResult{Name: req.Name, ExitCode: 1, Message: "timeout"}, fmt.Errorf("job %s/%s timed out after %s", req.Namespace, req.Name, timeout)
+		}
+		select {
+		case <-ctx.Done():
+			_ = k.client.Delete(ctx, item)
+			return &JobResult{Name: req.Name, ExitCode: 1, Message: "cancelled"}, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+func (k *KubernetesCluster) jobLogs(ctx context.Context, namespace, name string) string {
+	var pods kube.List[kube.Pod]
+	if err := k.client.List(ctx, nsResource(coreV1, namespace, "pods"), "job-name="+name, &pods); err != nil || len(pods.Items) == 0 {
+		return ""
+	}
+	body, err := k.client.Stream(ctx, nsResource(coreV1, namespace, "pods")+"/"+pods.Items[0].Metadata.Name+"/log", nil)
+	if err != nil {
+		return ""
+	}
+	defer body.Close()
+	data, _ := io.ReadAll(io.LimitReader(body, 64*1024))
+	return string(data)
+}
+
+// CreateVolumeSnapshot requests a CSI VolumeSnapshot of a PVC. The storage
+// class must provide a snapshot controller/CSI driver; otherwise the API
+// returns an explicit error and the release fails rather than pretending a
+// snapshot exists.
+func (k *KubernetesCluster) CreateVolumeSnapshot(ctx context.Context, namespace, pvcName, snapshotName string) error {
+	collection := nsResource(snapshotV1, namespace, "volumesnapshots")
+	snap := &kube.VolumeSnapshot{
+		TypeMeta: kube.TypeMeta{APIVersion: "snapshot.storage.k8s.io/v1", Kind: "VolumeSnapshot"},
+		Metadata: kube.ObjectMeta{Name: snapshotName, Namespace: namespace, Labels: map[string]string{labelManagedBy: managedByValue}},
+		Spec: kube.VolumeSnapshotSpec{
+			Source: kube.PersistentVolumeClaimVolumeSource{PersistentVolumeClaimName: pvcName},
+		},
+	}
+	if err := k.client.Create(ctx, collection, snap, nil); err != nil {
+		if !kube.IsAlreadyExists(err) {
+			return fmt.Errorf("create volume snapshot %s/%s: %w", namespace, snapshotName, err)
+		}
+	}
+	item := collection + "/" + snapshotName
+	deadline := time.Now().Add(5 * time.Minute)
+	for {
+		var current kube.VolumeSnapshot
+		if err := k.client.Get(ctx, item, &current); err != nil {
+			return err
+		}
+		if current.Status.Error != nil && current.Status.Error.Message != "" {
+			return fmt.Errorf("volume snapshot %s/%s failed: %s", namespace, snapshotName, current.Status.Error.Message)
+		}
+		if current.Status.ReadyToUse != nil && *current.Status.ReadyToUse {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("volume snapshot %s/%s did not become ready within 5m", namespace, snapshotName)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
 }

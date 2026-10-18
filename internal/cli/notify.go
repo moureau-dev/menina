@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
 	"time"
 
@@ -19,7 +20,7 @@ func newNotifyCommand(app *App) *cobra.Command {
 		Short: "Manage outbound deploy notifications",
 		Long:  "Inspect and test the outbound deploy webhooks (webhooks.deploy): list configured hooks and send a synthetic event to verify a receiver.",
 	}
-	cmd.AddCommand(notifyList(app), notifyTest(app))
+	cmd.AddCommand(notifyList(app), notifyTest(app), notifyDeliveries(app), notifyReplay(app))
 	return cmd
 }
 
@@ -127,4 +128,73 @@ func notifyTest(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&project, "project", "", "project whose webhook to test (default: platform webhook)")
 	cmd.Flags().StringVar(&event, "event", "deploy.succeeded", "event name to send")
 	return cmd
+}
+
+func notifyDeliveries(app *App) *cobra.Command {
+	var status string
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "deliveries",
+		Short: "List webhook deliveries (including failures)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := app.LoadConfig()
+			if err != nil {
+				return err
+			}
+			client, err := app.Control(cfg)
+			if err != nil {
+				return fmt.Errorf("control plane not reachable (%v); start it with `menina serve`", err)
+			}
+			path := fmt.Sprintf("/webhook-deliveries?status=%s&limit=%d", url.QueryEscape(status), limit)
+			var resp struct {
+				Deliveries []map[string]any `json:"deliveries"`
+			}
+			if err := client.GetJSON(cmd.Context(), path, &resp); err != nil {
+				return err
+			}
+			if app.Opts.JSON {
+				return app.PrintJSON(resp.Deliveries)
+			}
+			if len(resp.Deliveries) == 0 {
+				app.Infof("No webhook deliveries.")
+				return nil
+			}
+			app.Infof("%-28s %-12s %-28s %-8s %s", "ID", "STATUS", "EVENT", "ATTEMPTS", "ERROR")
+			for _, d := range resp.Deliveries {
+				app.Infof("%-28v %-12v %-28v %-8v %v", d["ID"], d["Status"], d["Event"], d["Attempts"], d["LastError"])
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&status, "status", "", "filter by status (pending, delivered, failed, skipped)")
+	cmd.Flags().IntVar(&limit, "limit", 100, "maximum deliveries to show")
+	return cmd
+}
+
+func notifyReplay(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "replay <delivery-id>",
+		Short: "Re-send a stored webhook delivery",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := app.LoadConfig()
+			if err != nil {
+				return err
+			}
+			client, err := app.Control(cfg)
+			if err != nil {
+				return fmt.Errorf("control plane not reachable (%v); start it with `menina serve`", err)
+			}
+			body := fmt.Sprintf(`{"id":%q}`, args[0])
+			var resp map[string]any
+			if err := client.PostJSONDecode(cmd.Context(), "/webhook-replay", []byte(body), &resp); err != nil {
+				return err
+			}
+			if app.Opts.JSON {
+				return app.PrintJSON(resp)
+			}
+			app.Infof("Replayed webhook delivery %s", args[0])
+			return nil
+		},
+	}
 }

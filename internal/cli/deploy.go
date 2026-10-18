@@ -391,6 +391,9 @@ func deployPlatform(ctx context.Context, app *App, cfg *config.Config) error {
 			return fmt.Errorf("registry is enabled but the Zot Service (%s/zot) was not found; run `menina deploy infra` first", ns)
 		}
 	}
+	if err := ensureServiceKubeconfig(ctx, app, cfg); err != nil {
+		return err
+	}
 	systemd := infrastructure.NewSystemd(infrastructure.ExecRunner{})
 	binary, err := os.Executable()
 	if err != nil {
@@ -409,6 +412,9 @@ func deployPlatform(ctx context.Context, app *App, cfg *config.Config) error {
 	}
 	if err := installServices(ctx, app, systemd, services, vars); err != nil {
 		return err
+	}
+	if err := installBackupTimer(ctx, app, systemd, vars); err != nil {
+		app.Log.Warn("scheduled backups were not installed", "error", err)
 	}
 	if cfg.Networking.Mode == config.NetworkingCloudflareTunnel {
 		app.Infof("Cloudflare Tunnel mode: ensure cloudflared routes the configured hostnames to origin %s", orDefault(cfg.Networking.Cloudflare.OriginURL, "http://127.0.0.1:80"))
@@ -719,6 +725,16 @@ func ensureServiceKubeconfig(ctx context.Context, app *App, cfg *config.Config) 
 		return nil
 	}
 	src := cfg.Kubernetes.Kubeconfig
+	if cfg.Kubernetes.Managed {
+		// Prefer the local admin kubeconfig. cfg may already point at the
+		// scoped service kubeconfig written by a previous deploy.
+		for _, candidate := range []string{"/etc/rancher/k3s/k3s.yaml", "/etc/rancher/rke2/rke2.yaml"} {
+			if _, err := os.Stat(candidate); err == nil {
+				src = candidate
+				break
+			}
+		}
+	}
 	if src == "" {
 		resolveKubeconfig(cfg)
 		src = cfg.Kubernetes.Kubeconfig
@@ -828,5 +844,27 @@ func applyRegistryCredentials(ctx context.Context, app *App, cfg *config.Config)
 		}
 	}
 	app.Infof("Applied registry credentials to Zot and rolled %d managed workload(s)", len(workloads))
+	return nil
+}
+
+// installBackupTimer installs the daily backup unit and timer. It is
+// best-effort: the backup command remains usable manually.
+func installBackupTimer(ctx context.Context, app *App, systemd *infrastructure.Systemd, vars map[string]string) error {
+	for _, name := range []string{"menina-backup.service", "menina-backup.timer"} {
+		content, err := deployassets.RenderUnit(name, vars)
+		if err != nil {
+			return err
+		}
+		if err := systemd.WriteUnit(name, content); err != nil {
+			return err
+		}
+	}
+	if err := systemd.DaemonReload(ctx); err != nil {
+		return err
+	}
+	if _, err := systemd.Runner.Run(ctx, "systemctl", "enable", "--now", "menina-backup.timer"); err != nil {
+		return err
+	}
+	app.Infof("Installed daily backup timer menina-backup.timer")
 	return nil
 }

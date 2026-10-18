@@ -12,8 +12,9 @@ ExecStart=@BINARY@ --config-dir @CONFIG_DIR@ proxy
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=30
-RuntimeDirectory=menina
-RuntimeDirectoryMode=0750
+# Do not create the shared runtime directory here: systemd removes a
+# RuntimeDirectory when this unit stops, which would unlink the control
+# socket/token owned by menina-serve. serve creates it.
 StateDirectory=menina
 StateDirectoryMode=0750
 Environment=MENINA_CONFIG_DIR=@CONFIG_DIR@

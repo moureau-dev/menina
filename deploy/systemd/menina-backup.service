@@ -1,0 +1,22 @@
+[Unit]
+Description=Menina scheduled backup
+Documentation=https://menina.moureau.dev/docs/OPERATIONS.md
+After=network-online.target menina-serve.service
+Wants=menina-serve.service
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@GROUP@
+ExecStart=@BINARY@ --config-dir @CONFIG_DIR@ backup
+StateDirectory=menina
+StateDirectoryMode=0750
+Environment=MENINA_CONFIG_DIR=@CONFIG_DIR@
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=@DATA_DIR@

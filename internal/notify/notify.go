@@ -18,19 +18,21 @@ import (
 // Event is the generic, provider-agnostic deploy notification payload. The
 // receiver is responsible for fanning it out to Slack/Discord/Sentry/etc.
 type Event struct {
-	Event       string
-	Action      string
-	Project     string
-	Environment string
-	App         string
-	Repository  string
-	Tag         string
-	Digest      string
-	Image       string
-	Status      string
-	Actor       string
-	Message     string
-	Timestamp   time.Time
+	Event         string
+	Action        string
+	Project       string
+	Environment   string
+	App           string
+	Repository    string
+	Tag           string
+	Digest        string
+	Image         string
+	Status        string
+	Actor         string
+	Message       string
+	ReleaseID     string
+	ConfigVersion int64
+	Timestamp     time.Time
 }
 
 type Webhook struct {
@@ -72,56 +74,84 @@ func NewSender(log *slog.Logger) *Sender {
 	}
 }
 
+// Result reports one delivery attempt sequence.
+type Result struct {
+	ID           string
+	Status       string
+	Attempts     int
+	ResponseCode int
+	Error        string
+}
+
 // Send delivers the event best-effort: one provider-agnostic JSON POST with a
 // short timeout and a few retries. It never blocks the caller's deployment.
 func (s *Sender) Send(ctx context.Context, w Webhook, ev Event) error {
+	_, err := s.SendResult(ctx, w, ev)
+	return err
+}
+
+// SendResult is Send with delivery details. The same idempotency key is used
+// for every retry of one event so a receiver can deduplicate.
+func (s *Sender) SendResult(ctx context.Context, w Webhook, ev Event) (Result, error) {
+	result := Result{ID: deliveryID(), Status: "skipped"}
 	if w.URL == "" || !w.Wants(ev.Event) {
-		return nil
+		return result, nil
 	}
 	if ev.Timestamp.IsZero() {
 		ev.Timestamp = time.Now().UTC()
 	}
 	body, err := render(ev)
 	if err != nil {
-		return err
+		result.Status = "failed"
+		result.Error = err.Error()
+		return result, err
 	}
-	var lastErr error
+	result.Status = "failed"
 	for attempt := 0; attempt < s.attempts; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				result.Attempts = attempt
+				result.Error = ctx.Err().Error()
+				return result, ctx.Err()
 			case <-time.After(time.Duration(attempt) * s.backoff):
 			}
 		}
-		if lastErr = s.post(ctx, w, ev, body); lastErr == nil {
-			return nil
+		result.Attempts = attempt + 1
+		code, err := s.post(ctx, w, ev, body, result.ID)
+		if err == nil {
+			result.Status = "delivered"
+			result.ResponseCode = code
+			return result, nil
 		}
+		result.ResponseCode = code
+		result.Error = err.Error()
 	}
-	return fmt.Errorf("webhook delivery failed after %d attempts: %w", s.attempts, lastErr)
+	return result, fmt.Errorf("webhook delivery failed after %d attempts: %s", s.attempts, result.Error)
 }
 
-func (s *Sender) post(ctx context.Context, w Webhook, ev Event, body []byte) error {
+func (s *Sender) post(ctx context.Context, w Webhook, ev Event, body []byte, id string) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.URL, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Menina-Event", ev.Event)
-	req.Header.Set("X-Menina-Delivery", deliveryID())
+	req.Header.Set("X-Menina-Delivery", id)
+	req.Header.Set("X-Menina-Idempotency-Key", id)
 	if w.Secret != "" {
 		req.Header.Set("X-Menina-Signature", Signature(body, w.Secret))
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("receiver returned %s", resp.Status)
+		return resp.StatusCode, fmt.Errorf("receiver returned %s", resp.Status)
 	}
-	return nil
+	return resp.StatusCode, nil
 }
 
 // Signature returns the HMAC-SHA256 header value for a payload so a receiver can
@@ -132,37 +162,45 @@ func Signature(body []byte, secret string) string {
 	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }
 
+const PayloadVersion = 1
+
 type payload struct {
-	Event       string `json:"event"`
-	Action      string `json:"action"`
-	Project     string `json:"project"`
-	Environment string `json:"environment"`
-	App         string `json:"app"`
-	Repository  string `json:"repository"`
-	Tag         string `json:"tag"`
-	Digest      string `json:"digest"`
-	Image       string `json:"image"`
-	Status      string `json:"status"`
-	Actor       string `json:"actor"`
-	Message     string `json:"message"`
-	Timestamp   string `json:"timestamp"`
+	Version       int    `json:"version"`
+	Event         string `json:"event"`
+	Action        string `json:"action"`
+	Project       string `json:"project"`
+	Environment   string `json:"environment"`
+	App           string `json:"app"`
+	Repository    string `json:"repository"`
+	Tag           string `json:"tag"`
+	Digest        string `json:"digest"`
+	Image         string `json:"image"`
+	Status        string `json:"status"`
+	Actor         string `json:"actor"`
+	Message       string `json:"message"`
+	ReleaseID     string `json:"releaseId,omitempty"`
+	ConfigVersion int64  `json:"configVersion,omitempty"`
+	Timestamp     string `json:"timestamp"`
 }
 
 func render(ev Event) ([]byte, error) {
 	return json.Marshal(payload{
-		Event:       ev.Event,
-		Action:      ev.Action,
-		Project:     ev.Project,
-		Environment: ev.Environment,
-		App:         ev.App,
-		Repository:  ev.Repository,
-		Tag:         ev.Tag,
-		Digest:      ev.Digest,
-		Image:       ev.Image,
-		Status:      ev.Status,
-		Actor:       ev.Actor,
-		Message:     ev.Message,
-		Timestamp:   ev.Timestamp.UTC().Format(time.RFC3339),
+		Version:       PayloadVersion,
+		Event:         ev.Event,
+		Action:        ev.Action,
+		Project:       ev.Project,
+		Environment:   ev.Environment,
+		App:           ev.App,
+		Repository:    ev.Repository,
+		Tag:           ev.Tag,
+		Digest:        ev.Digest,
+		Image:         ev.Image,
+		Status:        ev.Status,
+		Actor:         ev.Actor,
+		Message:       ev.Message,
+		ReleaseID:     ev.ReleaseID,
+		ConfigVersion: ev.ConfigVersion,
+		Timestamp:     ev.Timestamp.UTC().Format(time.RFC3339),
 	})
 }
 

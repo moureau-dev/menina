@@ -47,7 +47,11 @@ type Workload struct {
 	// SecretEnv maps an environment variable name to the key within that Secret.
 	SecretEnvName string
 	SecretEnv     map[string]string
-	Ports         []PortMapping
+	// SecretHash is a fingerprint of the injected secret values. It is
+	// annotated on the workload so stale rollouts can be detected after a
+	// rotation without storing the values.
+	SecretHash string
+	Ports      []PortMapping
 }
 
 // PortMapping is a raw TCP/UDP port exposed on the node (hostPort), bypassing
@@ -63,6 +67,7 @@ type WorkloadStatus struct {
 	AvailableReplicas int
 	UpdatedReplicas   int
 	Image             string
+	SecretHash        string
 	Conditions        []string
 }
 
@@ -80,6 +85,34 @@ type WorkloadRef struct {
 	Project     string
 	Environment string
 	App         string
+}
+
+// JobRequest runs a one-off command in an app image. It is used for migration
+// hooks and verification smoke tests. Jobs are timeout-bounded and never
+// exposed as long-running workloads.
+type JobRequest struct {
+	Namespace     string
+	Name          string
+	Project       string
+	Environment   string
+	App           string
+	Image         string
+	Command       []string
+	Args          []string
+	Env           map[string]string
+	SecretEnvName string
+	SecretEnv     map[string]string
+	Timeout       time.Duration
+	PullSecret    string
+	PullPolicy    string
+}
+
+// JobResult is the outcome of a one-off job.
+type JobResult struct {
+	Name     string
+	Logs     string
+	ExitCode int
+	Message  string
 }
 
 type Cluster interface {
@@ -100,5 +133,7 @@ type Cluster interface {
 	EnsureConfigMap(ctx context.Context, namespace, name string, data map[string]string) error
 	EnsurePVC(ctx context.Context, namespace, name, size, storageClass string) error
 	DeletePVC(ctx context.Context, namespace, name string) error
+	CreateVolumeSnapshot(ctx context.Context, namespace, pvcName, snapshotName string) error
+	RunJob(ctx context.Context, req JobRequest) (*JobResult, error)
 	Ping(ctx context.Context) error
 }

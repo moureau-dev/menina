@@ -117,3 +117,11 @@ func (db *DB) Observed(ctx context.Context) ([]Observed, error) {
 	}
 	return out, rows.Err()
 }
+
+// DeleteObserved removes the observed row for a hard-deleted app. Release
+// history is intentionally retained.
+func (db *DB) DeleteObserved(ctx context.Context, project, environment, app string) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM observed WHERE project = ? AND environment = ? AND app = ?`,
+		project, environment, app)
+	return err
+}

@@ -161,7 +161,7 @@ func TestProcessJobNoOpDoesNotDuplicateRelease(t *testing.T) {
 	cluster := &fakeCluster{status: &deployment.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "registry.moureau.dev/my-platform/api@sha256:same"}}
 	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:same"}, testLogger())
 	jobs := NewJobs(db, engine, cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
-	if err := db.RecordRelease(context.Background(), database.Release{Project: "my-platform", Environment: "production", App: "api", Repository: "registry.moureau.dev/my-platform/api", Tag: "production", Digest: "sha256:same", Status: "deployed"}); err != nil {
+	if err := db.RecordRelease(context.Background(), database.Release{Project: "my-platform", Environment: "production", App: "api", Repository: "registry.moureau.dev/my-platform/api", Tag: "production", Digest: "sha256:same", State: "active"}); err != nil {
 		t.Fatal(err)
 	}
 	_, _, _ = jobs.Ingest(context.Background(), registry.PushEvent{Repository: "my-platform/api", Tag: "production", DeliveryID: "d"})
@@ -265,5 +265,21 @@ func TestRapidPushesCoalescePendingJobs(t *testing.T) {
 	}
 	if len(cluster.applied) == 0 || cluster.applied[0].Image != "registry.moureau.dev/my-platform/api@sha256:new" {
 		t.Fatalf("coalesced processing must deploy the latest resolved digest: %+v", cluster.applied)
+	}
+}
+
+func TestIngestPinsResolvedConfiguration(t *testing.T) {
+	snap := resolvedFunc()()
+	app := snap.Projects["my-platform"].Environments["production"].Apps["api"]
+	job := PinJob(database.Job{Kind: "deploy", Project: "my-platform", Environment: "production", App: "api"}, app, snap.Version, "registry", "registry-push")
+	if job.ConfigVersion != 1 || job.ConfigHash == "" || job.ConfigSnapshot == "" {
+		t.Fatalf("job was not pinned: %+v", job)
+	}
+	decoded, err := jobApp(job, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Repository != app.Repository || decoded.Workload.Port != app.Workload.Port {
+		t.Fatalf("pinned app mismatch: %+v", decoded)
 	}
 }

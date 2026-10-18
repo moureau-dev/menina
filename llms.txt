@@ -119,13 +119,30 @@ menina job watch <id> --host user@vps --json --timeout 10m   # NDJSON
 - **Registry:** bundled Zot at `registry.<domain>`. Pushing a bundled-registry
   image auto-deploys matching enabled apps; the tag resolves to a digest.
 - **External images** (for example `redis:7-alpine`) deploy by tag, with no
-  digest pinning, release history, or push-event auto-deploy.
+  digest pinning or push-event auto-deploy. Releases still record the resolved
+  image and configuration hash; promotion requires an immutable digest.
 - **HTTP reachability:** env override must set `enabled: true` and
   `exposure.hosts`.
 - **Raw L4:** `exposure.ports` (`tcp`/`udp`) binds node ports via `hostPort`,
   bypasses the proxy, and does not require HTTP hosts. Keep L4 apps at one
   replica.
 - Apps with neither HTTP hosts nor L4 ports are cluster-internal.
+- **Releases:** per app, with explicit states `prepared`, `migrating`,
+  `deploying`, `verifying`, `active`, `failed`, `recovering`, `rolled_back`.
+  A project/environment release is an aggregate, never an atomic transaction.
+- **Verification:** optional `verification` (HTTP status/body/header and/or a
+  smoke-test Job) with `failurePolicy: recover|keep`. Reachability is not
+  correctness.
+- **Recovery:** optional `recovery.policy: previous|none|require-approval` with
+  explicit triggers. Restoring an image never reverses migrations. Apps that
+  declare `hooks.migrate` default to `require-approval`.
+- **Hooks:** `hooks.preDeploy|migrate|postDeploy` are opt-in, timeout-bounded,
+  run in the released image, and require `security.allowAppHooks: true`.
+- **Ordering:** `dependsOn` is a short explicit list; there is no general DAG.
+- **Snapshots:** `storage.snapshotBeforeDeploy: true` requests a CSI
+  VolumeSnapshot and fails explicitly when unsupported; not a backup substitute.
+- **Promotion:** `menina app promote` moves an existing digest between
+  environments without rebuilding, with a reviewed target plan/state token.
 
 ### Service-to-service / microservices (today)
 
@@ -133,8 +150,9 @@ Menina is a deployment layer, not a microservices platform. Multiple apps in one
 project/environment get internal Service DNS, independent images/secrets/resources,
 and per-app deploys. What is missing:
 
-- ordered startup / `depends_on` and readiness-aware service discovery;
-- one-off jobs, migration jobs, and pre/post-deploy hooks;
+- general readiness-aware service discovery (there is only explicit `dependsOn`
+  ordering and bounded readiness waits);
+- user-defined cron jobs (one-off Jobs exist for hooks and verification);
 - NetworkPolicy/mTLS and service identity;
 - retries, circuit breaking, rate limiting, and distributed tracing across
   services (per-route HTTP timeouts do exist);
@@ -143,8 +161,8 @@ and per-app deploys. What is missing:
 - per-service authorization and namespace quotas.
 
 Workarounds are application-level (retries/backoff, app tracing, external
-databases, ordered deploys/manual migrations). Roadmap: dependency ordering and
-migration hooks are Tier 1; network policies/quotas are Tier 2; canary and
+databases). Explicit `dependsOn` ordering, migration hooks, and per-app release
+recovery landed in Tier 1; network policies/quotas are Tier 2; canary and
 cross-service strategies are Tier 4. See
 [`ROADMAP.md`](https://github.com/moureau-dev/menina/blob/main/ROADMAP.md).
 
@@ -184,13 +202,14 @@ mergeable fields. See [`docs/CONFIGURATION.md`](https://menina.moureau.dev/docs/
 Host commands (summary):
 
 ```bash
-menina app deploy|status|logs|rollback|scale|delete|restore|reset-volume
+menina app deploy|status|logs|rollback|scale|delete|restore|reset-volume|promote
+menina release status|history
 menina secret set|list|remove|rotate|verify
 menina config validate|revisions|rollback
 menina job list|watch|cancel
 menina status|routes|doctor
 menina registry status|credential
-menina notify list|test
+menina notify list|test|deliveries|replay
 menina backup|restore|upgrade
 ```
 
@@ -200,8 +219,12 @@ menina backup|restore|upgrade
 2. Zot emits an event; `menina serve` matches enabled apps by repository + tag.
 3. Bundled-registry tags resolve to immutable digests; the Deployment is updated
    to `repo@sha256:...` (rollback restores a recorded digest).
-4. The reconciler applies desired state and prunes removed workloads (PVCs and
-   release history are retained).
+4. The job runs the pinned resolved configuration snapshot it was queued with,
+   not config written later. It records a per-app release, runs declared hooks,
+   applies the workload, waits for rollout, and runs declarative verification.
+5. Success marks the release `active`; failure records `failed` and applies the
+   app's explicit recovery policy. The reconciler then applies desired state and
+   prunes removed workloads (PVCs and release history are retained).
 
 ## SSH and TUI
 
@@ -213,8 +236,10 @@ without a TTY must not prompt. Bare `menina` opens the TUI on a TTY.
 
 No HTTP/3/QUIC, ACME wildcards, built-in auth/RBAC/SSO, rate limiting/WAF,
 multi-node k3s or HA control plane, replicated/RWX storage by default, canary or
-blue-green deploys, cron/one-off jobs, automatic rollback on failed verification,
-or per-user registry credentials (one shared push/pull credential).
+blue-green deploys, user-defined cron jobs, a general orchestration DAG, or
+per-user registry credentials (one shared push/pull credential). One-off Jobs
+exist internally for hooks and verification smoke tests. Automatic recovery is
+per-app and policy-driven; it is not a project-wide transaction.
 
 ## Docs
 

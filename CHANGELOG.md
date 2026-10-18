@@ -6,7 +6,65 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Per-app releases with explicit states and a durable state machine
+  (`prepared`, `migrating`, `deploying`, `verifying`, `active`, `failed`,
+  `recovering`, `rolled_back`), pinned image/config snapshots, previous-good
+  pointer, verification/migration status, and release events. `release status`
+  aggregates an environment without hiding failed components;
+  `release history` shows an app's records.
+- Declarative verification: expected HTTP status/body/header and an optional
+  smoke-test Job, with `failurePolicy: recover|keep`. `deploy --verify` remains a
+  reachability check.
+- Opt-in lifecycle hooks (`preDeploy`, `migrate`, `postDeploy`) with timeouts,
+  logs, image pinning and `security.allowAppHooks`. A one-off Kubernetes Job
+  primitive backs hooks and smoke tests.
+- Explicit per-app recovery (`previous` / `none` / `require-approval`) with
+  independent triggers. Migrations default to `require-approval`; recovery never
+  claims to reverse data.
+- First-class promotion by existing digest with a reviewed target plan and
+  state token (`app promote --dry-run/--state-token`).
+- Minimal dependency ordering via `dependsOn`; no general orchestration DAG.
+- Optional CSI volume snapshots before deploy (`snapshotBeforeDeploy`), failing
+  explicitly when the storage class does not support them.
+- Job watch resume cursor (`--cursor`) and a terminal event carrying the remote
+  exit code; clean cancellation remains.
+- Webhook delivery history with idempotency keys, dead-letter visibility and
+  replay (`notify deliveries`, `notify replay`).
+- Metrics for releases, deploy duration/outcome, queue depth, app replicas,
+  proxy readiness and node/disk capacity; reference alert rules in
+  `docs/OPERATIONS.md`.
+- Daily scheduled backup service/timer installed by `menina deploy platform`,
+  plus RPO/RTO and restore-drill guidance.
+
+### Fixed
+- Namespaced external images such as `traefik/whoami` are no longer treated as
+  bundled-registry repositories and no longer fail digest resolution; only the
+  configured registry host is resolved to a digest.
+- The proxy unit no longer owns the shared `RuntimeDirectory`, so restarting it
+  cannot unlink the control socket/token created by `menina-serve`.
+- The control-plane service identity can create/delete batch Jobs (hooks,
+  verification smoke tests) and CSI VolumeSnapshots.
+- Deployment applies retry Kubernetes update conflicts instead of failing a
+  release when reconciliation writes concurrently.
+- No-op deploys link the job to the existing active release, and releases left
+  non-terminal by a crashed control plane are marked failed on restart.
+- Hard-deleted apps drop their observed row so metrics and status do not keep a
+  ghost component.
+- `menina deploy platform` also refreshes the scoped service RBAC/kubeconfig, so
+  new Job and VolumeSnapshot permissions reach existing hosts.
+
+### Changed
+- Deployment jobs pin the resolved config snapshot/version at queue time; a job
+  no longer executes against configuration written after it was queued.
+- Deployments are annotated with a hash of injected secrets; `app status`
+  reports `secret rotated, rollout stale` and a rotation forces a rollout when
+  `--restart` queues a deploy.
+- Control-plane HTTP failures map to stable CLI error classes (auth, not found,
+  conflict, validation, unsupported, timeout).
+
 ### Docs
+
 - Added `AGENTS.md` and `docs/STRUCTURE.md` covering release/commit rules, doc
   maintenance, package boundaries, and when to update the structure guide.
 - Added an implementation dependency map to `ROADMAP.md` with per-item

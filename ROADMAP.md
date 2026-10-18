@@ -35,87 +35,45 @@ Guiding principle: **make failure paths as deliberate and predictable as the
 happy path.** A release must be identifiable, verifiable, recoverable, and
 honest about what was and was not rolled back.
 
-## Tier 1 — release model, determinism, and operations (next)
+## Tier 1 — release model, determinism, and operations (landed)
 
-### Release model
+Tier 1 landed in the unreleased line after v0.0.14. It is recorded here as the
+baseline the higher tiers build on, not as remaining work.
 
-Build the model **per app first**, then compose it into a project/environment
-release. Do not pretend a multi-app rollout is a transaction.
+- **App releases** have pinned image and resolved configuration (`stateToken`
+  plus a stored config snapshot), verification and migration status, a
+  previous-known-good pointer, and explicit states (`prepared`, `migrating`,
+  `deploying`, `verifying`, `active`, `failed`, `recovering`, `rolled_back`).
+- **Environment releases** are aggregates. `menina release status` reports each
+  component and never hides a failed app behind a global success, with code,
+  configuration, and data state reported separately.
+- **Recovery** is an explicit per-app `previous` / `none` / `require-approval`
+  policy with separate triggers (`deploy-error`, `verification-failure`,
+  `timeout`, `interrupted`). An image restore never claims to reverse a
+  migration; apps with migrations default to `require-approval`.
+- **Verification** supports expected HTTP status/body/header and a smoke-test
+  Job, with an explicit `recover` / `keep` failure policy.
+- **Promotion** moves an existing digest between environments without rebuilding,
+  using a reviewed target plan and state token.
+- **Hooks** (`preDeploy`, `migrate`, `postDeploy`) are opt-in, permissioned via
+  `security.allowAppHooks`, image-pinned, timeout-bounded, logged, and never
+  assumed reversible. A one-off Job primitive backs hooks and smoke tests.
+- **Ordering** is the minimal explicit `dependsOn` chain; there is no general
+  DAG. Optional CSI volume snapshots are opt-in and fail explicitly when the
+  storage class cannot provide them.
+- **Determinism and operations**: deployment jobs pin the resolved config
+  snapshot; Deployments are annotated with an injected-secret hash and
+  `app status` reports stale rollouts after a rotation; job watch has a resume
+  cursor and a terminal sentinel carrying the remote exit code; webhook
+  deliveries are stored with idempotency keys and can be replayed; metrics cover
+  deploy duration/outcome, queue depth, replicas, proxy readiness, and node/disk
+  capacity; scheduled daily backups and a CI restore round trip exist; control
+  plane errors are classified for CLI exit codes.
 
-**App release** — the unit that can be tested and recovered independently:
-
-- pinned image digest and resolved configuration (`stateToken`);
-- verification results and migration status;
-- a pointer to the previous known-good app release;
-- retained previous workload and PVC;
-- explicit states such as `prepared`, `migrating`, `deploying`, `verifying`,
-  `active`, `failed`, `recovering`, `rolled_back`.
-
-**Project/environment release** — an aggregate, not an atomic operation:
-
-- coordinates app releases and any explicitly declared ordering;
-- records each component outcome and summarizes the overall release as
-  succeeded, failed, or partially failed;
-- never hides a failed component behind a global success;
-- reports code, configuration, and data state separately.
-
-Example partial failure:
-
-```text
-release staging-042: partially failed
-  api:      active       new image verified
-  admin:    failed       previous image remains active
-  database: migrated     migration not reversed; verify old code compatibility
-```
-
-Recovery is an explicit per-app/environment policy, never a hidden global
-default:
-
-| Policy | Behavior |
-| --- | --- |
-| `previous` | Attempt to restore the previous known-good app release after qualifying failures. |
-| `none` | Keep the failed release state for inspection; do not auto-restore. |
-| `require-approval` | Prepare recovery but wait for an authorized operator. |
-
-Define triggers separately: deploy error, failed verification, timeout, and
-interrupted job. Apps with declared migrations should default to `none` or
-`require-approval`; an image rollback does not reverse data changes.
-
-Also:
-
-- Declarative verification: expected HTTP status/body/header and optional
-  smoke-test command/job, with an explicit failure policy.
-- First-class promotion: move an existing image digest + reviewed target plan
-  between environments without rebuilding.
-- App-aware migration/pre/post hooks are opt-in, permissioned, image-pinned,
-  timeout-bounded, logged, and never assumed reversible.
-- Optional volume snapshots only when the storage class provides them. They are
-  not a substitute for scheduled backups.
-- Keep dependency ordering minimal and explicit (for example migrations before
-  API, API before workers). Do not build a general orchestration DAG.
-
-### Determinism and operations
-
-- Pin the resolved config snapshot on deployment jobs so a deploy cannot execute
-  against config written after it was queued. Surface the pinned version in
-  `job watch`, `app status`, and notifications.
-- Secret staleness: annotate Deployments with the hash of injected secrets and
-  report “secret rotated, rollout stale” in `app status`/`secret list`.
-- Job watch resilience: resume cursor/last-event ID and a terminal sentinel
-  carrying the remote exit code; clean cancellation across SSH.
-- Webhook operations: versioned payload contract, last-delivery status in CLI
-  and JSON, dead-letter/replay, and idempotency verification.
-- Metrics depth: deploy duration/success, queue depth, per-app ready replicas,
-  proxy health, registry storage, node disk. Document labels and a reference
-  Prometheus/Alertmanager rule set.
-- DR: scheduled/offsite backup guidance, documented RPO/RTO, restore test in CI.
-- Finish error taxonomy: CAS conflicts, stale plans, auth failures, and schema
-  mismatches should all use stable codes/exit values.
-
-Exit criteria: releases are pinned/identifiable; a failed deployment reports
-code, config, and data state separately; verification has an explicit failure
-policy; promotion does not rebuild; no known apply/deploy race; a failed deploy
-is observable without manual checks.
+Exit criteria are met: releases are pinned and identifiable; a failed deployment
+reports code, config, and data state separately; verification has a failure
+policy; promotion does not rebuild; deploys cannot execute against config written
+after queueing; and a failed deploy is observable without manual checks.
 
 ## Tier 2 — team and security
 
@@ -256,8 +214,9 @@ single-node setup most importance scores drop.
 | 35 | 12, 13 | Log retention/search, alerting, deploy events | 7 | 8 | Needs metrics/events first; much can be external. |
 | 36 | 16, 18, 19, 25 | Larger-scale quotas/multitenancy/audit export | 9 | 6 | Identity/authorization/quotas must land first. |
 
-The key hidden prerequisite is a **one-off job primitive** for item 6; it should
-probably be added as its own item between 9 and 6.
+Items 1-15 (Tier 1) landed in the unreleased line, including the previously
+hidden one-off Job primitive used by migration hooks and verification smoke
+tests. The table remains as a dependency reference for the higher tiers.
 
 ## Explicit non-goals for the current line
 

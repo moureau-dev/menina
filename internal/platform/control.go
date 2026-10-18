@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moureau-dev/menina/internal/clierr"
 	"github.com/moureau-dev/menina/internal/proxy"
 )
 
@@ -139,7 +140,7 @@ func (c *ControlClient) GetJSON(ctx context.Context, path string, out any) error
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		data, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("control request %s failed: %s: %s", path, resp.Status, strings.TrimSpace(string(data)))
+		return controlError(path, resp.StatusCode, string(data))
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
@@ -165,7 +166,7 @@ func (c *ControlClient) GetStream(ctx context.Context, path string) (io.ReadClos
 	if resp.StatusCode != http.StatusOK {
 		data, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		return nil, fmt.Errorf("control request %s failed: %s: %s", path, resp.Status, strings.TrimSpace(string(data)))
+		return nil, controlError(path, resp.StatusCode, string(data))
 	}
 	return resp.Body, nil
 }
@@ -186,7 +187,7 @@ func (c *ControlClient) PostJSON(ctx context.Context, path string, body []byte) 
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("control request %s failed: %s: %s", path, resp.Status, strings.TrimSpace(string(data)))
+		return controlError(path, resp.StatusCode, string(data))
 	}
 	return nil
 }
@@ -200,7 +201,7 @@ func (c *ControlClient) PostJSONDecode(ctx context.Context, path string, body []
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("control request %s failed: %s: %s", path, resp.Status, strings.TrimSpace(string(data)))
+		return controlError(path, resp.StatusCode, string(data))
 	}
 	if out != nil {
 		return json.NewDecoder(resp.Body).Decode(out)
@@ -233,4 +234,28 @@ func (c *ControlClient) Stream(ctx context.Context, fn SnapshotStream) error {
 		fn(&snap)
 	}
 	return scanner.Err()
+}
+
+// controlError maps HTTP status to the stable CLI error classes.
+func controlError(path string, code int, body string) error {
+	message := fmt.Sprintf("control request %s failed: HTTP %d", path, code)
+	if body = strings.TrimSpace(body); body != "" {
+		message += ": " + body
+	}
+	switch code {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return clierr.New(clierr.CodeAuth, message, "check that the control token file is readable and the control plane is running")
+	case http.StatusNotFound:
+		return clierr.Wrap(clierr.CodeNotFound, fmt.Errorf("%s", message))
+	case http.StatusConflict:
+		return clierr.Wrap(clierr.CodeConflict, fmt.Errorf("%s", message))
+	case http.StatusBadRequest, http.StatusUnprocessableEntity:
+		return clierr.Wrap(clierr.CodeValidation, fmt.Errorf("%s", message))
+	case http.StatusServiceUnavailable, http.StatusNotImplemented:
+		return clierr.Wrap(clierr.CodeUnsupported, fmt.Errorf("%s", message))
+	case http.StatusGatewayTimeout, http.StatusRequestTimeout:
+		return clierr.Wrap(clierr.CodeTimeout, fmt.Errorf("%s", message))
+	default:
+		return fmt.Errorf("%s", message)
+	}
 }

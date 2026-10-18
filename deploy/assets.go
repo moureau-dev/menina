@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-//go:embed systemd/*.service zot/*
+//go:embed systemd/* zot/*
 var FS embed.FS
 
 func SystemdUnit(name string) (string, error) {
-	if !strings.HasSuffix(name, ".service") {
+	if !strings.HasSuffix(name, ".service") && !strings.HasSuffix(name, ".timer") {
 		name += ".service"
 	}
 	data, err := FS.ReadFile(path.Join("systemd", name))
