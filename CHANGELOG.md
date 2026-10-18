@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-18
+
 ### Added
 - Per-app releases with explicit states and a durable state machine
   (`prepared`, `migrating`, `deploying`, `verifying`, `active`, `failed`,
@@ -510,7 +512,16 @@ reverse proxy.
 - Umask-independent permissions on secrets, config and control files.
 - `status` degrades gracefully when the control plane is unavailable.
 
-[Unreleased]: https://github.com/moureau-dev/menina/compare/v0.0.6...HEAD
+[Unreleased]: https://github.com/moureau-dev/menina/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/moureau-dev/menina/releases/tag/v0.1.0
+[0.0.14]: https://github.com/moureau-dev/menina/releases/tag/v0.0.14
+[0.0.13]: https://github.com/moureau-dev/menina/releases/tag/v0.0.13
+[0.0.12]: https://github.com/moureau-dev/menina/releases/tag/v0.0.12
+[0.0.11]: https://github.com/moureau-dev/menina/releases/tag/v0.0.11
+[0.0.10]: https://github.com/moureau-dev/menina/releases/tag/v0.0.10
+[0.0.9]: https://github.com/moureau-dev/menina/releases/tag/v0.0.9
+[0.0.8]: https://github.com/moureau-dev/menina/releases/tag/v0.0.8
+[0.0.7]: https://github.com/moureau-dev/menina/releases/tag/v0.0.7
 [0.0.6]: https://github.com/moureau-dev/menina/releases/tag/v0.0.6
 [0.0.5]: https://github.com/moureau-dev/menina/releases/tag/v0.0.5
 [0.0.4]: https://github.com/moureau-dev/menina/releases/tag/v0.0.4
