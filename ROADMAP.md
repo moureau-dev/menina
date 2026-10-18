@@ -13,6 +13,10 @@ makes the multi-node/HA work explicit instead of hiding it under “HA/DR”.
   observability/alerting, supply-chain controls.
 - **Design bias:** one small system you can understand and operate yourself.
   Add capabilities without turning Menina into a generic Kubernetes distro.
+- **Identity rule:** credentials and identity belong to the execution context
+  (client, CI job, operator), never to the manifest. `.menina.yml` names the
+  target project; it never selects who is acting. `source.repo` stays an
+  ownership hint, not an authorization boundary.
 
 ## Landed recently (through v0.1.1)
 
@@ -86,17 +90,33 @@ A shared administrative identity is not a tenant boundary. RBAC/SSO can follow.
 
 Ordered cheapest-first:
 
-1. Per-project secret permissions and per-user registry credentials.
-2. Operator audit log: who applied/rotated/deleted what, with actor, plan/state
+1. Client identity and enrollment: one credential per client (an SSH key by
+   default), a one-time enrollment token shown once and never reprinted,
+   revocation and rotation, and profile metadata (name, scopes, keys, expiry,
+   last seen). The server derives the profile from the authenticated key; the
+   client never asserts its own identity.
+2. Key-derived actor and scoped command wrapper: map the authenticated key to a
+   profile, restrict it to allowlisted `menina` subcommands, inject the actor
+   server-side, and enforce scopes against the requested project, environment,
+   and action. Without enforcement, profiles are labels.
+3. Operator audit log: who applied/rotated/deleted what, with actor, plan/state
    token, source repo, and timestamps.
-3. `source.repo` is an ownership hint, not a security boundary; enforce real
+4. Per-project secret permissions and per-user registry credentials.
+5. `source.repo` is an ownership hint, not a security boundary; enforce real
    authorization separately.
-4. RBAC/SSO, per-team quotas, and network policies.
-5. Secret isolation beyond the shared `menina` group.
+6. RBAC/SSO, per-team quotas, and network policies.
+7. Secret isolation beyond the shared `menina` group.
+
+Identity is selected by the execution context, not the manifest. Client-side
+selection is `--profile` / `MENINA_PROFILE` over a stored context, with
+`--host` / `MENINA_HOST` layered on top; `menina whoami` reports the
+server-derived profile and scopes. CI uses an enrolled key materialized from its
+secret store, pins the host key, and runs with prompts disabled.
 
 Exit criteria: multiple operators can share a host without sharing credentials
-or silently overwriting each other; actions are attributable and reviewable.
-Independent clients/agents do not share an administrative identity.
+or silently overwriting each other; every action is attributable to a client,
+key, and profile; scopes are enforced by the host, not just recorded; and
+revoking one client does not disturb the others.
 
 ## Tier 3 — fleet operations, multi-node, and HA/DR
 
@@ -196,11 +216,11 @@ single-node setup most importance scores drop.
 | 14 | — | DR: scheduled backups, RPO/RTO, restore CI | 6 | 10 | Backup exists; automation and proof do not. |
 | 15 | — | Finish error taxonomy | 4 | 7 | Stable codes for CAS/stale plans/auth/schema mismatches. |
 | 16 | 26 | Per-project secret permissions + per-user registry creds | 8 | 9 | Tenant model affects scoping; isolation/revocation required. |
-| 17 | 16 | Operator audit log | 6 | 9 | Actor/source/plan/tokens; weak without identity but useful early. |
-| 18 | 16 | Real authorization vs `source.repo` hint | 7 | 8 | Enforce ownership; repo metadata is not a boundary. |
+| 17 | 16, 37, 38 | Operator audit log | 6 | 9 | Actor/source/plan/tokens; needs key-derived identity and scope enforcement. |
+| 18 | 16, 38 | Real authorization vs `source.repo` hint | 7 | 8 | Enforce ownership; repo metadata is not a boundary. |
 | 19 | 16, 17, 18 | RBAC/SSO, team quotas, NetworkPolicy | 9 | 8 | Large identity/infra program on top of creds/audit/authorization. |
 | 20 | 16 | Secret isolation beyond shared `menina` group | 8 | 9 | Group-readable secrets are not tenant isolation. |
-| 21 | 16, 17 | Shared-access gate | 2 | 9 | Process/validation: no shared admin identity across clients/agents. |
+| 21 | 16, 17, 37, 38 | Shared-access gate | 2 | 9 | Process/validation: no shared admin identity across clients/agents. |
 | 22 | 14, 16 | Per-client backup schedules/retention | 6 | 8 | Fleet policy needs DR automation + project isolation. |
 | 23 | 13 | Aggregate fleet overview | 6 | 7 | Failed deploys, health, disk, certs, backups; needs metrics/labels. |
 | 24 | 14, 16 | Replacement-host migration workflow | 8 | 8 | Tested DR + isolation; config/revisions/secrets/registry/volumes. |
@@ -216,6 +236,15 @@ single-node setup most importance scores drop.
 | 34 | 2, 3, 4, 5 | Canary/blue-green, maxSurge/maxUnavailable, traffic splitting | 8 | 7 | Needs release sets + verification + recovery + traffic control. |
 | 35 | 12, 13 | Log retention/search, alerting, deploy events | 7 | 8 | Needs metrics/events first; much can be external. |
 | 36 | 16, 18, 19, 25 | Larger-scale quotas/multitenancy/audit export | 9 | 6 | Identity/authorization/quotas must land first. |
+| 37 | — | Client identity + enrollment | 6 | 9 | Per-client key, one-time token, revoke/rotate, profile scopes; server maps key to profile. |
+| 38 | 37 | Key-derived actor + scoped command wrapper | 5 | 9 | Forced command/`AuthorizedKeysCommand`, allowlisted subcommands, server-injected actor and scope checks. |
+| 39 | 37 | Client contexts + env/CI credentials | 4 | 7 | Contexts, flag/env precedence, `whoami`, BatchMode, host-key pinning. |
+| 40 | 39 | In-process SSH transport | 6 | 5 | Remove `openssh-client` dependency; pin host keys by fingerprint. |
+| 41 | 37, 39 | One-paste bootstrap | 4 | 8 | `setup` prints reachable host, host-key fingerprint, and enrollment command; installer verifies with `whoami`. |
+
+Items 37-41 are the client identity and enrollment work the shared-access gate
+depends on. They are listed at the end for numbering, but they are prerequisites
+for items 17, 18, and 21, not follow-on scale work.
 
 Items 1-15 (Tier 1) landed in the unreleased line, including the previously
 hidden one-off Job primitive used by migration hooks and verification smoke
