@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-18
+
+### Fixed
+- Kubernetes probes now include a startup grace period and realistic timeouts
+  (readiness 5s delay/5s timeout/5s period, liveness 30s/5s/10s), preventing
+  kubelet from restarting healthy apps during startup or short control-plane
+  stalls.
+- Legacy and terminal job records report `ExitCode: 0` for `done` and `1` for
+  `failed`, and fall back to `UpdatedAt` when no finish time was recorded.
+
+### Changed
+- `app status` now returns a concrete usage hint when the app name is missing.
+
+### Docs
+- Document the client/host command split, SSH-only `app`/`release` commands,
+  single-app redeploy recipes, `build`/`push --filter`, and the schema-shaped
+  manifest example.
+
 ## [0.1.0] - 2026-10-18
 
 ### Added
@@ -512,7 +530,8 @@ reverse proxy.
 - Umask-independent permissions on secrets, config and control files.
 - `status` degrades gracefully when the control plane is unavailable.
 
-[Unreleased]: https://github.com/moureau-dev/menina/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/moureau-dev/menina/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/moureau-dev/menina/releases/tag/v0.1.1
 [0.1.0]: https://github.com/moureau-dev/menina/releases/tag/v0.1.0
 [0.0.14]: https://github.com/moureau-dev/menina/releases/tag/v0.0.14
 [0.0.13]: https://github.com/moureau-dev/menina/releases/tag/v0.0.13
