@@ -371,9 +371,23 @@ func scanJobs(rows *sql.Rows) ([]Job, error) {
 		if finished.Valid {
 			j.FinishedAt = time.Unix(finished.Int64, 0)
 		}
-		j.ExitCode = -1
 		if exit.Valid {
 			j.ExitCode = int(exit.Int64)
+		} else {
+			switch j.Status {
+			case JobStatusDone:
+				j.ExitCode = 0
+			case JobStatusFailed:
+				j.ExitCode = 1
+			default:
+				j.ExitCode = -1
+			}
+		}
+		if !finished.Valid {
+			switch j.Status {
+			case JobStatusDone, JobStatusFailed, JobStatusCancelled, JobStatusSuperseded:
+				j.FinishedAt = j.UpdatedAt
+			}
 		}
 		out = append(out, j)
 	}

@@ -87,7 +87,12 @@ func appStatus(app *App) *cobra.Command {
 		Long: "Show the most recent deployment job, release digest and observed status for\n" +
 			"an app. Requires the control plane (`menina serve`).",
 		Example: "  menina app status api --project my-app --environment production",
-		Args:    cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return fmt.Errorf("usage: menina app status <app> --project P --environment E (app status is a host command; run it over SSH)")
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := app.LoadConfig()
 			if err != nil {

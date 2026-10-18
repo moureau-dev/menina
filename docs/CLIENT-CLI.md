@@ -414,6 +414,52 @@ value; use `--output <path>` to write it to a mode-0600 file.
 
 The manifest never contains secret values.
 
+## Client vs host
+
+The standalone client runs the manifest and image commands (`init`, `validate`,
+`apply`, `build`, `push`, `schema`, `capabilities`, `install`) plus `secret`,
+`job`, `config`, `version`, and `upgrade`. It proxies `apply`, `job`, `config`,
+and `secret` over SSH with `--host`.
+
+`app`, `release`, `status`, `routes`, and `doctor` are host commands. Run them
+over SSH:
+
+```bash
+ssh -t user@vps menina app status api --project demo --environment production
+ssh -t user@vps menina release status --project demo --environment production
+```
+
+`menina app status` locally fails with `unknown command "app"`.
+
+### Redeploy one app
+
+Config-only changes are applied by the host reconciler. An image change needs a
+build and push. To force a release (hooks, verification, release record) for one
+app, queue a host deploy.
+
+```bash
+# Config-only: env, resources, replicas, exposure, storage
+menina validate
+menina apply --host user@vps --diff
+menina apply --host user@vps --from-plan <plan-id>
+
+# Image change: apply, then rebuild only the changed app
+menina validate
+menina apply --host user@vps
+menina build --push --filter api
+
+# Watch the asynchronous push-triggered deploy
+menina job list --host user@vps --json
+menina job watch <job-id> --host user@vps --json --timeout 10m
+
+# Force a job/release for one app
+ssh -t user@vps menina app deploy api --project demo --environment production --yes
+```
+
+`build --push` and `push` accept `--filter`; without it they process every
+target. A push does not print the resulting job ID because the host's registry
+event listener queues it asynchronously.
+
 ## Commands
 
 All client commands are also available on the host binary.
