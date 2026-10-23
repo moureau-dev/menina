@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/moureau-dev/menina/internal/deployment"
-	"github.com/moureau-dev/menina/internal/proxy"
+	"github.com/moureau-dev/menina/internal/edge"
 )
 
 func TestHostToClusterIPEndToEnd(t *testing.T) {
@@ -61,13 +61,13 @@ func TestHostToClusterIPEndToEnd(t *testing.T) {
 	}
 	t.Logf("web ClusterIP = %s", ip)
 
-	server, err := proxy.NewServer(proxy.Options{Log: log})
+	server, err := edge.NewServer(edge.Options{Log: log})
 	if err != nil {
 		t.Fatal(err)
 	}
 	routeHost := "e2e.local"
 	backend := fmt.Sprintf("%s:80", ip)
-	if err := server.UpdateSnapshot(&proxy.Snapshot{Version: 1, Routes: []proxy.Route{{Host: routeHost, PathPrefix: "/", Backend: backend}}}); err != nil {
+	if err := server.UpdateSnapshot(&edge.Snapshot{Version: 1, Routes: []edge.Route{{Host: routeHost, PathPrefix: "/", Backend: backend}}}); err != nil {
 		t.Fatal(err)
 	}
 	front := httptest.NewServer(server.Handler())

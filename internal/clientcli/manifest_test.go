@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/moureau-dev/menina/internal/manifest"
+	"github.com/moureau-dev/menina/internal/contract/manifest"
 )
 
 func writeTestManifest(t *testing.T, body string) string {

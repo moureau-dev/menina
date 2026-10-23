@@ -11,8 +11,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/moureau-dev/menina/internal/clierr"
-	"github.com/moureau-dev/menina/internal/manifest"
-	"github.com/moureau-dev/menina/internal/schema"
+	"github.com/moureau-dev/menina/internal/contract/manifest"
+	"github.com/moureau-dev/menina/internal/contract/schema"
 	"github.com/moureau-dev/menina/internal/version"
 )
 

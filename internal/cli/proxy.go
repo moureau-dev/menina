@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/proxy"
+	"github.com/moureau-dev/menina/internal/edge"
 )
 
 func newProxyCommand(app *App) *cobra.Command {
@@ -21,13 +21,13 @@ func newProxyCommand(app *App) *cobra.Command {
 				return err
 			}
 			app.Opts.ConfigDir = cfg.Host.ConfigDir
-			opts := proxy.Options{
+			opts := edge.Options{
 				TrustedProxies: cfg.Security.TrustedProxies,
-				TLS: proxy.TLSOptions{
+				TLS: edge.TLSOptions{
 					Terminate: cfg.TLS.Terminate,
 					Mode:      cfg.TLS.Mode,
 					CertDir:   cfg.TLS.CertDir,
-					ACME: proxy.ACMEOptions{
+					ACME: edge.ACMEOptions{
 						Email:        cfg.TLS.ACME.Email,
 						DirectoryURL: cfg.TLS.ACME.DirectoryURL,
 						StorageDir:   cfg.TLS.ACME.StorageDir,
@@ -39,7 +39,7 @@ func newProxyCommand(app *App) *cobra.Command {
 				HTTPSListen:  cfg.Platform.HTTPSListen,
 				HTTPRedirect: cfg.TLS.HTTPRedirect,
 			}
-			server, err := proxy.NewServer(opts)
+			server, err := edge.NewServer(opts)
 			if err != nil {
 				return err
 			}
@@ -50,7 +50,7 @@ func newProxyCommand(app *App) *cobra.Command {
 	}
 }
 
-func subscribeRouting(ctx context.Context, app *App, cfg *config.Config, server *proxy.Server) {
+func subscribeRouting(ctx context.Context, app *App, cfg *config.Config, server *edge.Server) {
 	for ctx.Err() == nil {
 		client, err := app.Control(cfg)
 		if err != nil {
@@ -65,7 +65,7 @@ func subscribeRouting(ctx context.Context, app *App, cfg *config.Config, server 
 		} else {
 			app.Log.Info("loaded routing snapshot", "version", snap.Version, "routes", len(snap.Routes))
 		}
-		err = client.Stream(ctx, func(s *proxy.Snapshot) {
+		err = client.Stream(ctx, func(s *edge.Snapshot) {
 			if err := server.UpdateSnapshot(s); err != nil {
 				app.Log.Error("rejected routing snapshot update", "error", err)
 				return

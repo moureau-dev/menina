@@ -20,22 +20,22 @@ import (
 	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/deployment"
 	"github.com/moureau-dev/menina/internal/notify"
-	"github.com/moureau-dev/menina/internal/proxy"
+	"github.com/moureau-dev/menina/internal/edge"
 	"github.com/moureau-dev/menina/internal/registry"
 	"github.com/moureau-dev/menina/internal/secrets"
 )
 
 type broadcaster struct {
 	mu     sync.Mutex
-	subs   map[chan *proxy.Snapshot]struct{}
-	latest *proxy.Snapshot
+	subs   map[chan *edge.Snapshot]struct{}
+	latest *edge.Snapshot
 }
 
 func newBroadcaster() *broadcaster {
-	return &broadcaster{subs: map[chan *proxy.Snapshot]struct{}{}}
+	return &broadcaster{subs: map[chan *edge.Snapshot]struct{}{}}
 }
 
-func (b *broadcaster) publish(s *proxy.Snapshot) {
+func (b *broadcaster) publish(s *edge.Snapshot) {
 	b.mu.Lock()
 	b.latest = s
 	for ch := range b.subs {
@@ -47,14 +47,14 @@ func (b *broadcaster) publish(s *proxy.Snapshot) {
 	b.mu.Unlock()
 }
 
-func (b *broadcaster) snapshot() *proxy.Snapshot {
+func (b *broadcaster) snapshot() *edge.Snapshot {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.latest
 }
 
-func (b *broadcaster) subscribe() chan *proxy.Snapshot {
-	ch := make(chan *proxy.Snapshot, 1)
+func (b *broadcaster) subscribe() chan *edge.Snapshot {
+	ch := make(chan *edge.Snapshot, 1)
 	b.mu.Lock()
 	b.subs[ch] = struct{}{}
 	if b.latest != nil {
@@ -64,7 +64,7 @@ func (b *broadcaster) subscribe() chan *proxy.Snapshot {
 	return ch
 }
 
-func (b *broadcaster) unsubscribe(ch chan *proxy.Snapshot) {
+func (b *broadcaster) unsubscribe(ch chan *edge.Snapshot) {
 	b.mu.Lock()
 	delete(b.subs, ch)
 	close(ch)
@@ -362,7 +362,7 @@ func (s *Service) controlMux() http.Handler {
 	mux.HandleFunc("/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		snap := s.bus.snapshot()
 		if snap == nil {
-			snap = &proxy.Snapshot{}
+			snap = &edge.Snapshot{}
 		}
 		writeJSON(w, http.StatusOK, snap)
 	})

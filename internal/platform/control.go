@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/moureau-dev/menina/internal/clierr"
-	"github.com/moureau-dev/menina/internal/proxy"
+	"github.com/moureau-dev/menina/internal/edge"
 )
 
 func GenerateToken() (string, error) {
@@ -171,8 +171,8 @@ func (c *ControlClient) GetStream(ctx context.Context, path string) (io.ReadClos
 	return resp.Body, nil
 }
 
-func (c *ControlClient) Snapshot(ctx context.Context) (*proxy.Snapshot, error) {
-	var snap proxy.Snapshot
+func (c *ControlClient) Snapshot(ctx context.Context) (*edge.Snapshot, error) {
+	var snap edge.Snapshot
 	if err := c.GetJSON(ctx, "/snapshot", &snap); err != nil {
 		return nil, err
 	}
@@ -209,7 +209,7 @@ func (c *ControlClient) PostJSONDecode(ctx context.Context, path string, body []
 	return nil
 }
 
-type SnapshotStream func(*proxy.Snapshot)
+type SnapshotStream func(*edge.Snapshot)
 
 func (c *ControlClient) Stream(ctx context.Context, fn SnapshotStream) error {
 	resp, err := c.doStream(ctx, "/stream")
@@ -227,7 +227,7 @@ func (c *ControlClient) Stream(ctx context.Context, fn SnapshotStream) error {
 		if len(line) == 0 {
 			continue
 		}
-		var snap proxy.Snapshot
+		var snap edge.Snapshot
 		if err := json.Unmarshal(line, &snap); err != nil {
 			continue
 		}

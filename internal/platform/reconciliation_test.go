@@ -9,7 +9,7 @@ import (
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/deployment"
-	"github.com/moureau-dev/menina/internal/proxy"
+	"github.com/moureau-dev/menina/internal/edge"
 )
 
 func TestBuildSnapshotResolvesClusterIPRoutes(t *testing.T) {
@@ -25,7 +25,7 @@ func TestBuildSnapshotResolvesClusterIPRoutes(t *testing.T) {
 	if len(snap.Routes) != 2 {
 		t.Fatalf("routes = %+v, want app + registry routes", snap.Routes)
 	}
-	byHost := map[string]proxy.Route{}
+	byHost := map[string]edge.Route{}
 	for _, r := range snap.Routes {
 		byHost[r.Host] = r
 	}
@@ -188,8 +188,8 @@ func TestReconcileAllRepublishesOnClusterIPDrift(t *testing.T) {
 	cfg := config.Default()
 	cfg.TLS.Terminate = true
 	rec := NewReconciler(db, cluster, deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger()), resolvedFunc(), &cfg, testLogger())
-	var published []*proxy.Snapshot
-	rec.OnPublish(func(s *proxy.Snapshot) { published = append(published, s) })
+	var published []*edge.Snapshot
+	rec.OnPublish(func(s *edge.Snapshot) { published = append(published, s) })
 
 	rec.ReconcileAll(context.Background())
 	if len(published) != 1 {

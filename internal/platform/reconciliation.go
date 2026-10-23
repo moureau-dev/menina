@@ -13,7 +13,7 @@ import (
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/deployment"
-	"github.com/moureau-dev/menina/internal/proxy"
+	"github.com/moureau-dev/menina/internal/edge"
 	"github.com/moureau-dev/menina/internal/release"
 )
 
@@ -24,7 +24,7 @@ type Reconciler struct {
 	snapshot    func() *config.ResolvedConfig
 	cfg         *config.Config
 	log         *slog.Logger
-	onPublish   func(*proxy.Snapshot)
+	onPublish   func(*edge.Snapshot)
 	mu          sync.Mutex
 	lastSig     string
 	reconcileMu sync.Mutex
@@ -39,10 +39,10 @@ func NewReconciler(db *database.DB, cluster deployment.Cluster, engine *deployme
 	return &Reconciler{db: db, cluster: cluster, engine: engine, snapshot: snapshot, cfg: cfg, log: log}
 }
 
-func (r *Reconciler) OnPublish(fn func(*proxy.Snapshot)) { r.onPublish = fn }
+func (r *Reconciler) OnPublish(fn func(*edge.Snapshot)) { r.onPublish = fn }
 
-func (r *Reconciler) BuildSnapshot(rc *config.ResolvedConfig) (*proxy.Snapshot, error) {
-	snap := &proxy.Snapshot{Version: rc.Version, GeneratedAt: time.Now()}
+func (r *Reconciler) BuildSnapshot(rc *config.ResolvedConfig) (*edge.Snapshot, error) {
+	snap := &edge.Snapshot{Version: rc.Version, GeneratedAt: time.Now()}
 	var dbroutes []database.Route
 	for _, rp := range rc.Projects {
 		for _, re := range rp.Environments {
@@ -63,7 +63,7 @@ func (r *Reconciler) BuildSnapshot(rc *config.ResolvedConfig) (*proxy.Snapshot, 
 				headers, _ := json.Marshal(app.Exposure.Headers)
 				timeouts, _ := json.Marshal(app.Exposure.Timeouts)
 				for _, host := range app.Exposure.Hosts {
-					snap.Routes = append(snap.Routes, proxy.Route{
+					snap.Routes = append(snap.Routes, edge.Route{
 						Host:         host,
 						PathPrefix:   app.Exposure.PathPrefix,
 						Backend:      backend,
@@ -79,7 +79,7 @@ func (r *Reconciler) BuildSnapshot(rc *config.ResolvedConfig) (*proxy.Snapshot, 
 						Streaming:    app.Exposure.Streaming,
 						MaxBodyBytes: app.Exposure.MaxBodyBytes,
 						Headers:      app.Exposure.Headers,
-						Timeouts: proxy.RouteTimeouts{
+						Timeouts: edge.RouteTimeouts{
 							Read:  app.Exposure.Timeouts.Read,
 							Write: app.Exposure.Timeouts.Write,
 							Idle:  app.Exposure.Timeouts.Idle,
@@ -110,7 +110,7 @@ func (r *Reconciler) BuildSnapshot(rc *config.ResolvedConfig) (*proxy.Snapshot, 
 		}
 		if ip, err := r.cluster.ServiceClusterIP(context.Background(), ns, registryZotService); err == nil && ip != "" && ip != "None" {
 			backend := fmt.Sprintf("%s:%d", ip, registryZotPort)
-			snap.Routes = append(snap.Routes, proxy.Route{
+			snap.Routes = append(snap.Routes, edge.Route{
 				Host:         r.cfg.Registry.Domain,
 				PathPrefix:   "/",
 				Backend:      backend,
@@ -162,7 +162,7 @@ func (r *Reconciler) publishLocked(ctx context.Context, rc *config.ResolvedConfi
 	return nil
 }
 
-func (r *Reconciler) publishSnapshot(snap *proxy.Snapshot) {
+func (r *Reconciler) publishSnapshot(snap *edge.Snapshot) {
 	r.mu.Lock()
 	sig := routeSignature(snap.Routes)
 	changed := sig != r.lastSig
@@ -173,7 +173,7 @@ func (r *Reconciler) publishSnapshot(snap *proxy.Snapshot) {
 	}
 }
 
-func routeSignature(routes []proxy.Route) string {
+func routeSignature(routes []edge.Route) string {
 	parts := make([]string, 0, len(routes))
 	for _, r := range routes {
 		parts = append(parts, fmt.Sprintf("%s|%s|%s", r.Host, r.PathPrefix, r.Backend))

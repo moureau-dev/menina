@@ -17,7 +17,7 @@ import (
 
 	"github.com/moureau-dev/menina/internal/clierr"
 	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/manifest"
+	"github.com/moureau-dev/menina/internal/contract/manifest"
 	"github.com/moureau-dev/menina/internal/version"
 )
 

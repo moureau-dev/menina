@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/moureau-dev/menina/internal/platform"
-	"github.com/moureau-dev/menina/internal/proxy"
+	"github.com/moureau-dev/menina/internal/edge"
 )
 
 func testLogger() *slog.Logger {
@@ -48,9 +48,9 @@ func TestControlIPCDeliversRoutingSnapshotToProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	snapshot := &proxy.Snapshot{
+	snapshot := &edge.Snapshot{
 		Version: 42,
-		Routes: []proxy.Route{{
+		Routes: []edge.Route{{
 			Host: "example.com", PathPrefix: "/",
 			Backend: strings.TrimPrefix(backend.URL, "http://"),
 			Service: "web", Namespace: "menina-apps",
@@ -81,7 +81,7 @@ func TestControlIPCDeliversRoutingSnapshotToProxy(t *testing.T) {
 		t.Fatalf("snapshot = %+v", got)
 	}
 
-	proxyServer, err := proxy.NewServer(proxy.Options{Log: testLogger()})
+	proxyServer, err := edge.NewServer(edge.Options{Log: testLogger()})
 	if err != nil {
 		t.Fatal(err)
 	}

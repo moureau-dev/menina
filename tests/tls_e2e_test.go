@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/moureau-dev/menina/internal/proxy"
+	"github.com/moureau-dev/menina/internal/edge"
 )
 
 type testCA struct {
@@ -102,18 +102,18 @@ func TestTLSEndToEndServesCachedACMECertificate(t *testing.T) {
 	ca := newTestCA(t)
 	ca.seedACME(t, cacheDir, host)
 
-	server, err := proxy.NewServer(proxy.Options{
+	server, err := edge.NewServer(edge.Options{
 		Log: testLogger(),
-		TLS: proxy.TLSOptions{
+		TLS: edge.TLSOptions{
 			Terminate: true,
 			Mode:      "acme",
-			ACME:      proxy.ACMEOptions{StorageDir: cacheDir, BaseDomains: []string{"hello.com"}},
+			ACME:      edge.ACMEOptions{StorageDir: cacheDir, BaseDomains: []string{"hello.com"}},
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := server.UpdateSnapshot(&proxy.Snapshot{Version: 1, Routes: []proxy.Route{{
+	if err := server.UpdateSnapshot(&edge.Snapshot{Version: 1, Routes: []edge.Route{{
 		Host: host, PathPrefix: "/", Backend: strings.TrimPrefix(backend.URL, "http://"), RedirectHTTP: false,
 	}}}); err != nil {
 		t.Fatal(err)
@@ -155,14 +155,14 @@ func TestTLSEndToEndServesCachedACMECertificate(t *testing.T) {
 
 func TestTLSHandshakeFailsForUnroutedHost(t *testing.T) {
 	cacheDir := t.TempDir()
-	server, err := proxy.NewServer(proxy.Options{
+	server, err := edge.NewServer(edge.Options{
 		Log: testLogger(),
-		TLS: proxy.TLSOptions{Terminate: true, Mode: "acme", ACME: proxy.ACMEOptions{StorageDir: cacheDir}},
+		TLS: edge.TLSOptions{Terminate: true, Mode: "acme", ACME: edge.ACMEOptions{StorageDir: cacheDir}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := server.UpdateSnapshot(&proxy.Snapshot{Version: 1, Routes: []proxy.Route{{
+	if err := server.UpdateSnapshot(&edge.Snapshot{Version: 1, Routes: []edge.Route{{
 		Host: "known.hello.com", PathPrefix: "/", Backend: "1.1.1.1:80",
 	}}}); err != nil {
 		t.Fatal(err)
