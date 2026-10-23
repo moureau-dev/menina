@@ -20,6 +20,7 @@ Detailed docs live in [`docs/`](docs/README.md):
 | [Kubernetes (k3s)](docs/KUBERNETES.md) | Provisioning, namespaces, RBAC, workloads, reconciliation |
 | [Registry](docs/REGISTRY.md) | Bundled Zot: auth, push, digest pinning, retention, auto-deploy |
 | [Operations](docs/OPERATIONS.md) | Privileges, security, backups, upgrades, Docker, development |
+| [Identity and audit](docs/IDENTITY.md) | Profiles, scopes, keys, enrollment, forced commands, audit |
 | [Roadmap](ROADMAP.md) | Done, next, multi-node/HA, and hardening tiers |
 | [Changelog](CHANGELOG.md) | Notable changes per release |
 

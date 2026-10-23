@@ -14,6 +14,8 @@
   pinning, retention, and push-triggered deploys.
 - [Operations](OPERATIONS.md) — privileges, security, backups, upgrades, Docker,
   and development.
+- [Identity and audit](IDENTITY.md) — profiles, scopes, keys, enrollment,
+  forced commands, audit, and bootstrap.
 - [Repository structure](STRUCTURE.md) — package layout and conventions for
   contributors and agents.
 
