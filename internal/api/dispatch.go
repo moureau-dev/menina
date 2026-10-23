@@ -12,6 +12,7 @@ import (
 	"time"
 
 	apierrors "github.com/moureau-dev/menina/internal/api/errors"
+	"github.com/moureau-dev/menina/internal/core/audit"
 )
 
 // Version is the API command contract version.
@@ -19,8 +20,9 @@ const Version = 1
 
 // Actor is the server-derived caller identity.
 type Actor struct {
-	ID     string `json:"id"`
-	Source string `json:"source"`
+	ID             string `json:"id"`
+	Source         string `json:"source"`
+	KeyFingerprint string `json:"keyFingerprint,omitempty"`
 }
 
 type actorKey struct{}
@@ -70,6 +72,7 @@ type cachedResponse struct {
 type Dispatcher struct {
 	handler    http.Handler
 	authorizer Authorizer
+	auditor    AuditRecorder
 	mu         sync.Mutex
 	cache      map[string]cachedResponse
 	ttl        time.Duration
@@ -83,6 +86,14 @@ func NewDispatcher(handler http.Handler) *Dispatcher {
 
 // SetAuthorizer installs the scope enforcement policy.
 func (d *Dispatcher) SetAuthorizer(authorizer Authorizer) { d.authorizer = authorizer }
+
+// AuditRecorder records authenticated actions.
+type AuditRecorder interface {
+	RecordAudit(ctx context.Context, e audit.Event) (string, error)
+}
+
+// SetAuditor installs the audit recorder.
+func (d *Dispatcher) SetAuditor(recorder AuditRecorder) { d.auditor = recorder }
 
 // Do executes one request and returns a versioned response.
 func (d *Dispatcher) Do(ctx context.Context, actor Actor, req Request) Response {
@@ -100,6 +111,7 @@ func (d *Dispatcher) Do(ctx context.Context, actor Actor, req Request) Response 
 	}
 	if d.authorizer != nil {
 		if err := d.authorizer.Authorize(ctx, actor, req); err != nil {
+			d.recordAudit(ctx, actor, req, audit.StatusDenied, err.Error())
 			return authorizeError(err)
 		}
 	}
@@ -133,6 +145,15 @@ func (d *Dispatcher) Do(ctx context.Context, actor Actor, req Request) Response 
 	if key != "" && resp.Status < 500 {
 		d.store(key, resp)
 	}
+	status := audit.StatusOK
+	message := ""
+	if resp.Status >= 400 {
+		status = audit.StatusFailed
+		if resp.Error != nil {
+			message = resp.Error.Message
+		}
+	}
+	d.recordAudit(ctx, actor, req, status, message)
 	return resp
 }
 
@@ -165,6 +186,19 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func isLocalRequest(r *http.Request) bool {
 	return r.RemoteAddr == "" || strings.HasPrefix(r.RemoteAddr, "@")
+}
+
+func (d *Dispatcher) recordAudit(ctx context.Context, actor Actor, req Request, status audit.Status, message string) {
+	if d.auditor == nil {
+		return
+	}
+	project, environment, app := requestTarget(req)
+	_, _ = d.auditor.RecordAudit(ctx, audit.Event{
+		ActorID: actor.ID, KeyFingerprint: actor.KeyFingerprint, Source: actor.Source,
+		Action: req.Method + " " + req.Path, Target: req.Path,
+		Project: project, Environment: environment, App: app,
+		Status: status, Message: message,
+	})
 }
 
 func idempotentMethod(method string) bool {

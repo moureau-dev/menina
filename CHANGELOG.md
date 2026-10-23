@@ -32,6 +32,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   manages profiles, keys, and enrollment tokens.
 - Scope enforcement for API commands and forced commands, with global,
   project-scoped, and environment-scoped grants.
+- Audit capture and query for API and forced-command actions, including actor,
+  key fingerprint, target, project/environment/app, outcome, and timestamps.
+  Adds migration `0008_audit`.
 
 ## [0.1.2] - 2026-10-23
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/moureau-dev/menina/internal/core/audit"
 	"github.com/moureau-dev/menina/internal/core/identity"
 )
 
@@ -15,6 +16,7 @@ var forcedAllowed = map[string]bool{
 	"app": true, "release": true, "job": true, "secret": true, "config": true,
 	"status": true, "routes": true, "notify": true, "registry": true,
 	"apply": true, "api-ssh": true, "version": true, "capabilities": true,
+	"audit": true,
 }
 
 func newSSHForcedCommand(app *App) *cobra.Command {
@@ -45,10 +47,20 @@ func newSSHForcedCommand(app *App) *cobra.Command {
 			}
 			forced, err := parseForcedCommand(os.Getenv("SSH_ORIGINAL_COMMAND"))
 			if err != nil {
+				_, _ = db.RecordAudit(cmd.Context(), audit.Event{ActorID: profile.ID, KeyFingerprint: key.Fingerprint, Source: "ssh", Action: "command", Target: os.Getenv("SSH_ORIGINAL_COMMAND"), Status: audit.StatusDenied, Message: err.Error()})
 				return err
+			}
+			_, project, environment, _ := identity.RequiredCommandScope(forced)
+			record := func(status audit.Status, message string) {
+				_, _ = db.RecordAudit(cmd.Context(), audit.Event{
+					ActorID: profile.ID, KeyFingerprint: key.Fingerprint, Source: "ssh",
+					Action: "command", Target: strings.Join(forced, " "),
+					Project: project, Environment: environment, Status: status, Message: message,
+				})
 			}
 			if forced[0] != "api-ssh" {
 				if err := identity.CheckCommand(profile, forced); err != nil {
+					record(audit.StatusDenied, err.Error())
 					return err
 				}
 			}
@@ -65,7 +77,15 @@ func newSSHForcedCommand(app *App) *cobra.Command {
 				"MENINA_PROFILE_ID="+profile.ID,
 				"MENINA_KEY_FINGERPRINT="+key.Fingerprint,
 			)
-			return child.Run()
+			runErr := child.Run()
+			if forced[0] != "api-ssh" {
+				if runErr != nil {
+					record(audit.StatusFailed, runErr.Error())
+				} else {
+					record(audit.StatusOK, "")
+				}
+			}
+			return runErr
 		},
 	}
 }

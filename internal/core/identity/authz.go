@@ -139,6 +139,8 @@ func RequiredCommandScope(args []string) (scope Scope, project, environment stri
 		default:
 			return ScopeRegistry, project, environment, true
 		}
+	case "audit":
+		return ScopeRead, project, environment, true
 	case "config":
 		if sub == "rollback" {
 			return ScopeDeploy, project, environment, true

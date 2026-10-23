@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/moureau-dev/menina/internal/core/audit"
 	"github.com/moureau-dev/menina/internal/core/identity"
 	"github.com/moureau-dev/menina/internal/core/release"
 	"github.com/moureau-dev/menina/internal/core/state/sqlite"
@@ -15,6 +16,7 @@ import (
 // Store is the operational state used by the control plane.
 type Store interface {
 	ActiveRelease(ctx context.Context, project, environment, app string) (sqlite.Release, bool, error)
+	AuditEvents(ctx context.Context, f audit.Filter) ([]audit.Event, error)
 	AddProfileKey(ctx context.Context, k identity.Key) (string, error)
 	CancelJob(ctx context.Context, id string) (bool, error)
 	ClaimJob(ctx context.Context, id string) (bool, error)
@@ -44,6 +46,7 @@ type Store interface {
 	ProfileByID(ctx context.Context, id string) (identity.Profile, bool, error)
 	ProfileKeys(ctx context.Context, profileID string) ([]identity.Key, error)
 	Profiles(ctx context.Context) ([]identity.Profile, error)
+	RecordAudit(ctx context.Context, e audit.Event) (string, error)
 	RecordWebhookDelivery(ctx context.Context, d sqlite.WebhookDelivery) (string, error)
 	ReleaseByID(ctx context.Context, id string) (sqlite.Release, bool, error)
 	Releases(ctx context.Context, project, environment, app string) ([]sqlite.Release, error)

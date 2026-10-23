@@ -23,6 +23,7 @@ internal/
     manifest/             .menina.yml parsing, interpolation, rendering, plans
     schema/               embedded versioned manifest JSON Schema
   core/
+    audit/                durable audit events and filters
     cluster/              Kubernetes workloads, PVCs, services, logs, rollout
       kube/               minimal Kubernetes API client
     config/               desired-state model, loader, resolver, validation, revisions, lock, state token

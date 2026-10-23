@@ -52,6 +52,8 @@ makes the multi-node/HA work explicit instead of hiding it under “HA/DR”.
   identity administration covers profiles, keys, and enrollment tokens.
 - Scope enforcement for API commands and forced commands, including
   project-scoped and environment-scoped grants.
+- Audit capture and query for API and forced-command actions, including actor,
+  key fingerprint, target, project/environment/app, outcome, and timestamps.
 - Per-app release states, pinned job configuration, verification, hooks,
   recovery policies, digest promotion, secret-staleness reporting, scheduled
   backups, metrics/alert guidance, and probe-timing hardening (v0.1.0/v0.1.1).
@@ -130,12 +132,10 @@ security boundary.
 
 ### Audit and authorization
 
-7. **17 Audit capture and query.** Actor, key, action, target, plan/state
-    token, source repo, and timestamps.
-8. **18a Authorization model and enforcement** beyond secrets and registry.
-9. **18b Ownership enforcement.** `source.repo` becomes a check, not a
+7. **18a Authorization model and enforcement** beyond secrets and registry.
+8. **18b Ownership enforcement.** `source.repo` becomes a check, not a
     boundary.
-10. **21 Multi-client readiness gate.**
+9. **21 Multi-client readiness gate.**
 
 Identity is selected by the execution context, not the manifest. Client-side
 selection is `--profile` / `MENINA_PROFILE` over a stored context, with
@@ -272,14 +272,13 @@ single-node setup most importance scores drop.
 | 15 | — | Finish error taxonomy | 4 | 7 | Stable codes for CAS/stale plans/auth/schema mismatches. |
 | 16a | 26 | Project-scoped secret permissions | 7 | 8 | Per-project read/write/rotate; needs the tenant model and enforced scopes. |
 | 16b | 26 | Per-project/client registry credentials | 7 | 8 | Replace the shared push credential; prefer short-lived scoped tokens. |
-| 17 | — | Audit capture + query | 4 | 9 | Actor/key/action/target/plan/source; identity, scopes, and the API dispatcher are prerequisites. |
 | 18a | — | Authorization model + enforcement | 6 | 8 | General policy beyond secrets/registry; repo metadata is not a boundary. |
 | 18b | 18a | Ownership enforcement (`source.repo`) | 4 | 6 | Check the hint; cheap consistency once policy exists. |
 | 19a | 18a | SSO/OIDC + short-lived SSH certificates | 7 | 6 | Humans and CI get short-lived certs; HTTP/JWT only when an API lands. |
 | 19b | 18a | Per-team quotas | 6 | 6 | Deferred; needs policy and project isolation. |
 | 19c | 18a, 25 | NetworkPolicy isolation | 6 | 7 | Deferred; needs project namespaces and policy. |
 | 20 | 16a | Secret storage isolation | 8 | 8 | At-rest isolation beyond the shared group; not just API checks. |
-| 21 | 16a, 16b, 17, 18a, 18b, 20 | Multi-client readiness gate | 2 | 9 | Process/validation: no shared admin identity across clients/agents. |
+| 21 | 16a, 16b, 18a, 18b, 20 | Multi-client readiness gate | 2 | 9 | Process/validation: no shared admin identity across clients/agents. |
 | 22 | 14, 16a, 18a | Per-client backup schedules/retention | 6 | 8 | Fleet policy needs DR automation + project isolation. |
 | 23 | 13 | Aggregate fleet overview | 6 | 7 | Failed deploys, health, disk, certs, backups; needs metrics/labels. |
 | 24 | 14, 16a, 18a | Replacement-host migration workflow | 8 | 8 | Tested DR + isolation; config/revisions/secrets/registry/volumes. |
@@ -304,11 +303,11 @@ single-node setup most importance scores drop.
 | 45 | 18a | Per-tenant rate limits and fairness | 5 | 6 | Bound registry pulls, job throughput, and concurrency so one tenant cannot starve the rest. |
 | 49 | — | Edge request metrics and access logs | 5 | 8 | Per-route status/latency/errors, in-flight/bytes, cert expiry, snapshot age, redacted logs. |
 
-Tier 2 is 10 core items, six deferred larger-team controls, and one optional
+Tier 2 is 9 core items, six deferred larger-team controls, and one optional
 product-gated interface. The suffixed IDs keep earlier references addressable;
 16, 18, 19, 37, and 38 were split; 49 covers the remaining edge monitoring
-work exposed by the refactor. Difficulty totals are 52 for the core, 35 for the
-deferred controls, and 7 for the optional interface (94 total). The umbrella
+work exposed by the refactor. Difficulty totals are 48 for the core, 35 for the
+deferred controls, and 7 for the optional interface (90 total). The umbrella
 items understated identity lifecycle, command enforcement, and short-lived
 credential work.
 
@@ -319,8 +318,8 @@ tests. The table remains as a dependency reference for the higher tiers.
 The package and role refactor provides the API client and transport boundary,
 separate edge and core binaries, and the state package. Items 30 and 44 reflect
 the landed transport and edge work. The API dispatcher, key-derived actor path,
-and scope enforcement landed; the remaining work for items 17 and 18a is audit
-schema and authorization policy.
+scope enforcement, and audit are in place; item 18a remains authorization
+policy.
 
 ## Explicit non-goals for the current line
 

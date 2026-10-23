@@ -45,6 +45,18 @@ func (a *StoreAuthorizer) Authorize(ctx context.Context, actor Actor, req Reques
 	return nil
 }
 
+func requestTarget(req Request) (project, environment, app string) {
+	u, err := url.Parse(req.Path)
+	if err != nil {
+		return "", "", ""
+	}
+	project = u.Query().Get("project")
+	environment = u.Query().Get("environment")
+	app = u.Query().Get("app")
+	project, environment, app = bodyTarget(req.Body, project, environment, app)
+	return project, environment, app
+}
+
 func requiredRequestScope(req Request) (scope identity.Scope, project, environment string) {
 	u, err := url.Parse(req.Path)
 	if err != nil {
@@ -55,12 +67,12 @@ func requiredRequestScope(req Request) (scope identity.Scope, project, environme
 	environment = u.Query().Get("environment")
 	switch path {
 	case "/deploy", "/rollback", "/promote", "/config/apply":
-		project, environment = bodyTarget(req.Body, project, environment)
+		project, environment, _ = bodyTarget(req.Body, project, environment, "")
 	case "/release":
 		if req.Method == http.MethodGet {
 			return identity.ScopeRead, project, environment
 		}
-		project, environment = bodyTarget(req.Body, project, environment)
+		project, environment, _ = bodyTarget(req.Body, project, environment, "")
 	case "/status", "/snapshot", "/routes", "/releases", "/jobs", "/jobs/watch", "/job-status", "/webhook-deliveries", "/config/revisions", "/health":
 		return identity.ScopeRead, project, environment
 	case "/jobs/cancel", "/webhook-replay", "/config/rollback":
@@ -72,20 +84,21 @@ func requiredRequestScope(req Request) (scope identity.Scope, project, environme
 	return identity.ScopeDeploy, project, environment
 }
 
-func bodyTarget(body json.RawMessage, project, environment string) (string, string) {
+func bodyTarget(body json.RawMessage, project, environment, app string) (string, string, string) {
 	if len(body) == 0 {
-		return project, environment
+		return project, environment, app
 	}
 	var target struct {
 		Project     string `json:"project"`
 		Environment string `json:"environment"`
+		App         string `json:"app"`
 		Plan        struct {
 			Project     string `json:"project"`
 			Environment string `json:"environment"`
 		} `json:"plan"`
 	}
 	if err := json.Unmarshal(body, &target); err != nil {
-		return project, environment
+		return project, environment, app
 	}
 	if target.Project != "" {
 		project = target.Project
@@ -93,13 +106,16 @@ func bodyTarget(body json.RawMessage, project, environment string) (string, stri
 	if target.Environment != "" {
 		environment = target.Environment
 	}
+	if target.App != "" {
+		app = target.App
+	}
 	if target.Plan.Project != "" {
 		project = target.Plan.Project
 	}
 	if target.Plan.Environment != "" {
 		environment = target.Plan.Environment
 	}
-	return project, environment
+	return project, environment, app
 }
 
 func authorizeError(err error) Response {

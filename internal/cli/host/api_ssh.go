@@ -34,7 +34,7 @@ func newAPISSHCommand(app *App) *cobra.Command {
 				if !ok {
 					return fmt.Errorf("key is not authorized")
 				}
-				actor = api.Actor{ID: profile.ID, Source: "ssh"}
+				actor = api.Actor{ID: profile.ID, Source: "ssh", KeyFingerprint: fingerprint}
 			} else if os.Getenv("SSH_ORIGINAL_COMMAND") != "" {
 				return fmt.Errorf("missing authenticated key fingerprint")
 			}

@@ -136,6 +136,7 @@ func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Servic
 	svc.reconciler.OnPublish(svc.bus.publish)
 	svc.dispatcher = api.NewDispatcher(svc.controlMux())
 	svc.dispatcher.SetAuthorizer(api.NewStoreAuthorizer(db))
+	svc.dispatcher.SetAuditor(db)
 	if cfg.Registry.Enabled {
 		svc.registry = registry.NewClient(registryBaseURL(cfg), "", "", !cfg.TLS.Terminate)
 	}
@@ -406,6 +407,7 @@ func (s *Service) controlMux() http.Handler {
 	mux.HandleFunc("/config/apply", s.handleConfigApply)
 	mux.HandleFunc("/config/revisions", s.handleConfigRevisions)
 	mux.HandleFunc("/config/rollback", s.handleConfigRollback)
+	mux.HandleFunc("/audit", s.handleAudit)
 	return mux
 }
 
