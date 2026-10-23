@@ -276,7 +276,7 @@ single-node setup most importance scores drop.
 | 27 | 1, 9 | HA control-plane state | 9 | 10 | Replace SQLite writer, leader election, idempotent jobs, consistent snapshots. |
 | 28 | 27 | Multi-node k3s provisioning | 7 | 9 | Tokens, upgrades, drain, scheduling; HA needs 27. |
 | 29 | 28 | Replicated/RWX storage | 9 | 9 | Longhorn/Ceph/NFS; never silently move stateful apps to empty volumes. |
-| 30 | 28 | Per-node proxy/routing / L4 LB | 8 | 9 | Shared routing state, no split-brain, consistent TLS/ACME. |
+| 30 | 28 | Per-node proxy/routing / L4 LB | 7 | 9 | Shared routing state, no split-brain, consistent TLS/ACME. Edge binary and snapshot subscription landed. |
 | 31 | 28 | HA/replicated registry | 8 | 7 | Multi-node pull reliability; per-project credentials land separately. |
 | 32 | 14, 24, 27, 28, 29, 30, 31 | Multi-node DR | 9 | 9 | Restore control plane, registry, config, revisions, volumes after node loss. |
 | 33 | — | Image signing/scanning/admission | 8 | 7 | Supply-chain trust; can run in parallel. |
@@ -293,13 +293,13 @@ single-node setup most importance scores drop.
 | 41 | 37b, 39 | One-paste bootstrap | 4 | 8 | `setup` prints reachable host, host-key fingerprint, and enrollment command; installer verifies with `whoami`. |
 | 42 | 19a | CI workload identity | 5 | 7 | OIDC federation exchanges a workload token for a short-lived client credential; no stored CI key. |
 | 43 | 16b, 38b | Registry token service | 6 | 7 | Docker token auth with per-project scopes and short TTL; replaces shared htpasswd. |
-| 44 | 18a, 19a | HTTP API + WebSocket/SSE | 8 | 4 | Optional browser/hosted surface. Not required for multi-tenancy; SSH stays the CLI and break-glass path. |
+| 44 | 18a, 19a | HTTP API + WebSocket/SSE | 7 | 4 | Optional browser/hosted surface. Not required for multi-tenancy; SSH stays the CLI and break-glass path. HTTP transport landed; auth, SSE/WS, and UI remain. |
 | 45 | 18a | Per-tenant rate limits and fairness | 5 | 6 | Bound registry pulls, job throughput, and concurrency so one tenant cannot starve the rest. |
 
 Tier 2 is 15 core items, six deferred larger-team controls, and one optional
 product-gated interface. The suffixed IDs keep earlier references addressable;
 16, 18, 19, 37, and 38 were split. Difficulty totals are 78 for the core, 35 for
-the deferred controls, and 8 for the optional interface (121 total), up from 65
+the deferred controls, and 7 for the optional interface (120 total), up from 65
 before the split. The umbrella items understated identity lifecycle, command
 enforcement, and short-lived credential work.
 
@@ -308,11 +308,11 @@ hidden one-off Job primitive used by migration hooks and verification smoke
 tests. The table remains as a dependency reference for the higher tiers.
 
 The package and role refactor on `refactor/rearchitecture` provides the API
-dispatch boundary, separate edge and core binaries, and the state interface
-described in `REFACTOR_PLAN.md`. It does not change the difficulty scores below,
-which remain end-to-end estimates. It removes incidental integration work for
-items 17, 18a, 38b, 44, and 30; the domain and operations work for those items
-is unchanged.
+client and transport boundary, separate edge and core binaries, and the state
+package described in `REFACTOR_PLAN.md`. Items 30 and 44 reflect the landed
+transport and edge work. Items 17, 18a, and 38b keep their scores until the
+command handlers move behind the API dispatch middleware; the policy, schema,
+and query work is unchanged.
 
 ## Explicit non-goals for the current line
 

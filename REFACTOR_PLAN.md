@@ -186,6 +186,11 @@ and "first invent the seam, then implement the feature."
 | 45 Per-tenant rate limits | Small | The API is a natural enforcement point, but quotas and fairness remain. |
 | 14, 29, 32, 33, 34, 19b, 19c, 25 | None | Storage, DR, supply chain, canary, quotas, and network policy are domain and operations work. |
 
+Landed status: only items 30 and 44 have their incidental reduction reflected
+in `ROADMAP.md` so far, both from 8 to 7. Items 17, 18a, and 38b keep their
+scores until the command handlers move behind API dispatch middleware. The
+policy, schema, and query work is unchanged.
+
 How to read the difficulty numbers:
 
 - The scores in `ROADMAP.md` are end-to-end. Do not lower them when this plan
