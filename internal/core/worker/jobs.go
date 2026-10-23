@@ -19,6 +19,7 @@ import (
 	"github.com/moureau-dev/menina/internal/core/registry"
 	"github.com/moureau-dev/menina/internal/core/release"
 	"github.com/moureau-dev/menina/internal/core/secrets"
+	"github.com/moureau-dev/menina/internal/core/state/contract"
 	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 )
 
@@ -58,7 +59,7 @@ func jobApp(job sqlite.Job, snap *config.ResolvedConfig) (*config.ResolvedApp, e
 }
 
 type Jobs struct {
-	db         *sqlite.DB
+	db         contract.Store
 	engine     *k8s.Engine
 	cluster    k8s.Cluster
 	snapshot   func() *config.ResolvedConfig
@@ -72,7 +73,7 @@ type Jobs struct {
 	targets  map[string]*sync.Mutex
 }
 
-func NewJobs(db *sqlite.DB, engine *k8s.Engine, cluster k8s.Cluster, snapshot func() *config.ResolvedConfig, domain string, log *slog.Logger) *Jobs {
+func NewJobs(db contract.Store, engine *k8s.Engine, cluster k8s.Cluster, snapshot func() *config.ResolvedConfig, domain string, log *slog.Logger) *Jobs {
 	return &Jobs{db: db, engine: engine, cluster: cluster, snapshot: snapshot, domain: domain, log: log, targets: map[string]*sync.Mutex{}}
 }
 

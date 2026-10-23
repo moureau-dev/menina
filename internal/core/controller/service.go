@@ -23,6 +23,7 @@ import (
 	"github.com/moureau-dev/menina/internal/core/notify"
 	"github.com/moureau-dev/menina/internal/core/registry"
 	"github.com/moureau-dev/menina/internal/core/secrets"
+	"github.com/moureau-dev/menina/internal/core/state/contract"
 	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 	"github.com/moureau-dev/menina/internal/core/worker"
 	"github.com/moureau-dev/menina/internal/edge"
@@ -80,7 +81,7 @@ type Service struct {
 	configDir string
 	log       *slog.Logger
 
-	db          *sqlite.DB
+	db          contract.Store
 	watcher     *config.Watcher
 	cluster     k8s.Cluster
 	engine      *k8s.Engine
@@ -95,7 +96,7 @@ type Service struct {
 	sender      *notify.Sender
 }
 
-func (s *Service) DB() *sqlite.DB { return s.db }
+func (s *Service) DB() contract.Store { return s.db }
 
 func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Service, error) {
 	db, err := sqlite.Open(cfg.Platform.DBPath)

@@ -34,6 +34,8 @@ makes the multi-node/HA work explicit instead of hiding it under “HA/DR”.
 - Versioned manifest schema (`/schema/v1/...`), capabilities/compatibility,
   classified errors with stable exit codes.
 - Host/client TUI, cross-platform client builds and installers.
+- Operational state contract with shared contract tests, an in-memory fake for
+  controller tests, and an existing-database migration test.
 - Per-app release states, pinned job configuration, verification, hooks,
   recovery policies, digest promotion, secret-staleness reporting, scheduled
   backups, metrics/alert guidance, and probe-timing hardening (v0.1.0/v0.1.1).
@@ -81,15 +83,6 @@ Exit criteria are met: releases are pinned and identifiable; a failed deployment
 reports code, config, and data state separately; verification has a failure
 policy; promotion does not rebuild; deploys cannot execute against config written
 after queueing; and a failed deploy is observable without manual checks.
-
-## Tier 1b — correctness follow-ups (next)
-
-These are small, high-value hardening items that can land before team features.
-
-- **48 State store contract and migration evidence.** Add the consumer-side
-  store interface, contract tests, a pre-refactor database upgrade test, and a
-  fake store for controller tests. This makes a later SQLite replacement safer
-  and is the quickest high-importance item remaining.
 
 ## Tier 2 — API contract, team, and security
 
@@ -211,8 +204,6 @@ highly available.
 Dependency order:
 
 1. **Control-plane state**
-   - Item 48 (Tier 1b) provides the store contract and migration evidence before
-     the writer changes.
    - Replace single-writer SQLite with a replicated/external store (for example
      PostgreSQL) or a deliberately supported HA SQLite topology.
    - Leader election, idempotent job execution, and a single active reconciler.
@@ -301,7 +292,7 @@ single-node setup most importance scores drop.
 | 24 | 14, 16a, 18a | Replacement-host migration workflow | 8 | 8 | Tested DR + isolation; config/revisions/secrets/registry/volumes. |
 | 25 | 16a, 18a | Per-project quotas/limits | 5 | 6 | ResourceQuota/LimitRange + project isolation. |
 | 26 | — | Multi-tenant vs one-install-per-client decision | 3 | 8 | Architecture/product choice; affects 16a, 16b, 19a, 19b, 19c, 22, 24, 42, 43, 45. |
-| 27 | 1, 9, 48 | HA control-plane state | 9 | 10 | Replace SQLite writer, leader election, idempotent jobs, consistent snapshots. |
+| 27 | 1, 9 | HA control-plane state | 9 | 10 | Replace SQLite writer, leader election, idempotent jobs, consistent snapshots. |
 | 28 | 27 | Multi-node k3s provisioning | 7 | 9 | Tokens, upgrades, drain, scheduling; HA needs 27. |
 | 29 | 28 | Replicated/RWX storage | 9 | 9 | Longhorn/Ceph/NFS; never silently move stateful apps to empty volumes. |
 | 30 | 28 | Per-node proxy/routing / L4 LB | 7 | 9 | Shared routing state, no split-brain, consistent TLS/ACME. Edge binary and snapshot subscription landed. |
@@ -325,13 +316,12 @@ single-node setup most importance scores drop.
 | 45 | 18a | Per-tenant rate limits and fairness | 5 | 6 | Bound registry pulls, job throughput, and concurrency so one tenant cannot starve the rest. |
 | 46 | — | API command contract and transport parity | 5 | 8 | Dispatcher, versioned request types, actor context, idempotency, shared transport tests. |
 | 47 | 46 | API-first desired-state mutations | 5 | 7 | `apply`, `config revisions`, and `config rollback` through the API with server-side revalidation. |
-| 48 | — | State store contract and migration evidence | 3 | 9 | Store interface, contract tests, fake store, pre-refactor upgrade test. |
 | 49 | — | Edge request metrics and access logs | 5 | 8 | Per-route status/latency/errors, in-flight/bytes, cert expiry, snapshot age, redacted logs. |
 
 Tier 2 is 17 core items, six deferred larger-team controls, and one optional
 product-gated interface. The suffixed IDs keep earlier references addressable;
-16, 18, 19, 37, and 38 were split, and 46-49 cover the API, desired-state, state
-store, and edge monitoring work exposed by the refactor. Difficulty totals are
+16, 18, 19, 37, and 38 were split, and 46, 47, and 49 cover the remaining API,
+desired-state, and edge monitoring work exposed by the refactor. Difficulty totals are
 88 for the core, 35 for the deferred controls, and 7 for the optional interface
 (130 total). The umbrella items understated identity lifecycle, command
 enforcement, and short-lived credential work.

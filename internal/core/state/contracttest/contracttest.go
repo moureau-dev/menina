@@ -1,0 +1,106 @@
+// Package contracttest runs the operational state contract against a Store.
+package contracttest
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/moureau-dev/menina/internal/core/release"
+	"github.com/moureau-dev/menina/internal/core/state/contract"
+	"github.com/moureau-dev/menina/internal/core/state/sqlite"
+)
+
+// NewStore builds an empty migrated store for one subtest.
+type NewStore func(t *testing.T) contract.Store
+
+// Run exercises the shared Store contract.
+func Run(t *testing.T, newStore NewStore) {
+	t.Helper()
+	ctx := context.Background()
+
+	t.Run("job lifecycle", func(t *testing.T) {
+		store := newStore(t)
+		job := sqlite.Job{DedupKey: "job-1", Kind: "manual", Project: "p", Environment: "production", App: "api", Repository: "registry.example.com/p/api", Tag: "production"}
+		created, err := store.IngestRegistryEvent(ctx, &sqlite.Event{DedupKey: "event-1", Repository: "p/api", Tag: "production"}, []sqlite.Job{job})
+		if err != nil || !created {
+			t.Fatalf("ingest created=%v err=%v", created, err)
+		}
+		pending, err := store.PendingJobs(ctx, 10)
+		if err != nil || len(pending) != 1 {
+			t.Fatalf("pending=%d err=%v", len(pending), err)
+		}
+		started, err := store.ClaimJob(ctx, pending[0].ID)
+		if err != nil || !started {
+			t.Fatalf("claim=%v err=%v", started, err)
+		}
+		if err := store.CompleteJob(ctx, pending[0].ID, "sha256:abc"); err != nil {
+			t.Fatal(err)
+		}
+		got, ok, err := store.JobByID(ctx, pending[0].ID)
+		if err != nil || !ok || got.Status != sqlite.JobStatusDone {
+			t.Fatalf("job=%+v ok=%v err=%v", got, ok, err)
+		}
+	})
+
+	t.Run("release lifecycle", func(t *testing.T) {
+		store := newStore(t)
+		id, err := store.CreateRelease(ctx, sqlite.Release{Project: "p", Environment: "production", App: "api", Repository: "registry.example.com/p/api", Tag: "production", Digest: "sha256:abc", Image: "registry.example.com/p/api@sha256:abc"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.TransitionRelease(ctx, id, release.Active, "ready", "test"); err != nil {
+			t.Fatal(err)
+		}
+		rel, ok, err := store.ActiveRelease(ctx, "p", "production", "api")
+		if err != nil || !ok || rel.ID != id || rel.State != string(release.Active) {
+			t.Fatalf("active=%+v ok=%v err=%v", rel, ok, err)
+		}
+	})
+
+	t.Run("routes", func(t *testing.T) {
+		store := newStore(t)
+		want := sqlite.Route{Host: "api.example.com", PathPrefix: "/", Project: "p", Environment: "production", App: "api", Namespace: "p-production", Service: "api", Port: 8080}
+		if err := store.ReplaceRoutes(ctx, []sqlite.Route{want}); err != nil {
+			t.Fatal(err)
+		}
+		got, err := store.Routes(ctx)
+		if err != nil || len(got) != 1 || got[0].Host != want.Host || got[0].Port != want.Port {
+			t.Fatalf("routes=%+v err=%v", got, err)
+		}
+	})
+
+	t.Run("webhook delivery", func(t *testing.T) {
+		store := newStore(t)
+		id, err := store.RecordWebhookDelivery(ctx, sqlite.WebhookDelivery{DedupKey: "delivery-1", Project: "p", Environment: "production", App: "api", Event: "deploy.done", Payload: `{"ok":true}`})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.CompleteWebhookDelivery(ctx, id, "delivered", 1, 200, ""); err != nil {
+			t.Fatal(err)
+		}
+		got, ok, err := store.WebhookDeliveryByID(ctx, id)
+		if err != nil || !ok || got.Status != "delivered" || got.ResponseCode != 200 {
+			t.Fatalf("delivery=%+v ok=%v err=%v", got, ok, err)
+		}
+	})
+
+	t.Run("observed state", func(t *testing.T) {
+		store := newStore(t)
+		now := time.Now().UTC().Truncate(time.Second)
+		if err := store.UpsertObserved(ctx, sqlite.Observed{Project: "p", Environment: "production", App: "api", Image: "image:tag", Replicas: 2, ReadyReplicas: 2, Status: "ready", UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		got, err := store.Observed(ctx)
+		if err != nil || len(got) != 1 || got[0].App != "api" || got[0].ReadyReplicas != 2 {
+			t.Fatalf("observed=%+v err=%v", got, err)
+		}
+		if err := store.DeleteObserved(ctx, "p", "production", "api"); err != nil {
+			t.Fatal(err)
+		}
+		got, err = store.Observed(ctx)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("observed after delete=%+v err=%v", got, err)
+		}
+	})
+}

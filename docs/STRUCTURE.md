@@ -32,6 +32,9 @@ internal/
     release/              per-app release states and recovery policy
     secrets/              secret refs, file writing, resolution
     state/
+      contract/           operational state interface used by controller and worker
+      contracttest/       shared contract test suite for store implementations
+      fake/               in-memory store double for controller tests
       sqlite/             SQLite jobs, releases, routes, events, observed state
         migrations/       ordered SQLite migrations
     worker/               deploy job execution, rollout, verification
