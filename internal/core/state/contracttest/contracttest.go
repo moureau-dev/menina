@@ -3,6 +3,7 @@ package contracttest
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -117,6 +118,40 @@ func Run(t *testing.T, newStore NewStore) {
 		}
 		if _, _, ok, err := store.ResolveKey(ctx, "SHA256:test"); err != nil || ok {
 			t.Fatalf("disabled profile resolved ok=%v err=%v", ok, err)
+		}
+	})
+
+	t.Run("enrollment token lifecycle", func(t *testing.T) {
+		store := newStore(t)
+		profileID, err := store.CreateProfile(ctx, identity.Profile{Name: "new-client", Scopes: []string{"deploy"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		plaintext, token, err := identity.NewEnrollmentToken(profileID, time.Minute)
+		if err != nil || plaintext == "" || token.TokenHash == plaintext {
+			t.Fatalf("token=%+v plaintext=%q err=%v", token, plaintext, err)
+		}
+		if _, err := store.CreateEnrollmentToken(ctx, token); err != nil {
+			t.Fatal(err)
+		}
+		profile, key, err := store.ConsumeEnrollmentToken(ctx, token.TokenHash, time.Now(), identity.Key{Fingerprint: "SHA256:enroll"})
+		if err != nil || profile.ID != profileID || key.Fingerprint != "SHA256:enroll" {
+			t.Fatalf("profile=%+v key=%+v err=%v", profile, key, err)
+		}
+		if _, _, err := store.ConsumeEnrollmentToken(ctx, token.TokenHash, time.Now(), identity.Key{Fingerprint: "SHA256:again"}); !errors.Is(err, identity.ErrEnrollmentInvalid) {
+			t.Fatalf("reused token err=%v", err)
+		}
+		expiredPlain, expired, err := identity.NewEnrollmentToken(profileID, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expired.TokenHash = identity.HashEnrollmentToken(expiredPlain)
+		expired.ExpiresAt = time.Now().Add(-time.Minute)
+		if _, err := store.CreateEnrollmentToken(ctx, expired); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := store.ConsumeEnrollmentToken(ctx, expired.TokenHash, time.Now(), identity.Key{Fingerprint: "SHA256:expired"}); !errors.Is(err, identity.ErrEnrollmentInvalid) {
+			t.Fatalf("expired token err=%v", err)
 		}
 	})
 

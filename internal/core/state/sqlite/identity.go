@@ -231,3 +231,106 @@ func scanKey(row rowScanner) (identity.Key, error) {
 	}
 	return k, nil
 }
+
+// CreateEnrollmentToken stores a hashed one-time enrollment token.
+func (db *DB) CreateEnrollmentToken(ctx context.Context, t identity.EnrollmentToken) (string, error) {
+	if t.ProfileID == "" || t.TokenHash == "" || t.ExpiresAt.IsZero() {
+		return "", fmt.Errorf("enrollment token requires profile, hash, and expiry")
+	}
+	var id string
+	err := db.QueryRowContext(ctx, `INSERT INTO enrollment_tokens (profile_id, token_hash, expires_at) VALUES (?, ?, ?) RETURNING id`,
+		t.ProfileID, t.TokenHash, t.ExpiresAt.Unix()).Scan(&id)
+	if err != nil {
+		return "", fmt.Errorf("create enrollment token: %w", err)
+	}
+	return id, nil
+}
+
+// EnrollmentTokenByHash returns a stored enrollment token by hash.
+func (db *DB) EnrollmentTokenByHash(ctx context.Context, hash string) (identity.EnrollmentToken, bool, error) {
+	row := db.QueryRowContext(ctx, `SELECT id, profile_id, token_hash, expires_at, created_at, used_at FROM enrollment_tokens WHERE token_hash = ?`, hash)
+	var t identity.EnrollmentToken
+	var expires, created int64
+	var used sql.NullInt64
+	if err := row.Scan(&t.ID, &t.ProfileID, &t.TokenHash, &expires, &created, &used); err != nil {
+		if err == sql.ErrNoRows {
+			return identity.EnrollmentToken{}, false, nil
+		}
+		return identity.EnrollmentToken{}, false, err
+	}
+	t.ExpiresAt = time.Unix(expires, 0).UTC()
+	t.CreatedAt = time.Unix(created, 0).UTC()
+	if used.Valid {
+		t.UsedAt = time.Unix(used.Int64, 0).UTC()
+	}
+	return t, true, nil
+}
+
+// ConsumeEnrollmentToken atomically consumes a token and attaches a key to its
+// profile. Unknown, expired, used, or disabled profiles all return
+// identity.ErrEnrollmentInvalid.
+func (db *DB) ConsumeEnrollmentToken(ctx context.Context, tokenHash string, now time.Time, key identity.Key) (identity.Profile, identity.Key, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return identity.Profile{}, identity.Key{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var tokenID, profileID, profileStatus string
+	var expires int64
+	var used sql.NullInt64
+	err = tx.QueryRowContext(ctx, `SELECT t.id, t.profile_id, t.expires_at, t.used_at, p.status
+		FROM enrollment_tokens t JOIN profiles p ON p.id = t.profile_id
+		WHERE t.token_hash = ?`, tokenHash).Scan(&tokenID, &profileID, &expires, &used, &profileStatus)
+	if err == sql.ErrNoRows {
+		return identity.Profile{}, identity.Key{}, identity.ErrEnrollmentInvalid
+	}
+	if err != nil {
+		return identity.Profile{}, identity.Key{}, err
+	}
+	if used.Valid || now.Unix() >= expires || profileStatus != string(identity.StatusActive) {
+		return identity.Profile{}, identity.Key{}, identity.ErrEnrollmentInvalid
+	}
+
+	res, err := tx.ExecContext(ctx, `UPDATE enrollment_tokens SET used_at = ?, updated_at = unixepoch() WHERE id = ? AND used_at IS NULL`, now.Unix(), tokenID)
+	if err != nil {
+		return identity.Profile{}, identity.Key{}, err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return identity.Profile{}, identity.Key{}, identity.ErrEnrollmentInvalid
+	}
+
+	key.ProfileID = profileID
+	if key.Status == "" {
+		key.Status = identity.StatusActive
+	}
+	if err := key.Validate(); err != nil {
+		return identity.Profile{}, identity.Key{}, err
+	}
+	var expiresAt any
+	if !key.ExpiresAt.IsZero() {
+		expiresAt = key.ExpiresAt.Unix()
+	}
+	var keyID string
+	err = tx.QueryRowContext(ctx, `INSERT INTO profile_keys (profile_id, fingerprint, public_key, comment, status, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
+		key.ProfileID, key.Fingerprint, key.PublicKey, key.Comment, key.Status, expiresAt).Scan(&keyID)
+	if err != nil {
+		return identity.Profile{}, identity.Key{}, fmt.Errorf("attach enrollment key: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return identity.Profile{}, identity.Key{}, err
+	}
+
+	profile, ok, err := db.ProfileByID(ctx, profileID)
+	if err != nil {
+		return identity.Profile{}, identity.Key{}, err
+	}
+	if !ok {
+		return identity.Profile{}, identity.Key{}, fmt.Errorf("profile %q missing after enrollment", profileID)
+	}
+	key.ID = keyID
+	key.CreatedAt = now.UTC()
+	key.UpdatedAt = now.UTC()
+	return profile, key, nil
+}

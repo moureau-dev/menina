@@ -32,3 +32,22 @@ func TestProfileAndKeyValidation(t *testing.T) {
 		t.Fatal("expired key reported valid")
 	}
 }
+
+func TestEnrollmentToken(t *testing.T) {
+	plaintext, token, err := NewEnrollmentToken("profile", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plaintext == "" || token.TokenHash == plaintext || token.TokenHash != HashEnrollmentToken(plaintext) {
+		t.Fatalf("token=%+v plaintext=%q", token, plaintext)
+	}
+	if token.Expired(time.Now().Add(2*time.Minute)) != true {
+		t.Fatal("token should be expired")
+	}
+	if _, _, err := NewEnrollmentToken("", time.Minute); err == nil {
+		t.Fatal("empty profile accepted")
+	}
+	if _, _, err := NewEnrollmentToken("profile", MaxEnrollmentTTL+time.Second); err == nil {
+		t.Fatal("oversized ttl accepted")
+	}
+}

@@ -72,7 +72,7 @@ func TestMigrateExistingDatabasePreservesData(t *testing.T) {
 		}
 		got = append(got, version)
 	}
-	want := []string{"0001_init", "0002_job_backoff", "0003_fix_deleted_at", "0004_releases_and_pinning", "0005_release_backfill", "0006_identity"}
+	want := []string{"0001_init", "0002_job_backoff", "0003_fix_deleted_at", "0004_releases_and_pinning", "0005_release_backfill", "0006_identity", "0007_enrollment_tokens"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("migrations = %v, want %v", got, want)
 	}

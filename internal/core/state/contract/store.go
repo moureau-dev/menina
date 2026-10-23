@@ -20,7 +20,9 @@ type Store interface {
 	ClaimJob(ctx context.Context, id string) (bool, error)
 	CompleteJob(ctx context.Context, id string, digest string) error
 	CompleteWebhookDelivery(ctx context.Context, id, status string, attempts, responseCode int, lastError string) error
+	ConsumeEnrollmentToken(ctx context.Context, tokenHash string, now time.Time, key identity.Key) (identity.Profile, identity.Key, error)
 	CountJobsByStatus(ctx context.Context) (map[string]int, error)
+	CreateEnrollmentToken(ctx context.Context, t identity.EnrollmentToken) (string, error)
 	CreateProfile(ctx context.Context, p identity.Profile) (string, error)
 	CreateRelease(ctx context.Context, r sqlite.Release) (string, error)
 	DeleteObserved(ctx context.Context, project, environment, app string) error
