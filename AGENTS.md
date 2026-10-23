@@ -4,6 +4,9 @@
 
 - **Do NOT commit or push any changes without explicit user consent.**
 - **Do NOT cut a release, tag, or create a GitHub release without explicit consent.**
+- **NEVER choose a release version yourself.** Ask the user for the exact version
+  and wait for explicit confirmation before editing `CHANGELOG.md`, tagging, or
+  creating a release.
 - **NEVER discard working-tree changes.** Do not use `git checkout --`,
   `git restore`, `git reset --hard`, `git clean`, or similar. If you need to
   retest an older state, roll back, or revert temporarily, stash the specific
@@ -129,6 +132,9 @@ Release v0.0.14
 ## Release
 
 Never do this without explicit user consent.
+
+First ask for the exact version and wait for confirmation. Do not infer the bump
+from the changes or choose major/minor/patch yourself.
 
 Menina has no version file; the version comes from the git tag and is injected
 with `-ldflags`.
