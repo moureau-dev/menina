@@ -1,6 +1,6 @@
 # Refactor plan
 
-Status: implemented on `refactor/rearchitecture`. See implementation notes.
+Status: partially implemented on `refactor/rearchitecture`. See implementation notes and gaps.
 
 This document describes a code organization and process-boundary plan for
 Menina. It does not change behavior, the CLI contract, the manifest schema, or
@@ -433,6 +433,29 @@ phase.
   the app and project were deleted. The original v0.1.1 binary was restored and
   the host passed `doctor` afterward. Test release history remains in the host
   database, as release history is retained on delete.
+
+## Implementation gaps
+
+The structural refactor is in place, but these plan items are not complete:
+
+- The API still has no dispatcher. HTTP handlers live in `controller`, and
+  `api` owns only the client, errors, routing subscription, and transports.
+  Server-derived actor, scope, audit, idempotency, and versioned request types
+  are not implemented.
+- `apply` still writes desired-state YAML directly on the host, and
+  `config revisions` / `config rollback` still operate on local files. The API
+  is not yet the only mutation path for desired state.
+- `internal/core/state` has no store contract or contract test suite. There is
+  no fake store, and `internal/testutil` was not created.
+- The pre-refactor database migration test was not added.
+- The SSH client still execs the host CLI. `menina api-ssh` exists, but the
+  client does not use it, and SSH key to actor mapping is not implemented.
+- `internal/cli/host/serve.go` imports `core/controller`, violating the
+  acceptance criterion as written. Only `serve` does this.
+- Transport tests are adapter-specific. There is no shared request matrix, and
+  the optional stdio adapter was not added.
+- `telemetry` defines metric names but not health or edge request metrics.
+- `docs/STRUCTURE.md` was updated after the moves, not in the same change.
 
 ## Open questions
 
