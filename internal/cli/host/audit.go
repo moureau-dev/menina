@@ -44,7 +44,9 @@ func newAuditCommand(app *App) *cobra.Command {
 func auditEvents(app *App, filter audit.Filter) ([]audit.Event, error) {
 	if cfg, err := app.LoadConfig(); err == nil {
 		if client, err := api.Dial(cfg.Platform.ControlSocket, cfg.Security.ControlTokenFile); err == nil {
-			return client.AuditEvents(context.Background(), filter)
+			if events, err := client.AuditEvents(context.Background(), filter); err == nil {
+				return events, nil
+			}
 		}
 		db, err := app.OpenDB(cfg)
 		if err != nil {

@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- `audit list` falls back to the local database when the control plane is down.
+- Bootstrap host-key selection prefers ed25519/ecdsa/rsa over DSA and trims the
+  pinned key before printing the enrollment command.
+
 ## [0.1.3] - 2026-10-23
 
 ### Added
