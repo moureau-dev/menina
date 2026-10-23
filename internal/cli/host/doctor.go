@@ -14,8 +14,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/moureau-dev/menina/internal/core/config"
-	"github.com/moureau-dev/menina/internal/provision"
 	"github.com/moureau-dev/menina/internal/core/secrets"
+	"github.com/moureau-dev/menina/internal/provision"
 )
 
 func newDoctorCommand(app *App) *cobra.Command {

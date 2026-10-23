@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/moureau-dev/menina/internal/core/config"
 	"github.com/moureau-dev/menina/internal/contract/schema"
+	"github.com/moureau-dev/menina/internal/core/config"
 )
 
 func schemaProps(t *testing.T, node map[string]any) map[string]bool {

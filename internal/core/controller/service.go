@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/moureau-dev/menina/internal/api"
+	"github.com/moureau-dev/menina/internal/api/transport/unix"
 	"github.com/moureau-dev/menina/internal/core/cluster"
 	"github.com/moureau-dev/menina/internal/core/config"
 	"github.com/moureau-dev/menina/internal/core/notify"
@@ -85,7 +86,7 @@ type Service struct {
 	engine      *k8s.Engine
 	jobs        *worker.Jobs
 	reconciler  *Reconciler
-	control     *api.Server
+	control     *unix.Server
 	registry    *registry.Client
 	eventsSrv   *http.Server
 	bus         *broadcaster
@@ -179,7 +180,7 @@ func (s *Service) Run(ctx context.Context) error {
 		return fmt.Errorf("control token: %w", err)
 	}
 	s.token = token
-	control, err := api.NewServer(s.cfg.Platform.ControlSocket, token, s.controlMux())
+	control, err := unix.NewServer(s.cfg.Platform.ControlSocket, token, s.controlMux())
 	if err != nil {
 		return err
 	}
@@ -784,6 +785,9 @@ func (s *Service) watcherLastError() string {
 }
 
 func (s *Service) Token() string { return s.token }
+
+// Handler returns the HTTP API handler for non-Unix transports.
+func (s *Service) Handler() http.Handler { return s.controlMux() }
 
 func (b *broadcaster) snapshotVersion() int64 {
 	if s := b.snapshot(); s != nil {

@@ -16,8 +16,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/moureau-dev/menina/internal/api/errors"
-	"github.com/moureau-dev/menina/internal/core/config"
 	"github.com/moureau-dev/menina/internal/contract/manifest"
+	"github.com/moureau-dev/menina/internal/core/config"
 	"github.com/moureau-dev/menina/internal/version"
 )
 

@@ -15,8 +15,8 @@ import (
 
 	"github.com/moureau-dev/menina/internal/api"
 	"github.com/moureau-dev/menina/internal/api/errors"
-	"github.com/moureau-dev/menina/internal/core/config"
 	"github.com/moureau-dev/menina/internal/core/cluster"
+	"github.com/moureau-dev/menina/internal/core/config"
 )
 
 func requireProdConfirmation(cfg *config.Config, environment string, yes bool) error {
