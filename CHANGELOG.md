@@ -35,6 +35,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Audit capture and query for API and forced-command actions, including actor,
   key fingerprint, target, project/environment/app, outcome, and timestamps.
   Adds migration `0008_audit`.
+- Authorization policy with global, project, environment, and app-level scopes,
+  enforced by the API authorizer and forced-command wrapper.
 
 ## [0.1.2] - 2026-10-23
 

@@ -54,4 +54,16 @@ func TestStoreAuthorizerScopes(t *testing.T) {
 	if err := authz.Authorize(ctx, scoped, Request{Method: http.MethodPost, Path: "/deploy", Body: json.RawMessage(`{"project":"other"}`)}); err == nil {
 		t.Fatal("project deploy leaked")
 	}
+
+	appID, err := db.CreateProfile(ctx, identity.Profile{Name: "app-deployer", Scopes: []string{"project:demo/production/api:deploy"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	appActor := Actor{ID: appID, Source: "ssh"}
+	if err := authz.Authorize(ctx, appActor, Request{Method: http.MethodPost, Path: "/deploy", Body: json.RawMessage(`{"project":"demo","environment":"production","app":"api"}`)}); err != nil {
+		t.Fatalf("app deploy rejected: %v", err)
+	}
+	if err := authz.Authorize(ctx, appActor, Request{Method: http.MethodPost, Path: "/deploy", Body: json.RawMessage(`{"project":"demo","environment":"production","app":"web"}`)}); err == nil {
+		t.Fatal("app deploy leaked")
+	}
 }

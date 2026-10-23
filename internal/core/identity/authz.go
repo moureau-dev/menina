@@ -8,33 +8,12 @@ import (
 // Allows reports whether a profile's scopes permit an action for a project and
 // environment. Empty project or environment means the request is not scoped.
 func Allows(scopes []string, required Scope, project, environment string) bool {
-	for _, raw := range scopes {
-		if raw == string(ScopeAdmin) || raw == string(required) {
-			return true
-		}
-		if !strings.HasPrefix(raw, "project:") {
-			continue
-		}
-		resource, action, ok := parseScoped(raw, "project:")
-		if !ok || action != string(required) {
-			continue
-		}
-		if project == "" {
-			continue
-		}
-		name, env, hasEnv := parseResource(resource)
-		if name != project {
-			continue
-		}
-		if hasEnv {
-			if environment != "" && env == environment {
-				return true
-			}
-			continue
-		}
-		return true
-	}
-	return false
+	return AllowsTarget(scopes, required, Target{Project: project, Environment: environment})
+}
+
+// AllowsTarget reports whether a profile's scopes permit an action on a target.
+func AllowsTarget(scopes []string, required Scope, target Target) bool {
+	return Policy{Scopes: scopes}.Authorize(required, target).Allowed
 }
 
 func parseScoped(scope, prefix string) (resource, action string, ok bool) {
@@ -46,11 +25,16 @@ func parseScoped(scope, prefix string) (resource, action string, ok bool) {
 	return rest[:idx], rest[idx+1:], true
 }
 
-func parseResource(resource string) (name, environment string, hasEnv bool) {
-	if idx := strings.LastIndex(resource, "/"); idx > 0 && idx < len(resource)-1 {
-		return resource[:idx], resource[idx+1:], true
+func parseResource(resource string) (name, environment, app string, hasEnv, hasApp bool) {
+	parts := strings.SplitN(resource, "/", 3)
+	name = parts[0]
+	if len(parts) > 1 && parts[1] != "" {
+		environment, hasEnv = parts[1], true
 	}
-	return resource, "", false
+	if len(parts) > 2 && parts[2] != "" {
+		app, hasApp = parts[2], true
+	}
+	return name, environment, app, hasEnv, hasApp
 }
 
 // ValidateScope checks one scope string.
@@ -65,8 +49,8 @@ func ValidateScope(scope string) error {
 		if !ok || resource == "" {
 			return fmt.Errorf("invalid project scope %q", scope)
 		}
-		name, env, hasEnv := parseResource(resource)
-		if name == "" || (hasEnv && env == "") {
+		name, env, app, hasEnv, hasApp := parseResource(resource)
+		if name == "" || (hasEnv && env == "") || (hasApp && app == "") {
 			return fmt.Errorf("invalid project scope %q", scope)
 		}
 		for _, allowed := range AllScopes {
@@ -81,14 +65,32 @@ func ValidateScope(scope string) error {
 
 // CheckCommand returns the scope required for an allowlisted host CLI command.
 func CheckCommand(profile Profile, args []string) error {
-	required, project, environment, ok := RequiredCommandScope(args)
+	required, _, _, ok := RequiredCommandScope(args)
 	if !ok {
 		return fmt.Errorf("command is not allowed")
 	}
-	if !Allows(profile.Scopes, required, project, environment) {
-		return fmt.Errorf("profile %q lacks %s scope", profile.Name, required)
+	if decision := (Policy{Scopes: profile.Scopes}).Authorize(required, CommandTarget(args)); !decision.Allowed {
+		return fmt.Errorf("profile %q lacks %s scope: %s", profile.Name, required, decision.Reason)
 	}
 	return nil
+}
+
+// CommandTarget extracts the project, environment, and app from CLI arguments.
+func CommandTarget(args []string) Target {
+	project, environment := commandTarget(args)
+	app := ""
+	if len(args) > 2 && args[0] == "app" && !strings.HasPrefix(args[2], "-") {
+		app = args[2]
+	}
+	for i, arg := range args {
+		if strings.HasPrefix(arg, "--app=") {
+			app = strings.TrimPrefix(arg, "--app=")
+		}
+		if arg == "--app" && i+1 < len(args) {
+			app = args[i+1]
+		}
+	}
+	return Target{Project: project, Environment: environment, App: app}
 }
 
 // RequiredCommandScope maps a host CLI command to a scope and its target.

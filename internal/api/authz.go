@@ -39,8 +39,10 @@ func (a *StoreAuthorizer) Authorize(ctx context.Context, actor Actor, req Reques
 		return apierrors.New(apierrors.CodeAuth, "profile is not active", "")
 	}
 	required, project, environment := requiredRequestScope(req)
-	if !identity.Allows(profile.Scopes, required, project, environment) {
-		return apierrors.New(apierrors.CodeAuth, "profile lacks the required scope", "ask an administrator to grant the corresponding scope")
+	_, _, app := requestTarget(req)
+	decision := (identity.Policy{Scopes: profile.Scopes}).Authorize(required, identity.Target{Project: project, Environment: environment, App: app})
+	if !decision.Allowed {
+		return apierrors.New(apierrors.CodeAuth, "profile lacks the required scope: "+decision.Reason, "ask an administrator to grant the corresponding scope")
 	}
 	return nil
 }

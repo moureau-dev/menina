@@ -71,8 +71,14 @@ func TestAllows(t *testing.T) {
 	if Allows([]string{"project:demo/production:deploy"}, ScopeDeploy, "demo", "staging") {
 		t.Fatal("environment deploy leaked to another environment")
 	}
-	if err := ValidateScopes([]string{"project:demo:read", "project:demo/staging:deploy"}); err != nil {
+	if err := ValidateScopes([]string{"project:demo:read", "project:demo/staging:deploy", "project:demo/production/api:deploy"}); err != nil {
 		t.Fatal(err)
+	}
+	if !AllowsTarget([]string{"project:demo/production/api:deploy"}, ScopeDeploy, Target{Project: "demo", Environment: "production", App: "api"}) {
+		t.Fatal("app scope should allow the app")
+	}
+	if AllowsTarget([]string{"project:demo/production/api:deploy"}, ScopeDeploy, Target{Project: "demo", Environment: "production", App: "web"}) {
+		t.Fatal("app scope leaked to another app")
 	}
 }
 
@@ -113,5 +119,12 @@ func TestCheckCommand(t *testing.T) {
 	}
 	if err := CheckCommand(deployer, []string{"app", "deploy", "api", "--project", "other"}); err == nil {
 		t.Fatal("project deploy leaked")
+	}
+	appDeployer := Profile{Name: "app-deployer", Scopes: []string{"project:demo/production/api:deploy"}}
+	if err := CheckCommand(appDeployer, []string{"app", "deploy", "api", "--project", "demo", "-e", "production"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckCommand(appDeployer, []string{"app", "deploy", "web", "--project", "demo", "-e", "production"}); err == nil {
+		t.Fatal("app deploy leaked")
 	}
 }
