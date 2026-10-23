@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -130,6 +131,9 @@ func (d *Dispatcher) Do(ctx context.Context, actor Actor, req Request) Response 
 // legacy routes through unchanged.
 func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	actor := Actor{ID: "local", Source: "http"}
+	if isLocalRequest(r) && r.Header.Get("X-Menina-Actor-ID") != "" {
+		actor = Actor{ID: r.Header.Get("X-Menina-Actor-ID"), Source: r.Header.Get("X-Menina-Actor-Source")}
+	}
 	if r.URL.Path != "/v1/commands" {
 		d.handler.ServeHTTP(w, r.WithContext(WithActor(r.Context(), actor)))
 		return
@@ -148,6 +152,10 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Menina-API-Version", fmt.Sprint(Version))
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func isLocalRequest(r *http.Request) bool {
+	return r.RemoteAddr == "" || strings.HasPrefix(r.RemoteAddr, "@")
 }
 
 func idempotentMethod(method string) bool {

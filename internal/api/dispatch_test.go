@@ -73,3 +73,45 @@ func TestDispatcherServeHTTPEnvelope(t *testing.T) {
 		t.Fatalf("response = %+v", resp)
 	}
 }
+
+func TestDispatcherTrustedActorHeaderOnlyLocally(t *testing.T) {
+	d := NewDispatcher(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"actor": ActorFromContext(r.Context()).ID})
+	}))
+	body, _ := json.Marshal(Request{Version: 1, Method: http.MethodGet, Path: "/status"})
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/commands", bytes.NewReader(body))
+	req.RemoteAddr = ""
+	req.Header.Set("X-Menina-Actor-ID", "profile-1")
+	req.Header.Set("X-Menina-Actor-Source", "ssh")
+	d.ServeHTTP(rr, req)
+	var local struct {
+		Body struct {
+			Actor string `json:"actor"`
+		} `json:"body"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &local); err != nil {
+		t.Fatal(err)
+	}
+	if local.Body.Actor != "profile-1" {
+		t.Fatalf("local actor = %q", local.Body.Actor)
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/commands", bytes.NewReader(body))
+	req.RemoteAddr = "203.0.113.5:1234"
+	req.Header.Set("X-Menina-Actor-ID", "profile-1")
+	d.ServeHTTP(rr, req)
+	var remote struct {
+		Body struct {
+			Actor string `json:"actor"`
+		} `json:"body"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &remote); err != nil {
+		t.Fatal(err)
+	}
+	if remote.Body.Actor != "local" {
+		t.Fatalf("remote actor = %q", remote.Body.Actor)
+	}
+}

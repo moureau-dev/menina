@@ -3,8 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/url"
+	"strings"
 
+	apierrors "github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/core/config"
 	configplan "github.com/moureau-dev/menina/internal/core/config/plan"
 )
@@ -58,4 +61,36 @@ func (c *Client) ConfigRollback(ctx context.Context, id string) error {
 		return err
 	}
 	return c.PostJSON(ctx, "/config/rollback", body)
+}
+
+// CommandAs sends a versioned request with a server-derived actor. It is used
+// by the trusted local SSH bridge.
+func (c *Client) CommandAs(ctx context.Context, actor Actor, req Request) (Response, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return Response{}, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://unix/v1/commands", strings.NewReader(string(body)))
+	if err != nil {
+		return Response{}, err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+c.token)
+	httpReq.Header.Set("X-Menina-Actor-ID", actor.ID)
+	httpReq.Header.Set("X-Menina-Actor-Source", actor.Source)
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return Response{}, err
+	}
+	defer resp.Body.Close()
+	var out Response
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return Response{}, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return out, controlError("/v1/commands", resp.StatusCode, "")
+	}
+	if out.Error != nil {
+		return out, apierrors.New(out.Error.Code, out.Error.Message, out.Error.Hint)
+	}
+	return out, nil
 }

@@ -24,6 +24,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Key lifecycle operations: list keys, parse authorized-key fingerprints,
   revoke one key without disturbing others, rotate a key in one transaction,
   and set or clear key expiry.
+- Key-derived actors and SSH forced commands. Authenticated keys resolve to
+  profiles, allowlisted commands run with a server-injected actor, the API
+  bridge accepts that actor over the local socket, and `menina identity`
+  manages profiles, keys, and enrollment tokens.
 
 ## [0.1.2] - 2026-10-23
 

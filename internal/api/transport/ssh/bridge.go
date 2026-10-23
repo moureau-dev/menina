@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/moureau-dev/menina/internal/api"
 	apierrors "github.com/moureau-dev/menina/internal/api/errors"
 )
 
@@ -32,13 +33,13 @@ type Error struct {
 	Hint    string `json:"hint,omitempty"`
 }
 
-// Caller performs one API request.
+// Caller performs one versioned API request as a server-derived actor.
 type Caller interface {
-	Request(ctx context.Context, method, path string, body []byte) (int, []byte, error)
+	CommandAs(ctx context.Context, actor api.Actor, req api.Request) (api.Response, error)
 }
 
 // Serve reads one request, calls the API, and writes one response.
-func Serve(ctx context.Context, client Caller, in io.Reader, out io.Writer) error {
+func Serve(ctx context.Context, client Caller, actor api.Actor, in io.Reader, out io.Writer) error {
 	var req Request
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
 		return fmt.Errorf("decode request: %w", err)
@@ -49,17 +50,11 @@ func Serve(ctx context.Context, client Caller, in io.Reader, out io.Writer) erro
 	if req.Method == "" {
 		req.Method = "GET"
 	}
-	status, body, err := client.Request(ctx, req.Method, req.Path, req.Body)
-	resp := Response{Status: status}
-	if len(body) > 0 {
-		if json.Valid(body) {
-			resp.Body = json.RawMessage(body)
-		} else {
-			encoded, _ := json.Marshal(string(body))
-			resp.Body = encoded
-		}
-	}
-	if err != nil {
+	result, err := client.CommandAs(ctx, actor, api.Request{Version: api.Version, Method: req.Method, Path: req.Path, Body: req.Body})
+	resp := Response{Status: result.Status, Body: result.Body}
+	if result.Error != nil {
+		resp.Error = &Error{Code: result.Error.Code, Message: result.Error.Message, Hint: result.Error.Hint}
+	} else if err != nil {
 		code, message, hint, _ := apierrors.Info(err)
 		resp.Error = &Error{Code: code, Message: message, Hint: hint}
 	}
