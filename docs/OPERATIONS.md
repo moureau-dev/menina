@@ -8,10 +8,12 @@ See also: [CONFIGURATION.md](CONFIGURATION.md), [KUBERNETES.md](KUBERNETES.md),
 
 ## Privileges & users
 
-Only `menina install`, `menina setup` and `menina deploy` need root — they create
-the `menina` system user, install k3s, deploy Zot, write systemd units and bind
-`:80`/`:443`. The long-running `menina serve` / `menina proxy` services run as
-the unprivileged `menina` user.
+`menina install`, `menina setup`, `menina deploy` and the host-side
+`menina upgrade` need root — they create the `menina` system user, install k3s,
+deploy Zot, write systemd units, replace the installed binary and bind
+`:80`/`:443`. Backups that read volumes or registry images also need root. The
+long-running `menina serve` / `menina proxy` services run as the unprivileged
+`menina` user.
 
 Day-to-day commands run as **any user in the `menina` group** (the installer
 adds `$SUDO_USER` automatically; otherwise `sudo usermod -aG menina $USER`, then

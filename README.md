@@ -71,9 +71,10 @@ runtime.
 
 ### Client (laptop or CI)
 
-The client builds on Linux, macOS and Windows and only needs the manifest
-commands (`init`, `validate`, `apply`, `build`, `push`). It is included in the
-host binary, or install the standalone client:
+The client builds on Linux, macOS and Windows. It covers the manifest workflow
+(`init`, `validate`, `apply`, `build`, `push`) plus secret, job, config, version
+and upgrade commands. The host binary exposes the same commands, or install the
+standalone client:
 
 ```bash
 # Linux / macOS
@@ -85,43 +86,71 @@ irm https://menina.moureau.dev/install-client.ps1 | iex
 
 The installers verify the release checksum and install the command as `menina`
 (they fall back to `menina-client` if a host `menina` is already present). On
-Windows it is added to the user-level `PATH`. `menina apply --host user@vps`
-sends the manifest over SSH; build/push use the local Docker daemon.
+Windows it is added to the user-level `PATH`. Typical manifest workflow:
+
+```bash
+menina init                         # scaffold .menina.yml
+menina validate
+menina apply --host user@vps --diff # preview config changes on the host
+menina apply --host user@vps        # write them on the host
+menina build --push --filter api    # build/push one image; omit --filter to do all
+menina push --build --filter api    # or push, building first when needed
+```
+
+`--filter` takes comma-separated names or globs; pushes use the local Docker
+daemon and the host's registry listener deploys them asynchronously. `app`,
+`release`, `status`, `routes` and `doctor` are host commands; run them over SSH.
 `menina version --check` compares with the latest release and `menina upgrade`
-performs a checksum-verified self-update. Run `menina` with no subcommand for
+performs a checksum-verified self-update. Run the client with no subcommand for
 the CLIENT-labelled TUI.
 
 **Prerequisites for a clean Ubuntu Server VPS**: `amd64` or `arm64`, systemd,
 `curl`, network access to `get.k3s.io` / GitHub Releases / `ghcr.io` /
 Let's Encrypt, and ports `80` and `443` reachable from the internet (plus `9000`
-reachable from the cluster for registry webhooks). Only `install`, `setup` and
-`deploy` need root; see [Operations](docs/OPERATIONS.md#privileges--users) for
-the privilege model and the `menina` group.
+reachable from the cluster for registry webhooks). `install`, `setup`, `deploy`
+and host `upgrade` need root, as do backups that read volumes or registry
+images; the day-to-day commands run as a user in the `menina` group. See
+[Operations](docs/OPERATIONS.md#privileges--users) for the privilege model.
 
 ### Fresh install walkthrough (ending in HTTPS)
 
+On the VPS, as root:
+
 ```bash
-# 1. Install (root)
+# 1. Install
 curl -fsSL https://menina.moureau.dev/install.sh | sudo sh
 
-# 2. Configure (root). Point DNS at the VPS first. Choose k3s (Traefik off),
+# 2. Configure. Point DNS at the VPS first. Choose k3s (Traefik off),
 #    install Zot + registry domain, networking mode, and TLS (ACME).
 sudo menina setup
 
 # 3. Provision k3s, storage, Zot, the control plane and the proxy
 sudo menina deploy
+```
 
-# 4. Registry push credential (no sudo; user in the menina group)
+On the VPS, as a user in the `menina` group (log out and back in after the
+installer adds you), without `sudo`:
+
+```bash
+# 4. Registry push credential
 menina registry credential
 
-# 5. Define an application (config files are group-writable; no sudo)
+# 5. Define an application (config files are group-writable)
 menina create my-app            # or: project create / environment create / app create
+```
 
-# 6. Push an image (from your build machine)
+On your build machine:
+
+```bash
+# 6. Push an image
 docker login registry.example.com -u menina
 docker build -t registry.example.com/my-app/api:production .
 docker push registry.example.com/my-app/api:production
+```
 
+Back on the VPS:
+
+```bash
 # 7. Deploy it (the push also auto-deploys; this forces it explicitly)
 menina app deploy api --project my-app --environment production
 ```
