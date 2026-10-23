@@ -27,7 +27,7 @@ INSTALL_K3S_EXEC="server --disable traefik --disable servicelb"
 
 Menina also writes k3s's `registries.yaml` (credentials for the local Zot
 registry, mode `0600`) and restarts k3s so containerd picks up new/rotated
-credentials. See `internal/infrastructure/k3s.go`.
+credentials. See `internal/provision/k3s.go`.
 
 > Managed vs unmanaged: `kubernetes.managed: true` (default) means Menina
 > installs/refreshes k3s. With an external cluster, set `managed: false` and
@@ -47,7 +47,7 @@ path.
 plane *that* kubeconfig — Menina never runs as cluster-admin:
 
 - ClusterRole **`menina-platform`** with only (see
-  `internal/deployment/access.go`):
+  `internal/core/cluster/access.go`):
   - `namespaces`: get/list/create
   - `nodes`: get/list
   - `services`: get/list/watch/create/update/delete
