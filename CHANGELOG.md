@@ -37,6 +37,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Adds migration `0008_audit`.
 - Authorization policy with global, project, environment, and app-level scopes,
   enforced by the API authorizer and forced-command wrapper.
+- Server-side ownership enforcement. `source.repo` is checked for apply and
+  prune plans, so a client cannot overwrite or prune another repository's apps.
 
 ## [0.1.2] - 2026-10-23
 

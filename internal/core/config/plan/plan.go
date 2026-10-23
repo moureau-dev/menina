@@ -231,6 +231,9 @@ func Apply(configDir string, p *Plan, ifStateToken string, verify bool, actor st
 	if err := VerifyBase(configDir, p); err != nil {
 		return Result{}, err
 	}
+	if err := ValidateOwnership(configDir, p); err != nil {
+		return Result{}, err
+	}
 	if ifStateToken != "" && ifStateToken != p.BaseState {
 		return Result{}, apierrors.New(apierrors.CodeConflict, "--if-state-token does not match the plan base state", "regenerate the plan")
 	}
