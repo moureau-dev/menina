@@ -1,6 +1,6 @@
 # Refactor plan
 
-Status: proposal. Do not implement until reviewed and approved.
+Status: implemented on `refactor/rearchitecture`. See implementation notes.
 
 This document describes a code organization and process-boundary plan for
 Menina. It does not change behavior, the CLI contract, the manifest schema, or
@@ -407,6 +407,23 @@ phase.
   umbrella until multi-node requires otherwise.
 - Distributed monolith. Do not add network hops between CLI and core before the
   API contract, actor derivation, and scopes exist.
+
+## Implementation notes
+
+- Package moves, the controller/worker/API split, optional role binaries, and
+  Unix, HTTP, and SSH transports are in place.
+- HTTP handlers still live in `controller` because they depend directly on
+  controller state. `api` owns the client, error contract, routing
+  subscription, and transport adapters. Extracting the handlers behind a
+  backend interface remains a follow-up.
+- `telemetry` currently defines shared metric name constants. Edge request
+  metrics are not implemented yet.
+- The HTTP listener is opt-in with `serve --api-listen`, uses the control token,
+  and is intended for loopback until identity and scopes land.
+- The SSH adapter is the hidden `menina api-ssh` forced-command bridge. It reads
+  one JSON request from stdin and writes one JSON response.
+- The remote deploy smoke test on `root@moureau` is recorded in the branch
+  summary, not in this document.
 
 ## Open questions
 

@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Optional `menina-core` and `menina-edge` binaries for running the controller
+  and edge proxy as separate roles.
+- HTTP and SSH API transport adapters. HTTP is disabled by default and can be
+  enabled with `serve --api-listen`; it uses the control token and should bind
+  to loopback until identity and scopes land.
+
+### Changed
+- Reorganized packages under `api/`, `cli/`, `contract/`, `core/`, `edge/`,
+  `provision/`, and `telemetry/`.
+- Split the control plane into controller, worker, and API transport packages.
+  The CLI continues to use the Unix-socket API for running-state commands.
+- Moved migrations to `core/state/sqlite/migrations` without changing their
+  filenames or recorded schema versions.
+
+### Docs
+- Added `REFACTOR_PLAN.md` and updated `docs/STRUCTURE.md` for the new layout.
+
 ## [0.1.1] - 2026-10-18
 
 ### Fixed

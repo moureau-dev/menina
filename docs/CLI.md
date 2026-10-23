@@ -55,8 +55,12 @@ plans and state-token mismatches use `conflict`, and schema incompatibilities us
 | `menina backup [--out FILE] [--with-secrets] [--with-volumes] [--with-images] [--consistent] [--passphrase]` | Create a portable `tar.gz` bundle (DB + config + projects; opt-in secrets, certs, app volumes, registry images) |
 | `menina restore <archive> [--force] [--with-volumes] [--with-images] [--consistent] [--passphrase]` | Restore a `menina backup` archive |
 | `menina install` | Install shell completion (bash/zsh/fish) |
-| `menina serve` | Run the control-plane service (watcher, webhooks, deployments) |
+| `menina serve [--api-listen HOST:PORT]` | Run the control-plane service (watcher, webhooks, deployments). The optional HTTP API listener uses the control token; bind it to loopback until identity and scopes land |
 | `menina proxy` | Run the reverse proxy |
+
+`menina-core` and `menina-edge` run the same controller and proxy roles as
+standalone binaries. They are optional; the `menina` binary remains the
+canonical entrypoint and includes both subcommands.
 
 ## Observability
 
