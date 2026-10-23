@@ -422,8 +422,12 @@ phase.
   and is intended for loopback until identity and scopes land.
 - The SSH adapter is the hidden `menina api-ssh` forced-command bridge. It reads
   one JSON request from stdin and writes one JSON response.
-- The remote deploy smoke test on `root@moureau` is recorded in the branch
-  summary, not in this document.
+- Remote smoke test passed on `root@moureau`: the new binary was installed,
+  `menina-serve` and `menina-proxy` restarted, a throwaway `nginx:alpine` app
+  deployed and reached ready state, `menina api-ssh` returned `/status`, and
+  the app and project were deleted. The original v0.1.1 binary was restored and
+  the host passed `doctor` afterward. Test release history remains in the host
+  database, as release history is retained on delete.
 
 ## Open questions
 
