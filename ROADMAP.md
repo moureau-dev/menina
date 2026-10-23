@@ -50,6 +50,8 @@ makes the multi-node/HA work explicit instead of hiding it under “HA/DR”.
 - Key-derived actor and forced-command wrapper: authenticated keys resolve to
   profiles, commands are allowlisted, the actor is injected server-side, and
   identity administration covers profiles, keys, and enrollment tokens.
+- Scope enforcement for API commands and forced commands, including
+  project-scoped and environment-scoped grants.
 - Per-app release states, pinned job configuration, verification, hooks,
   recovery policies, digest promotion, secret-staleness reporting, scheduled
   backups, metrics/alert guidance, and probe-timing hardening (v0.1.0/v0.1.1).
@@ -105,37 +107,35 @@ share one host, require project-scoped credentials and attributable audit logs.
 A shared administrative identity is not a tenant boundary. RBAC/SSO can follow.
 
 The work is split into independently shippable pieces. The API command path
-(item 46) and API-first desired-state mutations (item 47) are landed, so items
-17, 18a, 38b, and 44 can attach to them. Scope enforcement, audit, and
-authorization must land together: identity without enforcement is not a
+(item 46) and API-first desired-state mutations (item 47) are landed, and scope
+enforcement (item 38b) is in place, so items 17, 18a, and 44 can attach to them.
+Audit and authorization must land together: attribution without policy is not a
 security boundary.
 
 ### Client identity and access
 
-1. **38b Scope enforcement.** Check scopes against the requested command,
-   project, environment, and action.
-2. **39 Client contexts and CI credentials.** `--profile` / `MENINA_PROFILE`
+1. **39 Client contexts and CI credentials.** `--profile` / `MENINA_PROFILE`
    over stored contexts, flag/env precedence, host-key pinning, `whoami`.
-3. **41 One-paste bootstrap.** `setup` prints the reachable host, host-key
+2. **41 One-paste bootstrap.** `setup` prints the reachable host, host-key
    fingerprint, and enrollment command; the installer verifies with `whoami`.
-4. **40 In-process SSH transport.** Remove the `openssh-client` dependency and
+3. **40 In-process SSH transport.** Remove the `openssh-client` dependency and
     pin host keys by fingerprint.
 
 ### Secrets and registry
 
-5. **16a Project-scoped secret permissions.**
-6. **20 Secret storage isolation** beyond the shared `menina` group.
-7. **16b Per-project/client registry credentials**, preferring short-lived
+4. **16a Project-scoped secret permissions.**
+5. **20 Secret storage isolation** beyond the shared `menina` group.
+6. **16b Per-project/client registry credentials**, preferring short-lived
     registry tokens over a shared htpasswd.
 
 ### Audit and authorization
 
-8. **17 Audit capture and query.** Actor, key, action, target, plan/state
+7. **17 Audit capture and query.** Actor, key, action, target, plan/state
     token, source repo, and timestamps.
-9. **18a Authorization model and enforcement** beyond secrets and registry.
-10. **18b Ownership enforcement.** `source.repo` becomes a check, not a
+8. **18a Authorization model and enforcement** beyond secrets and registry.
+9. **18b Ownership enforcement.** `source.repo` becomes a check, not a
     boundary.
-11. **21 Multi-client readiness gate.**
+10. **21 Multi-client readiness gate.**
 
 Identity is selected by the execution context, not the manifest. Client-side
 selection is `--profile` / `MENINA_PROFILE` over a stored context, with
@@ -270,16 +270,16 @@ single-node setup most importance scores drop.
 | 13 | — | Metrics depth + alert rules | 6 | 8 | Deploy duration, queue depth, ready replicas, proxy/registry/disk; external alerting. |
 | 14 | — | DR: scheduled backups, RPO/RTO, restore CI | 6 | 10 | Backup exists; automation and proof do not. |
 | 15 | — | Finish error taxonomy | 4 | 7 | Stable codes for CAS/stale plans/auth/schema mismatches. |
-| 16a | 26, 38b | Project-scoped secret permissions | 7 | 8 | Per-project read/write/rotate; needs the tenant model and enforced scopes. |
-| 16b | 26, 38b | Per-project/client registry credentials | 7 | 8 | Replace the shared push credential; prefer short-lived scoped tokens. |
-| 17 | 38b | Audit capture + query | 4 | 9 | Actor/key/action/target/plan/source; identity, scopes, and the API dispatcher are prerequisites. |
-| 18a | 38b | Authorization model + enforcement | 6 | 8 | General policy beyond secrets/registry; repo metadata is not a boundary. |
+| 16a | 26 | Project-scoped secret permissions | 7 | 8 | Per-project read/write/rotate; needs the tenant model and enforced scopes. |
+| 16b | 26 | Per-project/client registry credentials | 7 | 8 | Replace the shared push credential; prefer short-lived scoped tokens. |
+| 17 | — | Audit capture + query | 4 | 9 | Actor/key/action/target/plan/source; identity, scopes, and the API dispatcher are prerequisites. |
+| 18a | — | Authorization model + enforcement | 6 | 8 | General policy beyond secrets/registry; repo metadata is not a boundary. |
 | 18b | 18a | Ownership enforcement (`source.repo`) | 4 | 6 | Check the hint; cheap consistency once policy exists. |
 | 19a | 18a | SSO/OIDC + short-lived SSH certificates | 7 | 6 | Humans and CI get short-lived certs; HTTP/JWT only when an API lands. |
 | 19b | 18a | Per-team quotas | 6 | 6 | Deferred; needs policy and project isolation. |
 | 19c | 18a, 25 | NetworkPolicy isolation | 6 | 7 | Deferred; needs project namespaces and policy. |
 | 20 | 16a | Secret storage isolation | 8 | 8 | At-rest isolation beyond the shared group; not just API checks. |
-| 21 | 16a, 16b, 17, 18a, 18b, 20, 38b | Multi-client readiness gate | 2 | 9 | Process/validation: no shared admin identity across clients/agents. |
+| 21 | 16a, 16b, 17, 18a, 18b, 20 | Multi-client readiness gate | 2 | 9 | Process/validation: no shared admin identity across clients/agents. |
 | 22 | 14, 16a, 18a | Per-client backup schedules/retention | 6 | 8 | Fleet policy needs DR automation + project isolation. |
 | 23 | 13 | Aggregate fleet overview | 6 | 7 | Failed deploys, health, disk, certs, backups; needs metrics/labels. |
 | 24 | 14, 16a, 18a | Replacement-host migration workflow | 8 | 8 | Tested DR + isolation; config/revisions/secrets/registry/volumes. |
@@ -295,21 +295,20 @@ single-node setup most importance scores drop.
 | 34 | 2, 3, 4, 5 | Canary/blue-green, maxSurge/maxUnavailable, traffic splitting | 8 | 7 | Needs release sets + verification + recovery + traffic control. |
 | 35 | 12, 13 | Log retention/search, alerting, deploy events | 7 | 8 | Needs metrics/events first; much can be external. |
 | 36 | 16a, 18a, 19a, 19b, 19c, 25, 42, 43, 45 | Larger-scale quotas/multitenancy/audit export | 9 | 6 | Identity/authorization/quotas must land first. |
-| 38b | — | Scope enforcement | 4 | 9 | Check scopes against command, project, environment, and action through the API dispatcher. |
 | 39 | — | Client contexts + env/CI credentials | 4 | 7 | Contexts, flag/env precedence, `whoami`, BatchMode, host-key pinning. |
 | 40 | 39 | In-process SSH transport | 6 | 5 | Remove `openssh-client` dependency; pin host keys by fingerprint. |
 | 41 | 39 | One-paste bootstrap | 4 | 8 | `setup` prints reachable host, host-key fingerprint, and enrollment command; installer verifies with `whoami`. |
 | 42 | 19a | CI workload identity | 5 | 7 | OIDC federation exchanges a workload token for a short-lived client credential; no stored CI key. |
-| 43 | 16b, 38b | Registry token service | 6 | 7 | Docker token auth with per-project scopes and short TTL; replaces shared htpasswd. |
+| 43 | 16b | Registry token service | 6 | 7 | Docker token auth with per-project scopes and short TTL; replaces shared htpasswd. |
 | 44 | 18a, 19a | HTTP API + WebSocket/SSE | 7 | 4 | Optional browser/hosted surface. Not required for multi-tenancy; SSH stays the CLI and break-glass path. HTTP transport landed; auth, SSE/WS, and UI remain. |
 | 45 | 18a | Per-tenant rate limits and fairness | 5 | 6 | Bound registry pulls, job throughput, and concurrency so one tenant cannot starve the rest. |
 | 49 | — | Edge request metrics and access logs | 5 | 8 | Per-route status/latency/errors, in-flight/bytes, cert expiry, snapshot age, redacted logs. |
 
-Tier 2 is 11 core items, six deferred larger-team controls, and one optional
+Tier 2 is 10 core items, six deferred larger-team controls, and one optional
 product-gated interface. The suffixed IDs keep earlier references addressable;
 16, 18, 19, 37, and 38 were split; 49 covers the remaining edge monitoring
-work exposed by the refactor. Difficulty totals are 56 for the core, 35 for the
-deferred controls, and 7 for the optional interface (98 total). The umbrella
+work exposed by the refactor. Difficulty totals are 52 for the core, 35 for the
+deferred controls, and 7 for the optional interface (94 total). The umbrella
 items understated identity lifecycle, command enforcement, and short-lived
 credential work.
 
@@ -319,9 +318,9 @@ tests. The table remains as a dependency reference for the higher tiers.
 
 The package and role refactor provides the API client and transport boundary,
 separate edge and core binaries, and the state package. Items 30 and 44 reflect
-the landed transport and edge work. The API dispatcher and key-derived actor path
-landed for items 17, 18a, and 38b; their remaining work is policy, schema, and
-query design.
+the landed transport and edge work. The API dispatcher, key-derived actor path,
+and scope enforcement landed; the remaining work for items 17 and 18a is audit
+schema and authorization policy.
 
 ## Explicit non-goals for the current line
 

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/moureau-dev/menina/internal/core/identity"
 )
 
 var forcedAllowed = map[string]bool{
@@ -44,6 +46,11 @@ func newSSHForcedCommand(app *App) *cobra.Command {
 			forced, err := parseForcedCommand(os.Getenv("SSH_ORIGINAL_COMMAND"))
 			if err != nil {
 				return err
+			}
+			if forced[0] != "api-ssh" {
+				if err := identity.CheckCommand(profile, forced); err != nil {
+					return err
+				}
 			}
 			exe, err := os.Executable()
 			if err != nil {

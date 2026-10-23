@@ -68,17 +68,21 @@ type cachedResponse struct {
 // Dispatcher validates the command envelope and calls the HTTP command mux.
 // Legacy routes pass through for compatibility.
 type Dispatcher struct {
-	handler http.Handler
-	mu      sync.Mutex
-	cache   map[string]cachedResponse
-	ttl     time.Duration
-	now     func() time.Time
+	handler    http.Handler
+	authorizer Authorizer
+	mu         sync.Mutex
+	cache      map[string]cachedResponse
+	ttl        time.Duration
+	now        func() time.Time
 }
 
 // NewDispatcher builds a dispatcher around an existing command mux.
 func NewDispatcher(handler http.Handler) *Dispatcher {
 	return &Dispatcher{handler: handler, cache: map[string]cachedResponse{}, ttl: 24 * time.Hour, now: time.Now}
 }
+
+// SetAuthorizer installs the scope enforcement policy.
+func (d *Dispatcher) SetAuthorizer(authorizer Authorizer) { d.authorizer = authorizer }
 
 // Do executes one request and returns a versioned response.
 func (d *Dispatcher) Do(ctx context.Context, actor Actor, req Request) Response {
@@ -93,6 +97,11 @@ func (d *Dispatcher) Do(ctx context.Context, actor Actor, req Request) Response 
 	}
 	if req.Method == "" {
 		req.Method = http.MethodGet
+	}
+	if d.authorizer != nil {
+		if err := d.authorizer.Authorize(ctx, actor, req); err != nil {
+			return authorizeError(err)
+		}
 	}
 
 	key := ""

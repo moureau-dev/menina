@@ -135,6 +135,7 @@ func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Servic
 	svc.reconciler = NewReconciler(db, cluster, engine, snapFn, cfg, log)
 	svc.reconciler.OnPublish(svc.bus.publish)
 	svc.dispatcher = api.NewDispatcher(svc.controlMux())
+	svc.dispatcher.SetAuthorizer(api.NewStoreAuthorizer(db))
 	if cfg.Registry.Enabled {
 		svc.registry = registry.NewClient(registryBaseURL(cfg), "", "", !cfg.TLS.Terminate)
 	}

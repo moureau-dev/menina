@@ -80,15 +80,8 @@ func ValidateScopes(scopes []string) error {
 			return fmt.Errorf("duplicate scope %q", scope)
 		}
 		seen[scope] = true
-		valid := false
-		for _, allowed := range AllScopes {
-			if scope == string(allowed) {
-				valid = true
-				break
-			}
-		}
-		if !valid {
-			return fmt.Errorf("unknown scope %q", scope)
+		if err := ValidateScope(scope); err != nil {
+			return err
 		}
 	}
 	return nil

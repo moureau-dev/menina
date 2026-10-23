@@ -30,6 +30,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   profiles, allowlisted commands run with a server-injected actor, the API
   bridge accepts that actor over the local socket, and `menina identity`
   manages profiles, keys, and enrollment tokens.
+- Scope enforcement for API commands and forced commands, with global,
+  project-scoped, and environment-scoped grants.
 
 ## [0.1.2] - 2026-10-23
 
