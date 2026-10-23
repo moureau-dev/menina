@@ -1,4 +1,4 @@
-package platform
+package api
 
 import (
 	"bufio"
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moureau-dev/menina/internal/clierr"
+	"github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/edge"
 )
 
@@ -48,7 +48,7 @@ func EnsureToken(path string) (string, error) {
 	return token, nil
 }
 
-type ControlServer struct {
+type Server struct {
 	socketPath string
 	token      string
 	handler    http.Handler
@@ -56,11 +56,11 @@ type ControlServer struct {
 	srv        *http.Server
 }
 
-func NewControlServer(socketPath, token string, handler http.Handler) (*ControlServer, error) {
-	return &ControlServer{socketPath: socketPath, token: token, handler: handler}, nil
+func NewServer(socketPath, token string, handler http.Handler) (*Server, error) {
+	return &Server{socketPath: socketPath, token: token, handler: handler}, nil
 }
 
-func (c *ControlServer) Start(ctx context.Context) error {
+func (c *Server) Start(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(c.socketPath), 0o755); err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (c *ControlServer) Start(ctx context.Context) error {
 	return nil
 }
 
-func (c *ControlServer) withAuth(next http.Handler) http.Handler {
+func (c *Server) withAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		token := strings.TrimPrefix(auth, "Bearer ")
@@ -100,13 +100,13 @@ func (c *ControlServer) withAuth(next http.Handler) http.Handler {
 	})
 }
 
-type ControlClient struct {
+type Client struct {
 	socketPath string
 	token      string
 	http       *http.Client
 }
 
-func DialControl(socketPath, tokenPath string) (*ControlClient, error) {
+func Dial(socketPath, tokenPath string) (*Client, error) {
 	token, err := os.ReadFile(tokenPath)
 	if err != nil {
 		return nil, fmt.Errorf("read control token: %w", err)
@@ -116,14 +116,14 @@ func DialControl(socketPath, tokenPath string) (*ControlClient, error) {
 			return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "unix", socketPath)
 		},
 	}
-	return &ControlClient{
+	return &Client{
 		socketPath: socketPath,
 		token:      strings.TrimSpace(string(token)),
 		http:       &http.Client{Transport: tr, Timeout: 10 * time.Second},
 	}, nil
 }
 
-func (c *ControlClient) do(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
+func (c *Client) do(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, "http://unix"+path, body)
 	if err != nil {
 		return nil, err
@@ -132,7 +132,7 @@ func (c *ControlClient) do(ctx context.Context, method, path string, body io.Rea
 	return c.http.Do(req)
 }
 
-func (c *ControlClient) GetJSON(ctx context.Context, path string, out any) error {
+func (c *Client) GetJSON(ctx context.Context, path string, out any) error {
 	resp, err := c.do(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return err
@@ -147,7 +147,7 @@ func (c *ControlClient) GetJSON(ctx context.Context, path string, out any) error
 
 // doStream is like do but without the client-wide timeout, so long-lived
 // streams are not cut off after 10 seconds.
-func (c *ControlClient) doStream(ctx context.Context, path string) (*http.Response, error) {
+func (c *Client) doStream(ctx context.Context, path string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://unix"+path, nil)
 	if err != nil {
 		return nil, err
@@ -158,7 +158,7 @@ func (c *ControlClient) doStream(ctx context.Context, path string) (*http.Respon
 }
 
 // GetStream opens a streaming GET endpoint and returns the response body.
-func (c *ControlClient) GetStream(ctx context.Context, path string) (io.ReadCloser, error) {
+func (c *Client) GetStream(ctx context.Context, path string) (io.ReadCloser, error) {
 	resp, err := c.doStream(ctx, path)
 	if err != nil {
 		return nil, err
@@ -171,7 +171,7 @@ func (c *ControlClient) GetStream(ctx context.Context, path string) (io.ReadClos
 	return resp.Body, nil
 }
 
-func (c *ControlClient) Snapshot(ctx context.Context) (*edge.Snapshot, error) {
+func (c *Client) Snapshot(ctx context.Context) (*edge.Snapshot, error) {
 	var snap edge.Snapshot
 	if err := c.GetJSON(ctx, "/snapshot", &snap); err != nil {
 		return nil, err
@@ -179,7 +179,7 @@ func (c *ControlClient) Snapshot(ctx context.Context) (*edge.Snapshot, error) {
 	return &snap, nil
 }
 
-func (c *ControlClient) PostJSON(ctx context.Context, path string, body []byte) error {
+func (c *Client) PostJSON(ctx context.Context, path string, body []byte) error {
 	resp, err := c.do(ctx, http.MethodPost, path, strings.NewReader(string(body)))
 	if err != nil {
 		return err
@@ -193,7 +193,7 @@ func (c *ControlClient) PostJSON(ctx context.Context, path string, body []byte) 
 }
 
 // PostJSONDecode posts a JSON body and decodes the JSON response.
-func (c *ControlClient) PostJSONDecode(ctx context.Context, path string, body []byte, out any) error {
+func (c *Client) PostJSONDecode(ctx context.Context, path string, body []byte, out any) error {
 	resp, err := c.do(ctx, http.MethodPost, path, strings.NewReader(string(body)))
 	if err != nil {
 		return err
@@ -211,7 +211,7 @@ func (c *ControlClient) PostJSONDecode(ctx context.Context, path string, body []
 
 type SnapshotStream func(*edge.Snapshot)
 
-func (c *ControlClient) Stream(ctx context.Context, fn SnapshotStream) error {
+func (c *Client) Stream(ctx context.Context, fn SnapshotStream) error {
 	resp, err := c.doStream(ctx, "/stream")
 	if err != nil {
 		return err
@@ -244,17 +244,17 @@ func controlError(path string, code int, body string) error {
 	}
 	switch code {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return clierr.New(clierr.CodeAuth, message, "check that the control token file is readable and the control plane is running")
+		return apierrors.New(apierrors.CodeAuth, message, "check that the control token file is readable and the control plane is running")
 	case http.StatusNotFound:
-		return clierr.Wrap(clierr.CodeNotFound, fmt.Errorf("%s", message))
+		return apierrors.Wrap(apierrors.CodeNotFound, fmt.Errorf("%s", message))
 	case http.StatusConflict:
-		return clierr.Wrap(clierr.CodeConflict, fmt.Errorf("%s", message))
+		return apierrors.Wrap(apierrors.CodeConflict, fmt.Errorf("%s", message))
 	case http.StatusBadRequest, http.StatusUnprocessableEntity:
-		return clierr.Wrap(clierr.CodeValidation, fmt.Errorf("%s", message))
+		return apierrors.Wrap(apierrors.CodeValidation, fmt.Errorf("%s", message))
 	case http.StatusServiceUnavailable, http.StatusNotImplemented:
-		return clierr.Wrap(clierr.CodeUnsupported, fmt.Errorf("%s", message))
+		return apierrors.Wrap(apierrors.CodeUnsupported, fmt.Errorf("%s", message))
 	case http.StatusGatewayTimeout, http.StatusRequestTimeout:
-		return clierr.Wrap(clierr.CodeTimeout, fmt.Errorf("%s", message))
+		return apierrors.Wrap(apierrors.CodeTimeout, fmt.Errorf("%s", message))
 	default:
 		return fmt.Errorf("%s", message)
 	}

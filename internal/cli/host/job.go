@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/moureau-dev/menina/internal/clierr"
+	"github.com/moureau-dev/menina/internal/api/errors"
 )
 
 // jobView is the subset of a deployment job shown by the CLI. The control plane
@@ -171,7 +171,7 @@ func jobWatch(app *App) *cobra.Command {
 			body, err := client.GetStream(ctx, watchPath)
 			if err != nil {
 				if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
-					return clierr.Wrap(clierr.CodeNotFound, err)
+					return apierrors.Wrap(apierrors.CodeNotFound, err)
 				}
 				return err
 			}
@@ -219,7 +219,7 @@ func jobWatch(app *App) *cobra.Command {
 			}
 			if err := scanner.Err(); err != nil {
 				if ctx.Err() != nil {
-					return clierr.New(clierr.CodeTimeout, fmt.Sprintf("timed out watching job %s", args[0]), "increase --timeout or use `menina app status`")
+					return apierrors.New(apierrors.CodeTimeout, fmt.Sprintf("timed out watching job %s", args[0]), "increase --timeout or use `menina app status`")
 				}
 				return err
 			}

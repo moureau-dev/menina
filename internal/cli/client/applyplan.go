@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/moureau-dev/menina/internal/clierr"
+	"github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/contract/manifest"
 	"github.com/moureau-dev/menina/internal/version"
@@ -84,9 +84,9 @@ func checkOwnership(configDir string, r *manifest.Rendered) error {
 		}
 		switch {
 		case r.File.Source.Repo == "" && app.Source.Repo != "":
-			return clierr.New(clierr.CodeConflict, fmt.Sprintf("app %q is owned by %s; set source.repo in the manifest", name, app.Source.Repo), "use a different app name or declare the owning source.repo")
+			return apierrors.New(apierrors.CodeConflict, fmt.Sprintf("app %q is owned by %s; set source.repo in the manifest", name, app.Source.Repo), "use a different app name or declare the owning source.repo")
 		case r.File.Source.Repo != "" && app.Source.Repo != "" && app.Source.Repo != r.File.Source.Repo:
-			return clierr.New(clierr.CodeConflict, fmt.Sprintf("app %q is owned by %s, not %s", name, app.Source.Repo, r.File.Source.Repo), "use a different app name or fix source.repo")
+			return apierrors.New(apierrors.CodeConflict, fmt.Sprintf("app %q is owned by %s, not %s", name, app.Source.Repo, r.File.Source.Repo), "use a different app name or fix source.repo")
 		}
 	}
 	return nil
@@ -94,7 +94,7 @@ func checkOwnership(configDir string, r *manifest.Rendered) error {
 
 func planPrune(configDir string, r *manifest.Rendered) ([]string, error) {
 	if r.File.Source.Repo == "" {
-		return nil, clierr.New(clierr.CodeValidation, "--prune requires source.repo in the manifest (or --source-repo)", "set source.repo so only apps owned by this repository are pruned")
+		return nil, apierrors.New(apierrors.CodeValidation, "--prune requires source.repo in the manifest (or --source-repo)", "set source.repo so only apps owned by this repository are pruned")
 	}
 	project, err := config.LoadProject(config.ProjectsDir(configDir), r.Project.Name)
 	if err != nil {
@@ -359,15 +359,15 @@ func verifyPlanBase(configDir string, plan *applyPlan) error {
 		return err
 	}
 	if current != plan.BaseState {
-		return clierr.New(clierr.CodeConflict, "configuration changed since this plan was created", "run `apply --diff` again and review the new plan")
+		return apierrors.New(apierrors.CodeConflict, "configuration changed since this plan was created", "run `apply --diff` again and review the new plan")
 	}
 	for _, w := range plan.Writes {
 		before, err := os.ReadFile(w.Path)
 		switch {
 		case err == nil && (contentHash(before) != w.BeforeHash || !w.BeforeExisted):
-			return clierr.New(clierr.CodeConflict, fmt.Sprintf("%s changed since the plan was created", w.Path), "run `apply --diff` again")
+			return apierrors.New(apierrors.CodeConflict, fmt.Sprintf("%s changed since the plan was created", w.Path), "run `apply --diff` again")
 		case os.IsNotExist(err) && w.BeforeExisted:
-			return clierr.New(clierr.CodeConflict, fmt.Sprintf("%s was removed since the plan was created", w.Path), "run `apply --diff` again")
+			return apierrors.New(apierrors.CodeConflict, fmt.Sprintf("%s was removed since the plan was created", w.Path), "run `apply --diff` again")
 		case err != nil && !os.IsNotExist(err):
 			return err
 		}
@@ -375,13 +375,13 @@ func verifyPlanBase(configDir string, plan *applyPlan) error {
 	for _, d := range plan.Deletes {
 		before, err := os.ReadFile(d.Path)
 		if os.IsNotExist(err) {
-			return clierr.New(clierr.CodeConflict, fmt.Sprintf("%s was already removed since the plan was created", d.Path), "run `apply --diff` again")
+			return apierrors.New(apierrors.CodeConflict, fmt.Sprintf("%s was already removed since the plan was created", d.Path), "run `apply --diff` again")
 		}
 		if err != nil {
 			return err
 		}
 		if contentHash(before) != d.Hash {
-			return clierr.New(clierr.CodeConflict, fmt.Sprintf("%s changed since the plan was created", d.Path), "run `apply --diff` again")
+			return apierrors.New(apierrors.CodeConflict, fmt.Sprintf("%s changed since the plan was created", d.Path), "run `apply --diff` again")
 		}
 	}
 	return nil
@@ -408,21 +408,21 @@ func planChanges(plan *applyPlan) []applyChange {
 func applyFromPlan(cmd *cobra.Command, app *App, planID, ifRevision string, diff, dryRun, verify bool) error {
 	plan, err := loadPlan(app.configDir(), planID)
 	if err != nil {
-		return clierr.Wrap(clierr.CodeNotFound, err)
+		return apierrors.Wrap(apierrors.CodeNotFound, err)
 	}
 	lock, err := config.AcquireLock(app.configDir(), 10*time.Second)
 	if err != nil {
-		return clierr.Wrap(clierr.CodeConflict, err)
+		return apierrors.Wrap(apierrors.CodeConflict, err)
 	}
 	defer lock.Release()
 	if err := lock.Check(); err != nil {
-		return clierr.Wrap(clierr.CodeConflict, err)
+		return apierrors.Wrap(apierrors.CodeConflict, err)
 	}
 	if err := verifyPlanBase(app.configDir(), plan); err != nil {
 		return err
 	}
 	if ifRevision != "" && ifRevision != plan.BaseState {
-		return clierr.New(clierr.CodeConflict, "--if-revision does not match the plan base state", "regenerate the plan")
+		return apierrors.New(apierrors.CodeConflict, "--if-revision does not match the plan base state", "regenerate the plan")
 	}
 	changes := planChanges(plan)
 	if diff || dryRun {

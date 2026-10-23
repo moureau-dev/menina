@@ -1,4 +1,4 @@
-package platform
+package controller
 
 import (
 	"context"
@@ -127,4 +127,8 @@ func testResolved() *config.ResolvedConfig {
 			},
 		},
 	}
+}
+
+func resolvedFunc() func() *config.ResolvedConfig {
+	return func() *config.ResolvedConfig { return testResolved() }
 }

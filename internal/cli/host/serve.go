@@ -4,7 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/platform"
+	"github.com/moureau-dev/menina/internal/core/controller"
 	"github.com/moureau-dev/menina/internal/registry"
 )
 
@@ -22,7 +22,7 @@ func newServeCommand(app *App) *cobra.Command {
 				return err
 			}
 			app.Opts.ConfigDir = cfg.Host.ConfigDir
-			svc, err := platform.NewService(cfg, app.Opts.ConfigDir, app.Log)
+			svc, err := controller.NewService(cfg, app.Opts.ConfigDir, app.Log)
 			if err != nil {
 				return err
 			}

@@ -1,4 +1,4 @@
-package platform
+package controller
 
 import (
 	"crypto/sha256"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/core/worker"
 	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/deployment"
 	"github.com/moureau-dev/menina/internal/notify"
@@ -268,7 +269,7 @@ func (s *Service) handlePromote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dedup := fmt.Sprintf("promote|%s|%s|%s|%s|%d", req.Project, req.FromEnvironment, req.ToEnvironment, req.App, time.Now().UnixNano())
-	job := PinJob(database.Job{
+	job := worker.PinJob(database.Job{
 		DedupKey:      dedup,
 		Kind:          "promote",
 		Project:       req.Project,

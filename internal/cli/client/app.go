@@ -11,7 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/moureau-dev/menina/internal/clierr"
+	"github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/version"
 )
@@ -107,7 +107,7 @@ func NewRootCommand() *cobra.Command {
 func Execute() int {
 	root := NewRootCommand()
 	if err := root.Execute(); err != nil {
-		code, message, hint, exit := clierr.Info(err)
+		code, message, hint, exit := apierrors.Info(err)
 		jsonOut, _ := root.PersistentFlags().GetBool("json")
 		if jsonOut {
 			enc := json.NewEncoder(os.Stderr)

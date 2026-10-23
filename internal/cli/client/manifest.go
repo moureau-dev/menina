@@ -15,7 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/moureau-dev/menina/internal/clierr"
+	"github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/contract/manifest"
 )
@@ -210,7 +210,7 @@ func newValidateCommand(app *App) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f, err := o.load(cmd)
 			if err != nil {
-				return clierr.Wrap(clierr.CodeValidation, err)
+				return apierrors.Wrap(apierrors.CodeValidation, err)
 			}
 			r, err := f.Render(manifest.RenderOptions{
 				ConfigDir: app.configDir(),
@@ -218,10 +218,10 @@ func newValidateCommand(app *App) *cobra.Command {
 				Tag:       o.Tag,
 			})
 			if err != nil {
-				return clierr.Wrap(clierr.CodeValidation, err)
+				return apierrors.Wrap(apierrors.CodeValidation, err)
 			}
 			if err := validateRendered(app, r, false); err != nil {
-				return clierr.Wrap(clierr.CodeValidation, err)
+				return apierrors.Wrap(apierrors.CodeValidation, err)
 			}
 			if app.jsonOutput() {
 				return app.printJSON(manifestSummary(r))
@@ -278,7 +278,7 @@ func newApplyCommand(app *App) *cobra.Command {
 			}
 			f, err := o.load(cmd)
 			if err != nil {
-				return clierr.Wrap(clierr.CodeValidation, err)
+				return apierrors.Wrap(apierrors.CodeValidation, err)
 			}
 			registry := o.Registry
 			if registry == "" {
@@ -295,10 +295,10 @@ func newApplyCommand(app *App) *cobra.Command {
 				Tag:       o.Tag,
 			})
 			if err != nil {
-				return clierr.Wrap(clierr.CodeValidation, err)
+				return apierrors.Wrap(apierrors.CodeValidation, err)
 			}
 			if err := validateRendered(app, r, true); err != nil {
-				return clierr.Wrap(clierr.CodeValidation, err)
+				return apierrors.Wrap(apierrors.CodeValidation, err)
 			}
 			if err := checkOwnership(app.configDir(), r); err != nil {
 				return err
@@ -352,11 +352,11 @@ func newApplyCommand(app *App) *cobra.Command {
 				return nil
 			}
 			if prune {
-				return clierr.New(clierr.CodeValidation, "apply --prune must be reviewed before execution", "run `apply --diff --prune`, then `apply --from-plan <plan-id>`")
+				return apierrors.New(apierrors.CodeValidation, "apply --prune must be reviewed before execution", "run `apply --diff --prune`, then `apply --from-plan <plan-id>`")
 			}
 			lock, err := config.AcquireLock(app.configDir(), 10*time.Second)
 			if err != nil {
-				return clierr.Wrap(clierr.CodeConflict, err)
+				return apierrors.Wrap(apierrors.CodeConflict, err)
 			}
 			defer lock.Release()
 			baseState, err := currentStateToken(app.configDir(), r.Project.Name, r.Environment.Name)
@@ -364,10 +364,10 @@ func newApplyCommand(app *App) *cobra.Command {
 				return err
 			}
 			if ifRevision != "" && ifRevision != baseState {
-				return clierr.New(clierr.CodeConflict, "configuration changed since the state token was read", "run `apply --diff` again and review the new plan")
+				return apierrors.New(apierrors.CodeConflict, "configuration changed since the state token was read", "run `apply --diff` again and review the new plan")
 			}
 			if err := lock.Check(); err != nil {
-				return clierr.Wrap(clierr.CodeConflict, err)
+				return apierrors.Wrap(apierrors.CodeConflict, err)
 			}
 			files, err := r.Plan(app.configDir())
 			if err != nil {
@@ -513,11 +513,11 @@ func newPushCommand(app *App) *cobra.Command {
 func runManifestBuild(cmd *cobra.Command, app *App, o *manifestOptions, filter string, buildArgs []string, build, push, dryRun bool) error {
 	f, err := o.load(cmd)
 	if err != nil {
-		return clierr.Wrap(clierr.CodeValidation, err)
+		return apierrors.Wrap(apierrors.CodeValidation, err)
 	}
 	overrides, err := parseBuildArgs(buildArgs)
 	if err != nil {
-		return clierr.Wrap(clierr.CodeValidation, err)
+		return apierrors.Wrap(apierrors.CodeValidation, err)
 	}
 	registry := o.Registry
 	if registry == "" {
@@ -534,7 +534,7 @@ func runManifestBuild(cmd *cobra.Command, app *App, o *manifestOptions, filter s
 		Tag:       o.Tag,
 	})
 	if err != nil {
-		return clierr.Wrap(clierr.CodeValidation, err)
+		return apierrors.Wrap(apierrors.CodeValidation, err)
 	}
 	targets, err := manifest.FilterTargets(r.Targets, filter)
 	if err != nil {

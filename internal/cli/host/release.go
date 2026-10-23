@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/moureau-dev/menina/internal/clierr"
+	"github.com/moureau-dev/menina/internal/api/errors"
 )
 
 func newReleaseCommand(app *App) *cobra.Command {
@@ -137,14 +137,14 @@ func appPromote(app *App) *cobra.Command {
 				return fmt.Errorf("control plane not reachable (%v); start it with `menina serve`", err)
 			}
 			if !dryRun && !yes {
-				return clierr.WithHint(fmt.Errorf("promotion changes a running environment"), "review with --dry-run, then pass --yes (and optionally --state-token)")
+				return apierrors.WithHint(fmt.Errorf("promotion changes a running environment"), "review with --dry-run, then pass --yes (and optionally --state-token)")
 			}
 			body := fmt.Sprintf(`{"project":%q,"fromEnvironment":%q,"toEnvironment":%q,"app":%q,"stateToken":%q,"dryRun":%v,"confirm":%v}`,
 				project, from, to, args[0], stateToken, dryRun, yes)
 			var resp map[string]any
 			if err := client.PostJSONDecode(cmd.Context(), "/promote", []byte(body), &resp); err != nil {
 				if strings.Contains(strings.ToLower(err.Error()), "conflict") {
-					return clierr.Wrap(clierr.CodeConflict, err)
+					return apierrors.Wrap(apierrors.CodeConflict, err)
 				}
 				return err
 			}

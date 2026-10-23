@@ -1,7 +1,7 @@
 // Package clierr defines stable machine-readable CLI error classes and exit
 // codes. Commands may leave errors unwrapped; Execute then reports the generic
 // class.
-package clierr
+package apierrors
 
 import "errors"
 

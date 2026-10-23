@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/moureau-dev/menina/internal/clierr"
+	"github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/config"
 )
 
@@ -135,7 +135,7 @@ func configRollback(app *App) *cobra.Command {
 				return fmt.Errorf("aborted")
 			}
 			if err := config.RestoreRevision(app.Opts.ConfigDir, args[0]); err != nil {
-				return clierr.Wrap(clierr.CodeNotFound, err)
+				return apierrors.Wrap(apierrors.CodeNotFound, err)
 			}
 			if app.Opts.JSON {
 				return app.PrintJSON(map[string]any{"restored": args[0]})

@@ -3,7 +3,7 @@ package client
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/moureau-dev/menina/internal/clierr"
+	"github.com/moureau-dev/menina/internal/api/errors"
 )
 
 func newClientConfigCommand(app *App) *cobra.Command {
@@ -57,7 +57,7 @@ func clientConfigRollback(app *App, hostFlag *string) *cobra.Command {
 				return err
 			}
 			if !yes {
-				return clierr.New(clierr.CodeValidation, "config rollback requires --yes", "review `config revisions` and re-run with --yes")
+				return apierrors.New(apierrors.CodeValidation, "config rollback requires --yes", "review `config revisions` and re-run with --yes")
 			}
 			remote := []string{"config", "rollback", args[0], "--yes"}
 			if app.jsonOutput() {

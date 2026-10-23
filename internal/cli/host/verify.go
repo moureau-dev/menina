@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moureau-dev/menina/internal/clierr"
+	"github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/config"
 )
 
@@ -27,7 +27,7 @@ func verifyDeployed(ctx context.Context, cfg *config.Config, app *App, project, 
 	}
 	ra, err := resolved.FindApp(project, environment, name)
 	if err != nil {
-		return clierr.Wrap(clierr.CodeNotFound, err)
+		return apierrors.Wrap(apierrors.CodeNotFound, err)
 	}
 
 	checked := 0
@@ -52,12 +52,12 @@ func verifyDeployed(ctx context.Context, cfg *config.Config, app *App, project, 
 			}
 			resp, err := client.Do(req)
 			if err != nil {
-				return clierr.WithHint(err, fmt.Sprintf("could not reach %s; check `menina routes` and `menina doctor`", url))
+				return apierrors.WithHint(err, fmt.Sprintf("could not reach %s; check `menina routes` and `menina doctor`", url))
 			}
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
 			if resp.StatusCode >= 500 {
-				return clierr.WithHint(fmt.Errorf("%s returned HTTP %d", url, resp.StatusCode), "check `menina app logs` and `menina doctor`")
+				return apierrors.WithHint(fmt.Errorf("%s returned HTTP %d", url, resp.StatusCode), "check `menina app logs` and `menina doctor`")
 			}
 			app.Infof("Verified %s (HTTP %d)", url, resp.StatusCode)
 			checked++
@@ -67,7 +67,7 @@ func verifyDeployed(ctx context.Context, cfg *config.Config, app *App, project, 
 		addr := fmt.Sprintf("127.0.0.1:%d", port)
 		conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", addr)
 		if err != nil {
-			return clierr.WithHint(fmt.Errorf("could not connect to %s: %w", addr, err), "check the app's L4 ports and firewall")
+			return apierrors.WithHint(fmt.Errorf("could not connect to %s: %w", addr, err), "check the app's L4 ports and firewall")
 		}
 		_ = conn.Close()
 		app.Infof("Verified TCP %s", addr)

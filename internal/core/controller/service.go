@@ -1,4 +1,4 @@
-package platform
+package controller
 
 import (
 	"context"
@@ -16,11 +16,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/moureau-dev/menina/internal/api"
 	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/core/worker"
 	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/deployment"
-	"github.com/moureau-dev/menina/internal/notify"
 	"github.com/moureau-dev/menina/internal/edge"
+	"github.com/moureau-dev/menina/internal/notify"
 	"github.com/moureau-dev/menina/internal/registry"
 	"github.com/moureau-dev/menina/internal/secrets"
 )
@@ -80,9 +82,9 @@ type Service struct {
 	watcher     *config.Watcher
 	cluster     deployment.Cluster
 	engine      *deployment.Engine
-	jobs        *Jobs
+	jobs        *worker.Jobs
 	reconciler  *Reconciler
-	control     *ControlServer
+	control     *api.Server
 	registry    *registry.Client
 	eventsSrv   *http.Server
 	bus         *broadcaster
@@ -122,7 +124,7 @@ func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Servic
 		}
 		return nil
 	}
-	svc.jobs = NewJobs(db, engine, cluster, snapFn, cfg.Registry.Domain, log)
+	svc.jobs = worker.NewJobs(db, engine, cluster, snapFn, cfg.Registry.Domain, log)
 	svc.jobs.SetSender(svc.sender)
 	svc.jobs.SetTLS(cfg.TLS.Terminate)
 	svc.jobs.SetAllowHooks(cfg.Security.AllowAppHooks)
@@ -146,7 +148,7 @@ func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Servic
 
 func (s *Service) SetDigestResolver(r deployment.DigestResolver) {
 	s.engine = deployment.NewEngine(s.cluster, s.db, r, s.log)
-	s.jobs = NewJobs(s.db, s.engine, s.cluster, func() *config.ResolvedConfig {
+	s.jobs = worker.NewJobs(s.db, s.engine, s.cluster, func() *config.ResolvedConfig {
 		if snap := s.watcher.Snapshot(); snap != nil {
 			return snap.Resolved
 		}
@@ -171,12 +173,12 @@ func (s *Service) Run(ctx context.Context) error {
 		s.log.Info("requeued in-progress jobs after restart", "count", requeued)
 	}
 
-	token, err := EnsureToken(s.cfg.Security.ControlTokenFile)
+	token, err := api.EnsureToken(s.cfg.Security.ControlTokenFile)
 	if err != nil {
 		return fmt.Errorf("control token: %w", err)
 	}
 	s.token = token
-	control, err := NewControlServer(s.cfg.Platform.ControlSocket, token, s.controlMux())
+	control, err := api.NewServer(s.cfg.Platform.ControlSocket, token, s.controlMux())
 	if err != nil {
 		return err
 	}
@@ -649,7 +651,7 @@ func (s *Service) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		Registry:   s.cfg.Registry.Domain,
 		Repository: app.Repository,
 		Tag:        app.Tag,
-	}, []database.Job{PinJob(database.Job{
+	}, []database.Job{worker.PinJob(database.Job{
 		DedupKey:    dedup,
 		Kind:        "manual",
 		Project:     req.Project,
@@ -709,7 +711,7 @@ func (s *Service) handleRollback(w http.ResponseWriter, r *http.Request) {
 		Registry:   s.cfg.Registry.Domain,
 		Repository: app.Repository,
 		Digest:     req.Digest,
-	}, []database.Job{PinJob(database.Job{
+	}, []database.Job{worker.PinJob(database.Job{
 		DedupKey:      dedup,
 		Kind:          "rollback",
 		Project:       req.Project,

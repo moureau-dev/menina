@@ -1,4 +1,4 @@
-package platform
+package controller
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/core/worker"
 	"github.com/moureau-dev/menina/internal/database"
 	"github.com/moureau-dev/menina/internal/deployment"
 	"github.com/moureau-dev/menina/internal/edge"
@@ -394,7 +395,7 @@ func (r *Reconciler) ReconcileTags(ctx context.Context) {
 					Repository: app.Repository,
 					Tag:        app.Tag,
 					Digest:     digest,
-				}, []database.Job{PinJob(database.Job{
+				}, []database.Job{worker.PinJob(database.Job{
 					DedupKey:    fmt.Sprintf("reconcile|%s|%s|%s|%d", app.Project, app.Environment, app.Name, time.Now().UnixNano()),
 					Kind:        "reconcile",
 					Project:     app.Project,

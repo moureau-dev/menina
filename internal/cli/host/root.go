@@ -12,11 +12,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/moureau-dev/menina/internal/api"
+	"github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/cli/client"
-	"github.com/moureau-dev/menina/internal/clierr"
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/database"
-	"github.com/moureau-dev/menina/internal/platform"
 	"github.com/moureau-dev/menina/internal/version"
 )
 
@@ -138,14 +138,14 @@ func Execute() int {
 			return 0
 		}
 		printCLIError(root, err)
-		_, _, _, exit := clierr.Info(err)
+		_, _, _, exit := apierrors.Info(err)
 		return exit
 	}
 	return 0
 }
 
 func printCLIError(root *cobra.Command, err error) {
-	code, message, hint, _ := clierr.Info(err)
+	code, message, hint, _ := apierrors.Info(err)
 	jsonOut, _ := root.PersistentFlags().GetBool("json")
 	if jsonOut {
 		enc := json.NewEncoder(os.Stderr)
@@ -189,8 +189,8 @@ func (a *App) OpenDB(cfg *config.Config) (*database.DB, error) {
 	return db, nil
 }
 
-func (a *App) Control(cfg *config.Config) (*platform.ControlClient, error) {
-	return platform.DialControl(cfg.Platform.ControlSocket, cfg.Security.ControlTokenFile)
+func (a *App) Control(cfg *config.Config) (*api.Client, error) {
+	return api.Dial(cfg.Platform.ControlSocket, cfg.Security.ControlTokenFile)
 }
 
 func (a *App) PrintJSON(v any) error {

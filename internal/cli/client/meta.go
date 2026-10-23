@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/moureau-dev/menina/internal/clierr"
+	"github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/contract/manifest"
 	"github.com/moureau-dev/menina/internal/contract/schema"
 	"github.com/moureau-dev/menina/internal/version"
@@ -154,7 +154,7 @@ func newCapabilitiesCommand(app *App) *cobra.Command {
 				}
 				hostDoc, err := remoteCapabilities(cmd, host)
 				if err != nil {
-					return clierr.WithHint(clierr.Wrap(clierr.CodeUnsupported, err), "the host may be older or missing `menina capabilities`; upgrade the host binary")
+					return apierrors.WithHint(apierrors.Wrap(apierrors.CodeUnsupported, err), "the host may be older or missing `menina capabilities`; upgrade the host binary")
 				}
 				compat := compatibilityDoc{
 					SchemaMatch:  local.ManifestSchema.Version == hostDoc.ManifestSchema.Version,

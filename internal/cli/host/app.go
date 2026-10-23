@@ -13,10 +13,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/moureau-dev/menina/internal/clierr"
+	"github.com/moureau-dev/menina/internal/api"
+	"github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/deployment"
-	"github.com/moureau-dev/menina/internal/platform"
 )
 
 func requireProdConfirmation(cfg *config.Config, environment string, yes bool) error {
@@ -563,7 +563,7 @@ func appRollback(app *App) *cobra.Command {
 
 // waitForDeploy polls the control plane until the specific job reaches a
 // terminal state, so the CLI reports the actual outcome rather than "queued".
-func waitForDeploy(ctx context.Context, client *platform.ControlClient, jobID string, timeout time.Duration) error {
+func waitForDeploy(ctx context.Context, client *api.Client, jobID string, timeout time.Duration) error {
 	if jobID == "" {
 		return fmt.Errorf("control plane did not return a job id; cannot confirm the rollout")
 	}
@@ -586,7 +586,7 @@ func waitForDeploy(ctx context.Context, client *platform.ControlClient, jobID st
 			}
 		}
 		if time.Now().After(deadline) {
-			return clierr.New(clierr.CodeTimeout, fmt.Sprintf("timed out after %s waiting for deployment job %s", timeout, jobID), "retry with a larger --timeout (for example --timeout 10m), or use --no-wait and poll `menina app status`")
+			return apierrors.New(apierrors.CodeTimeout, fmt.Sprintf("timed out after %s waiting for deployment job %s", timeout, jobID), "retry with a larger --timeout (for example --timeout 10m), or use --no-wait and poll `menina app status`")
 		}
 		select {
 		case <-ctx.Done():

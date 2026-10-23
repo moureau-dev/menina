@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/moureau-dev/menina/internal/clierr"
+	"github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/config"
 	"github.com/moureau-dev/menina/internal/secrets"
 )
@@ -117,10 +117,10 @@ func secretRotate(app *App) *cobra.Command {
 				return fmt.Errorf("--project and --environment are required")
 			}
 			if _, err := config.LoadProject(config.ProjectsDir(app.Opts.ConfigDir), project); err != nil {
-				return clierr.Wrap(clierr.CodeNotFound, err)
+				return apierrors.Wrap(apierrors.CodeNotFound, err)
 			}
 			if _, err := config.LoadEnvironment(app.Opts.ConfigDir, project, environment); err != nil {
-				return clierr.Wrap(clierr.CodeNotFound, err)
+				return apierrors.Wrap(apierrors.CodeNotFound, err)
 			}
 			var value string
 			var err error
