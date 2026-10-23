@@ -57,7 +57,7 @@ func clientSecretSet(app *App, hostFlag *string) *cobra.Command {
 			if value == "" {
 				return fmt.Errorf("refusing to store an empty secret value")
 			}
-			host, err := requireSecretHost(*hostFlag)
+			host, err := app.requireSecretHost(*hostFlag)
 			if err != nil {
 				return err
 			}
@@ -65,7 +65,7 @@ func clientSecretSet(app *App, hostFlag *string) *cobra.Command {
 			if app.jsonOutput() {
 				remoteArgs = append(remoteArgs, "--json")
 			}
-			return runSSHSecret(cmd, host, []byte(value), remoteArgs...)
+			return app.runSSHSecret(cmd, host, []byte(value), remoteArgs...)
 		},
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
@@ -89,7 +89,7 @@ func clientSecretRotate(app *App, hostFlag *string) *cobra.Command {
 			if project == "" || environment == "" {
 				return fmt.Errorf("--project and --environment are required")
 			}
-			host, err := requireSecretHost(*hostFlag)
+			host, err := app.requireSecretHost(*hostFlag)
 			if err != nil {
 				return err
 			}
@@ -120,7 +120,7 @@ func clientSecretRotate(app *App, hostFlag *string) *cobra.Command {
 			if app.jsonOutput() {
 				remoteArgs = append(remoteArgs, "--json")
 			}
-			return runSSHSecret(cmd, host, stdin, remoteArgs...)
+			return app.runSSHSecret(cmd, host, stdin, remoteArgs...)
 		},
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
@@ -144,7 +144,7 @@ func clientSecretList(app *App, hostFlag *string) *cobra.Command {
 			if project == "" || environment == "" {
 				return fmt.Errorf("--project and --environment are required")
 			}
-			host, err := requireSecretHost(*hostFlag)
+			host, err := app.requireSecretHost(*hostFlag)
 			if err != nil {
 				return err
 			}
@@ -155,7 +155,7 @@ func clientSecretList(app *App, hostFlag *string) *cobra.Command {
 			if app.jsonOutput() {
 				remoteArgs = append(remoteArgs, "--json")
 			}
-			return runSSHSecret(cmd, host, nil, remoteArgs...)
+			return app.runSSHSecret(cmd, host, nil, remoteArgs...)
 		},
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
@@ -179,7 +179,7 @@ func clientSecretRemove(app *App, hostFlag *string) *cobra.Command {
 			if project == "" || environment == "" {
 				return fmt.Errorf("--project and --environment are required")
 			}
-			host, err := requireSecretHost(*hostFlag)
+			host, err := app.requireSecretHost(*hostFlag)
 			if err != nil {
 				return err
 			}
@@ -198,7 +198,7 @@ func clientSecretRemove(app *App, hostFlag *string) *cobra.Command {
 			if app.jsonOutput() {
 				remoteArgs = append(remoteArgs, "--json")
 			}
-			return runSSHSecret(cmd, host, nil, remoteArgs...)
+			return app.runSSHSecret(cmd, host, nil, remoteArgs...)
 		},
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
@@ -217,7 +217,7 @@ func clientSecretVerify(app *App, hostFlag *string) *cobra.Command {
 			if project == "" || environment == "" {
 				return fmt.Errorf("--project and --environment are required")
 			}
-			host, err := requireSecretHost(*hostFlag)
+			host, err := app.requireSecretHost(*hostFlag)
 			if err != nil {
 				return err
 			}
@@ -229,7 +229,7 @@ func clientSecretVerify(app *App, hostFlag *string) *cobra.Command {
 			if app.jsonOutput() {
 				remoteArgs = append(remoteArgs, "--json")
 			}
-			return runSSHSecret(cmd, host, nil, remoteArgs...)
+			return app.runSSHSecret(cmd, host, nil, remoteArgs...)
 		},
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
@@ -237,8 +237,8 @@ func clientSecretVerify(app *App, hostFlag *string) *cobra.Command {
 	return cmd
 }
 
-func requireSecretHost(flagHost string) (string, error) {
-	host := chooseClientHost(flagHost)
+func (a *App) requireSecretHost(flagHost string) (string, error) {
+	host := a.chooseClientHost(flagHost, a.profile())
 	if host == "" {
 		return "", fmt.Errorf("--host is required (or set MENINA_HOST / run `menina apply --host` first)")
 	}
@@ -248,8 +248,12 @@ func requireSecretHost(flagHost string) (string, error) {
 	return host, nil
 }
 
-func runSSHSecret(cmd *cobra.Command, host string, stdin []byte, args ...string) error {
-	full := append([]string{"-T", host, "menina"}, args...)
+func (a *App) runSSHSecret(cmd *cobra.Command, host string, stdin []byte, args ...string) error {
+	pin, cleanup := a.sshArgs(host, a.profile())
+	defer cleanup()
+	full := append([]string{}, pin...)
+	full = append(full, "-T", host, "menina")
+	full = append(full, args...)
 	c := exec.CommandContext(cmd.Context(), "ssh", full...)
 	if stdin != nil {
 		c.Stdin = bytes.NewReader(stdin)

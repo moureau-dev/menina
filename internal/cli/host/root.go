@@ -66,6 +66,8 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&app.Opts.JSON, "json", false, "output machine-readable JSON")
 	root.PersistentFlags().BoolVar(&app.Opts.Verbose, "verbose", false, "verbose logging")
 	root.PersistentFlags().BoolVar(&app.Opts.NonInteractive, "non-interactive", false, "never prompt or open the TUI; fail instead")
+	profile := envOr("MENINA_PROFILE", "")
+	root.PersistentFlags().StringVar(&profile, "profile", profile, "stored client context (or MENINA_PROFILE)")
 
 	info := version.Get()
 	root.Version = info.Version
@@ -96,6 +98,8 @@ func NewRootCommand() *cobra.Command {
 		newInstallCommand(app),
 		newAPISSHCommand(app),
 		newIdentityCommand(app),
+		newAuditCommand(app),
+		newWhoamiCommand(app),
 		newSSHForcedCommand(app),
 	)
 	root.AddCommand(client.NewCommands(client.Options{

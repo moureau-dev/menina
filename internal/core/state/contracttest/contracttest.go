@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moureau-dev/menina/internal/core/audit"
 	"github.com/moureau-dev/menina/internal/core/identity"
 	"github.com/moureau-dev/menina/internal/core/release"
 	"github.com/moureau-dev/menina/internal/core/state/contract"
@@ -193,6 +194,18 @@ func Run(t *testing.T, newStore NewStore) {
 		}
 		if _, _, err := store.ConsumeEnrollmentToken(ctx, expired.TokenHash, time.Now(), identity.Key{Fingerprint: "SHA256:expired"}); !errors.Is(err, identity.ErrEnrollmentInvalid) {
 			t.Fatalf("expired token err=%v", err)
+		}
+	})
+
+	t.Run("audit events", func(t *testing.T) {
+		store := newStore(t)
+		id, err := store.RecordAudit(ctx, audit.Event{ActorID: "profile-1", Source: "ssh", Action: "deploy", Target: "/deploy", Project: "demo", Status: audit.StatusOK})
+		if err != nil || id == "" {
+			t.Fatalf("id=%q err=%v", id, err)
+		}
+		events, err := store.AuditEvents(ctx, audit.Filter{Project: "demo", Limit: 10})
+		if err != nil || len(events) != 1 || events[0].ActorID != "profile-1" || events[0].Status != audit.StatusOK {
+			t.Fatalf("events=%+v err=%v", events, err)
 		}
 	})
 

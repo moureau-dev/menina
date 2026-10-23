@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- `audit list` falls back to the local database when the control plane is down.
+- Bootstrap host-key selection prefers ed25519/ecdsa/rsa over DSA and trims the
+  pinned key before printing the enrollment command.
+
 ## [0.1.3] - 2026-10-23
 
 ### Added
@@ -30,6 +35,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   profiles, allowlisted commands run with a server-injected actor, the API
   bridge accepts that actor over the local socket, and `menina identity`
   manages profiles, keys, and enrollment tokens.
+- Scope enforcement for API commands and forced commands, with global,
+  project-scoped, and environment-scoped grants.
+- Audit capture and query for API and forced-command actions, including actor,
+  key fingerprint, target, project/environment/app, outcome, and timestamps.
+  Adds migration `0008_audit`.
+- Authorization policy with global, project, environment, and app-level scopes,
+  enforced by the API authorizer and forced-command wrapper.
+- Server-side ownership enforcement. `source.repo` is checked for apply and
+  prune plans, so a client cannot overwrite or prune another repository's apps.
+- Client contexts with `--profile` / `MENINA_PROFILE`, SSH host-key pinning,
+  and `whoami` for the server-derived profile.
+- One-paste bootstrap: `setup` prints the reachable host and host-key
+  fingerprint, `identity bootstrap` creates a profile and enrollment token, and
+  `menina enroll` consumes the token and verifies with `whoami`.
 
 ## [0.1.2] - 2026-10-23
 

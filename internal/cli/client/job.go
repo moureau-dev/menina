@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -19,17 +18,6 @@ func newClientJobCommand(app *App) *cobra.Command {
 	return cmd
 }
 
-func requireClientHost(flagHost string) (string, error) {
-	host := chooseClientHost(flagHost)
-	if host == "" {
-		return "", fmt.Errorf("--host is required (or set MENINA_HOST / run `menina apply --host` first)")
-	}
-	if strings.HasPrefix(host, "-") {
-		return "", fmt.Errorf("invalid SSH host %q", host)
-	}
-	return host, nil
-}
-
 func clientJobList(app *App) *cobra.Command {
 	var host, status string
 	var limit int
@@ -37,7 +25,7 @@ func clientJobList(app *App) *cobra.Command {
 		Use:   "list",
 		Short: "List deployment jobs on the host",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			target, err := requireClientHost(host)
+			target, err := app.requireClientHost(host)
 			if err != nil {
 				return err
 			}
@@ -51,7 +39,7 @@ func clientJobList(app *App) *cobra.Command {
 			if app.jsonOutput() {
 				remote = append(remote, "--json")
 			}
-			return runSSHInherit(cmd, target, remote...)
+			return app.runSSHInherit(cmd, target, remote...)
 		},
 	}
 	cmd.Flags().StringVar(&host, "host", "", "SSH host (user@host)")
@@ -69,7 +57,7 @@ func clientJobWatch(app *App) *cobra.Command {
 		Short: "Stream a deployment job from the host (NDJSON with --json)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			target, err := requireClientHost(host)
+			target, err := app.requireClientHost(host)
 			if err != nil {
 				return err
 			}
@@ -80,7 +68,7 @@ func clientJobWatch(app *App) *cobra.Command {
 			if app.jsonOutput() {
 				remote = append(remote, "--json")
 			}
-			return runSSHInherit(cmd, target, remote...)
+			return app.runSSHInherit(cmd, target, remote...)
 		},
 	}
 	cmd.Flags().StringVar(&host, "host", "", "SSH host (user@host)")

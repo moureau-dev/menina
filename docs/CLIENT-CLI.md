@@ -401,8 +401,8 @@ menina secret verify --host root@vps --project demo --environment production --j
 
 The client pipes the value to the host's `menina secret set` over SSH stdin; it
 never goes into the manifest, client config, arguments, or logs. `--host` falls
-back to `MENINA_HOST` or the cached host used by `apply`. You can also run the
-`secret` commands directly on the host.
+back to `MENINA_HOST`, the selected `--profile` context, or the cached host used
+by `apply`. You can also run the `secret` commands directly on the host.
 
 Secret files are mode `0660`; the environment directory is `0770` with setgid.
 Run the command as a user in the `menina` group (or root) so the control plane
@@ -417,8 +417,8 @@ The manifest never contains secret values.
 
 The standalone client runs the manifest and image commands (`init`, `validate`,
 `apply`, `build`, `push`, `schema`, `capabilities`, `install`) plus `secret`,
-`job`, `config`, `version`, and `upgrade`. It proxies `apply`, `job`, `config`,
-and `secret` over SSH with `--host`.
+`job`, `config`, `context`, `enroll`, `whoami`, `version`, and `upgrade`. It
+proxies `apply`, `job`, `config`, and `secret` over SSH with `--host`.
 
 `app`, `release`, `status`, `routes`, and `doctor` are host commands. Run them
 over SSH:
@@ -526,7 +526,7 @@ unless `--prune` is explicitly reviewed and applied via `--from-plan`.
 `<config-dir>/.revisions/`. List them with `menina config revisions` on the host,
 or `menina config revisions --host root@vps` from the client; restore with
 `menina config rollback <id> --yes` (also available through the client with
-`--host`). Revisions restore YAML only, not deployed images. Revisions record
+`--host`). Both use the host API when `serve` is running. Revisions restore YAML only, not deployed images. Revisions record
 actor, source repo/revision, plan id and a content hash; retention defaults to 50
 and is configurable with `MENINA_REVISION_RETENTION`. `.revisions/` is included
 in backup/restore. Revisions are not backfilled for applies that happened before
@@ -561,9 +561,62 @@ Without `--host`, it applies to the local config directory
 ssh -T <host> menina apply --local -f -
 ```
 
+The host computes the plan, then executes it through the local API when `serve`
+is running. The API revalidates the base state token, plan hash, file hashes,
+and `source.repo` ownership before writing. If the control plane is down, the
+host falls back to local file execution. `config revisions` and
+`config rollback` use the same API-first path.
+
 The host is cached in the user config directory (`menina/host`, mode 0600).
 `MENINA_HOST` is honoured, and `--local` skips the cache. Network auth is left to
 `ssh` and your keys/agent; no credentials are stored.
+
+### Client contexts
+
+Store reusable targets under `menina/contexts.yml` in the user config
+directory:
+
+```bash
+menina context set production --host deploy@vps --host-key "ssh-ed25519 AAAA..."
+menina context use production
+menina context list
+menina --profile production whoami
+```
+
+`--profile` (or `MENINA_PROFILE`) selects a stored context. `--host` and
+`MENINA_HOST` override the context host. Precedence is:
+
+1. `--host`
+2. `MENINA_HOST`
+3. selected context host
+4. cached host
+
+A stored `host-key` pins the SSH host key: the client writes a temporary
+`known_hosts` entry and uses `StrictHostKeyChecking=yes` for that command.
+Without it, SSH uses its normal known-hosts policy.
+
+`menina whoami` runs on the host and reports the server-derived profile and
+scopes. It shows `local (administrative)` when invoked directly on the host
+without an enrolled key.
+
+### One-paste bootstrap
+
+On the host, create or reuse a profile and print a one-time client command:
+
+```bash
+menina identity bootstrap admin
+```
+
+That prints the reachable SSH host, host-key fingerprint, the one-time token,
+and a command such as:
+
+```bash
+menina enroll menina_enroll_... --host root@vps --host-key "ssh-ed25519 AAAA..."
+```
+
+`enroll` reads `--public-key` or the first `~/.ssh/id_*.pub`, stores the context,
+sends the token to the host over SSH stdin, attaches the key to the profile, and
+then runs `whoami`. The token is used once and is never stored on the client.
 
 Production confirmation (`security.enforceProdPolicy`) applies to deployments,
 not to writing desired state. Build/push and `app deploy` remain the rollout

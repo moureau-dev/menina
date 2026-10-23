@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -29,5 +30,32 @@ func TestHashDetectsTampering(t *testing.T) {
 	p.Writes[0].Content = []byte("b")
 	if Hash(p) == p.ID {
 		t.Fatal("hash did not change after tampering")
+	}
+}
+
+func TestValidateOwnership(t *testing.T) {
+	dir := t.TempDir()
+	appPath := filepath.Join(dir, "projects", "p", "apps", "api.yml")
+	if err := os.MkdirAll(filepath.Dir(appPath), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(appPath, []byte("name: api\nsource:\n  repo: github.com/owner/api\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateOwnership(dir, &Plan{SourceRepo: "github.com/owner/api", Writes: []Write{{Path: appPath}}}); err != nil {
+		t.Fatalf("owner write rejected: %v", err)
+	}
+	if err := ValidateOwnership(dir, &Plan{SourceRepo: "github.com/other/repo", Writes: []Write{{Path: appPath}}}); err == nil {
+		t.Fatal("foreign write accepted")
+	}
+	if err := ValidateOwnership(dir, &Plan{Writes: []Write{{Path: appPath}}}); err == nil {
+		t.Fatal("write without source.repo accepted")
+	}
+	newPath := filepath.Join(dir, "projects", "p", "apps", "new.yml")
+	if err := ValidateOwnership(dir, &Plan{Writes: []Write{{Path: newPath}}}); err != nil {
+		t.Fatalf("new app rejected: %v", err)
+	}
+	if err := ValidateOwnership(dir, &Plan{Deletes: []Delete{{Path: appPath}}}); err == nil {
+		t.Fatal("prune without source.repo accepted")
 	}
 }

@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	apierrors "github.com/moureau-dev/menina/internal/api/errors"
+	"github.com/moureau-dev/menina/internal/core/audit"
 )
 
 func TestDispatcherActorVersionAndIdempotency(t *testing.T) {
@@ -113,5 +116,38 @@ func TestDispatcherTrustedActorHeaderOnlyLocally(t *testing.T) {
 	}
 	if remote.Body.Actor != "local" {
 		t.Fatalf("remote actor = %q", remote.Body.Actor)
+	}
+}
+
+type fakeAudit struct{ events []audit.Event }
+
+func (f *fakeAudit) RecordAudit(ctx context.Context, e audit.Event) (string, error) {
+	f.events = append(f.events, e)
+	return "audit-1", nil
+}
+
+type denyAuthorizer struct{}
+
+func (denyAuthorizer) Authorize(context.Context, Actor, Request) error {
+	return apierrors.New(apierrors.CodeAuth, "denied", "")
+}
+
+func TestDispatcherRecordsAudit(t *testing.T) {
+	auditor := &fakeAudit{}
+	d := NewDispatcher(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	d.SetAuditor(auditor)
+	d.Do(context.Background(), Actor{ID: "profile-1", Source: "ssh", KeyFingerprint: "SHA256:x"}, Request{Method: http.MethodGet, Path: "/status"})
+	if len(auditor.events) != 1 || auditor.events[0].Status != audit.StatusOK || auditor.events[0].KeyFingerprint != "SHA256:x" {
+		t.Fatalf("events = %+v", auditor.events)
+	}
+
+	denied := NewDispatcher(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	denied.SetAuditor(auditor)
+	denied.SetAuthorizer(denyAuthorizer{})
+	denied.Do(context.Background(), Actor{ID: "profile-1", Source: "ssh"}, Request{Method: http.MethodPost, Path: "/deploy"})
+	if len(auditor.events) != 2 || auditor.events[1].Status != audit.StatusDenied {
+		t.Fatalf("events = %+v", auditor.events)
 	}
 }

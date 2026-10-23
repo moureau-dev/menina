@@ -2,6 +2,7 @@ package host
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ func newIdentityCommand(app *App) *cobra.Command {
 		identityProfileCommand(app),
 		identityKeyCommand(app),
 		identityEnrollCommand(app),
+		identityBootstrapCommand(app),
 	)
 	return cmd
 }
@@ -281,11 +283,19 @@ func identityEnrollConsume(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			token := args[0]
+			if token == "-" {
+				data, err := io.ReadAll(cmd.InOrStdin())
+				if err != nil {
+					return err
+				}
+				token = strings.TrimSpace(string(data))
+			}
 			spec, err := keySpec(fingerprint, publicKey, comment, ttl)
 			if err != nil {
 				return err
 			}
-			profile, key, err := db.ConsumeEnrollmentToken(cmd.Context(), identity.HashEnrollmentToken(args[0]), time.Now().UTC(), spec)
+			profile, key, err := db.ConsumeEnrollmentToken(cmd.Context(), identity.HashEnrollmentToken(token), time.Now().UTC(), spec)
 			if err != nil {
 				return err
 			}

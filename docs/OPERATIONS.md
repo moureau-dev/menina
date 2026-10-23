@@ -46,6 +46,13 @@ app management, `status`, `routes`, `logs`, `doctor`, `app deploy`,
   exit, no success message); `menina app deploy` waits for the rollout and
   reports succeeded/failed; Zot readiness is verified before deploy reports
   success.
+- **Client identity is server-derived.** SSH keys resolve to profiles and scopes;
+  authorization and audit apply to SSH and API actors. Local root access and the
+  token-protected HTTP listener remain administrative. Forced commands require
+  the key fingerprint environment; see [IDENTITY.md](IDENTITY.md) for the
+  `PermitUserEnvironment` requirement and authorized_keys line.
+- Enrollment tokens are one-time, short-lived, and stored as hashes. Audit events
+  record actor, target, and outcome without secret values.
 - CI registry credentials are separate from cluster credentials.
 - On SIGTERM the control plane stops accepting work, re-queues in-progress
   deployments and flushes state. When Kubernetes is unavailable it stays up,
