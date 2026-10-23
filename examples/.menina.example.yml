@@ -10,12 +10,12 @@ vars:
   ENVIRONMENT: production
   DOMAIN: example.com
   MOUNT_BASE: /var/lib
-  
+
 
 # Default values for apps and workers.
 defaults:
   context: .
-  tag: ${ENVIRONMENT}            # default tag; matches defaults.imageTagStrategy
+  tag: ${ENVIRONMENT}            # built-image tag; defaults.imageTagStrategy is the host fallback
   registry: registry.example.com # used by the client to derive built image repositories
 
 # Persistent storage definitions.
@@ -102,6 +102,6 @@ workers:
     replicas: 1                          # reports is single-writer
     storage: [reports]
     secrets: [DATABASE_URL]
-    env: { 
+    env: {
       REPORT_PATH: "${MOUNT_BASE}/reports",
     }
