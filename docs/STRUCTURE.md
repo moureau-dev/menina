@@ -66,7 +66,7 @@ website/                  marketing site and docs sync/deploy source
 - The API is the mutation path for running state. The CLI uses it; the API
   handlers call controller and worker operations.
 - Top-level docs (`README.md`, `CHANGELOG.md`, `ROADMAP.md`, `llms.txt`,
-  `AGENTS.md`, `REFACTOR_PLAN.md`) stay at the repository root.
+  `AGENTS.md`) stay at the repository root.
 
 ## When to update this file
 

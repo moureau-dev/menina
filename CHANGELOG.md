@@ -22,7 +22,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   filenames or recorded schema versions.
 
 ### Docs
-- Added `REFACTOR_PLAN.md` and updated `docs/STRUCTURE.md` for the new layout.
+- Updated `docs/STRUCTURE.md`, package references, examples, and the roadmap for
+  the new layout and remaining API, state, and monitoring work.
 
 ## [0.1.1] - 2026-10-18
 

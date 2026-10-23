@@ -330,12 +330,11 @@ Items 1-15 (Tier 1) landed in the unreleased line, including the previously
 hidden one-off Job primitive used by migration hooks and verification smoke
 tests. The table remains as a dependency reference for the higher tiers.
 
-The package and role refactor on `refactor/rearchitecture` provides the API
-client and transport boundary, separate edge and core binaries, and the state
-package described in `REFACTOR_PLAN.md`. Items 30 and 44 reflect the landed
-transport and edge work. Items 17, 18a, and 38b keep their scores until item 46
-moves the command handlers behind the API dispatcher; the policy, schema, and
-query work is unchanged.
+The package and role refactor provides the API client and transport boundary,
+separate edge and core binaries, and the state package. Items 30 and 44 reflect
+the landed transport and edge work. Items 17, 18a, and 38b keep their scores
+until item 46 moves the command handlers behind the API dispatcher; the policy,
+schema, and query work is unchanged.
 
 ## Explicit non-goals for the current line
 
