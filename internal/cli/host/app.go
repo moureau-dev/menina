@@ -15,8 +15,8 @@ import (
 
 	"github.com/moureau-dev/menina/internal/api"
 	"github.com/moureau-dev/menina/internal/api/errors"
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/deployment"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/cluster"
 )
 
 func requireProdConfirmation(cfg *config.Config, environment string, yes bool) error {
@@ -384,7 +384,7 @@ func appResetVolume(app *App) *cobra.Command {
 			if !confirmDestructive(app, prompt, yes) {
 				return fmt.Errorf("aborted")
 			}
-			cluster, err := deployment.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
+			cluster, err := k8s.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
 			if err != nil {
 				return err
 			}
@@ -461,11 +461,11 @@ func appLogs(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cluster, err := deployment.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
+			cluster, err := k8s.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
 			if err != nil {
 				return err
 			}
-			opts := deployment.LogOptions{Follow: follow, Since: since}
+			opts := k8s.LogOptions{Follow: follow, Since: since}
 			if cmd.Flags().Changed("tail") {
 				opts.TailLines = &tail
 			}

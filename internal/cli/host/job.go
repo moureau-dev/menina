@@ -16,7 +16,7 @@ import (
 )
 
 // jobView is the subset of a deployment job shown by the CLI. The control plane
-// serialises database.Job with its Go field names.
+// serialises sqlite.Job with its Go field names.
 type jobView struct {
 	ID            string    `json:"ID"`
 	Kind          string    `json:"Kind"`

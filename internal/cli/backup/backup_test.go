@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/database"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 )
 
 func write(t *testing.T, path, content string) {
@@ -37,9 +37,9 @@ func setupConfig(t *testing.T, dir string, withStorage bool) *config.Config {
 	return &cfg
 }
 
-func openDB(t *testing.T, path string) *database.DB {
+func openDB(t *testing.T, path string) *sqlite.DB {
 	t.Helper()
-	db, err := database.Open(path)
+	db, err := sqlite.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}

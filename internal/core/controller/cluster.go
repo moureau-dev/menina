@@ -8,14 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moureau-dev/menina/internal/deployment"
+	"github.com/moureau-dev/menina/internal/core/cluster"
 )
 
 type deferredCluster struct {
 	kubeconfig string
 	log        *slog.Logger
 	mu         sync.Mutex
-	inner      deployment.Cluster
+	inner      k8s.Cluster
 	lastTry    time.Time
 	lastErr    error
 }
@@ -24,7 +24,7 @@ func newDeferredCluster(kubeconfig string, log *slog.Logger) *deferredCluster {
 	return &deferredCluster{kubeconfig: kubeconfig, log: log}
 }
 
-func (d *deferredCluster) get() (deployment.Cluster, error) {
+func (d *deferredCluster) get() (k8s.Cluster, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.inner != nil {
@@ -34,7 +34,7 @@ func (d *deferredCluster) get() (deployment.Cluster, error) {
 		return nil, d.lastErr
 	}
 	d.lastTry = time.Now()
-	c, err := deployment.NewKubernetesCluster(d.kubeconfig)
+	c, err := k8s.NewKubernetesCluster(d.kubeconfig)
 	if err != nil {
 		d.lastErr = err
 		return nil, err
@@ -55,7 +55,7 @@ func (d *deferredCluster) EnsureNamespace(ctx context.Context, name string) erro
 	return c.EnsureNamespace(ctx, name)
 }
 
-func (d *deferredCluster) ApplyWorkload(ctx context.Context, w deployment.Workload) error {
+func (d *deferredCluster) ApplyWorkload(ctx context.Context, w k8s.Workload) error {
 	c, err := d.get()
 	if err != nil {
 		return err
@@ -63,7 +63,7 @@ func (d *deferredCluster) ApplyWorkload(ctx context.Context, w deployment.Worklo
 	return c.ApplyWorkload(ctx, w)
 }
 
-func (d *deferredCluster) ApplyService(ctx context.Context, w deployment.Workload) error {
+func (d *deferredCluster) ApplyService(ctx context.Context, w k8s.Workload) error {
 	c, err := d.get()
 	if err != nil {
 		return err
@@ -111,7 +111,7 @@ func (d *deferredCluster) ScaleWorkload(ctx context.Context, namespace, name str
 	return c.ScaleWorkload(ctx, namespace, name, replicas)
 }
 
-func (d *deferredCluster) ListWorkloads(ctx context.Context) ([]deployment.WorkloadRef, error) {
+func (d *deferredCluster) ListWorkloads(ctx context.Context) ([]k8s.WorkloadRef, error) {
 	c, err := d.get()
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func (d *deferredCluster) ListWorkloads(ctx context.Context) ([]deployment.Workl
 	return c.ListWorkloads(ctx)
 }
 
-func (d *deferredCluster) WorkloadStatus(ctx context.Context, namespace, name string) (*deployment.WorkloadStatus, error) {
+func (d *deferredCluster) WorkloadStatus(ctx context.Context, namespace, name string) (*k8s.WorkloadStatus, error) {
 	c, err := d.get()
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func (d *deferredCluster) ServiceClusterIP(ctx context.Context, namespace, name 
 	return c.ServiceClusterIP(ctx, namespace, name)
 }
 
-func (d *deferredCluster) ListServices(ctx context.Context) ([]deployment.ServiceRef, error) {
+func (d *deferredCluster) ListServices(ctx context.Context) ([]k8s.ServiceRef, error) {
 	c, err := d.get()
 	if err != nil {
 		return nil, err
@@ -143,7 +143,7 @@ func (d *deferredCluster) ListServices(ctx context.Context) ([]deployment.Servic
 	return c.ListServices(ctx)
 }
 
-func (d *deferredCluster) PodLogs(ctx context.Context, namespace, name string, opts deployment.LogOptions) (io.ReadCloser, error) {
+func (d *deferredCluster) PodLogs(ctx context.Context, namespace, name string, opts k8s.LogOptions) (io.ReadCloser, error) {
 	c, err := d.get()
 	if err != nil {
 		return nil, err
@@ -191,7 +191,7 @@ func (d *deferredCluster) Ping(ctx context.Context) error {
 	return c.Ping(ctx)
 }
 
-func (d *deferredCluster) RunJob(ctx context.Context, req deployment.JobRequest) (*deployment.JobResult, error) {
+func (d *deferredCluster) RunJob(ctx context.Context, req k8s.JobRequest) (*k8s.JobResult, error) {
 	c, err := d.get()
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes unavailable: %w", err)

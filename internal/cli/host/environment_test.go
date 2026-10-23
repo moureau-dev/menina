@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/core/config"
 )
 
 func writeOverride(t *testing.T, dir, project, env string) string {

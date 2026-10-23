@@ -13,8 +13,8 @@ import (
 	"golang.org/x/term"
 
 	"github.com/moureau-dev/menina/internal/api/errors"
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/secrets"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/secrets"
 )
 
 // secretNameRe matches names usable as environment variables (Menina injects

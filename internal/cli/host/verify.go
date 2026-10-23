@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/moureau-dev/menina/internal/api/errors"
-	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/core/config"
 )
 
 // verifyDeployed checks the app's public HTTP routes (when exposed) and TCP L4

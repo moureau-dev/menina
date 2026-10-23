@@ -9,12 +9,12 @@ import (
 	"sort"
 	"time"
 
-	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/core/cluster"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/notify"
+	"github.com/moureau-dev/menina/internal/core/release"
+	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 	"github.com/moureau-dev/menina/internal/core/worker"
-	"github.com/moureau-dev/menina/internal/database"
-	"github.com/moureau-dev/menina/internal/deployment"
-	"github.com/moureau-dev/menina/internal/notify"
-	"github.com/moureau-dev/menina/internal/release"
 )
 
 // releaseComponent is one app's outcome inside an environment release.
@@ -269,7 +269,7 @@ func (s *Service) handlePromote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dedup := fmt.Sprintf("promote|%s|%s|%s|%s|%d", req.Project, req.FromEnvironment, req.ToEnvironment, req.App, time.Now().UnixNano())
-	job := worker.PinJob(database.Job{
+	job := worker.PinJob(sqlite.Job{
 		DedupKey:      dedup,
 		Kind:          "promote",
 		Project:       req.Project,
@@ -279,9 +279,9 @@ func (s *Service) handlePromote(w http.ResponseWriter, r *http.Request) {
 		Tag:           target.Tag,
 		DesiredDigest: sourceRelease.Digest,
 	}, target, snap.Resolved.Version, "promotion", fmt.Sprintf("%s/%s", req.Project, req.FromEnvironment))
-	_, err = s.db.IngestRegistryEvent(r.Context(), &database.Event{
+	_, err = s.db.IngestRegistryEvent(r.Context(), &sqlite.Event{
 		DedupKey: dedup, Registry: s.cfg.Registry.Domain, Repository: target.Repository, Digest: sourceRelease.Digest,
-	}, []database.Job{job})
+	}, []sqlite.Job{job})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -321,7 +321,7 @@ func (s *Service) secretStale(r *http.Request, app *config.ResolvedApp) (bool, s
 	if err != nil || !ok || active.SecretHash == "" {
 		return false, ""
 	}
-	current, err := deployment.SecretFingerprint(app)
+	current, err := k8s.SecretFingerprint(app)
 	if err != nil || current == "" {
 		return false, ""
 	}

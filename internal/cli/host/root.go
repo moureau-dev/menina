@@ -15,8 +15,8 @@ import (
 	"github.com/moureau-dev/menina/internal/api"
 	"github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/cli/client"
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/database"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 	"github.com/moureau-dev/menina/internal/version"
 )
 
@@ -178,8 +178,8 @@ func (a *App) LoadConfig() (*config.Config, error) {
 	return cfg, nil
 }
 
-func (a *App) OpenDB(cfg *config.Config) (*database.DB, error) {
-	db, err := database.Open(cfg.Platform.DBPath)
+func (a *App) OpenDB(cfg *config.Config) (*sqlite.DB, error) {
+	db, err := sqlite.Open(cfg.Platform.DBPath)
 	if err != nil {
 		return nil, err
 	}

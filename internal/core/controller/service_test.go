@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/database"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 )
 
 func serviceWithNotifyToken(t *testing.T, token string) *Service {
@@ -151,10 +151,10 @@ func TestRegistryWebhookRefusesWithoutToken(t *testing.T) {
 func TestReleaseStatusAggregate(t *testing.T) {
 	svc := serviceWithNotifyToken(t, "tok")
 	ctx := context.Background()
-	if _, err := svc.db.CreateRelease(ctx, database.Release{Project: "p", Environment: "prod", App: "api", Repository: "r/api", Digest: "sha256:a", State: "active", ConfigVersion: 3}); err != nil {
+	if _, err := svc.db.CreateRelease(ctx, sqlite.Release{Project: "p", Environment: "prod", App: "api", Repository: "r/api", Digest: "sha256:a", State: "active", ConfigVersion: 3}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.db.CreateRelease(ctx, database.Release{Project: "p", Environment: "prod", App: "admin", Repository: "r/admin", Digest: "sha256:b", State: "failed", Message: "verification failed", Migration: `{"command":["migrate"]}`}); err != nil {
+	if _, err := svc.db.CreateRelease(ctx, sqlite.Release{Project: "p", Environment: "prod", App: "admin", Repository: "r/admin", Digest: "sha256:b", State: "failed", Message: "verification failed", Migration: `{"command":["migrate"]}`}); err != nil {
 		t.Fatal(err)
 	}
 	rr := httptest.NewRecorder()
@@ -205,7 +205,7 @@ func TestPromoteDryRunAndStateToken(t *testing.T) {
 	if _, err := svc.watcher.Load(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.db.CreateRelease(context.Background(), database.Release{Project: "p", Environment: "production", App: "api", Repository: "registry.example.com/p/api", Digest: "sha256:abc", Image: "registry.example.com/p/api@sha256:abc", State: "active"}); err != nil {
+	if _, err := svc.db.CreateRelease(context.Background(), sqlite.Release{Project: "p", Environment: "production", App: "api", Repository: "registry.example.com/p/api", Digest: "sha256:abc", Image: "registry.example.com/p/api@sha256:abc", State: "active"}); err != nil {
 		t.Fatal(err)
 	}
 	post := func(body string) *httptest.ResponseRecorder {

@@ -3,9 +3,9 @@ package host
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/core/config"
 	"github.com/moureau-dev/menina/internal/core/controller"
-	"github.com/moureau-dev/menina/internal/registry"
+	"github.com/moureau-dev/menina/internal/core/registry"
 )
 
 func newServeCommand(app *App) *cobra.Command {

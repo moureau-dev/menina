@@ -13,9 +13,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/infrastructure"
-	"github.com/moureau-dev/menina/internal/secrets"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/provision"
+	"github.com/moureau-dev/menina/internal/core/secrets"
 )
 
 func newDoctorCommand(app *App) *cobra.Command {
@@ -47,7 +47,7 @@ func newDoctorCommand(app *App) *cobra.Command {
 				}
 			}
 
-			results = append(results, check("data directory", infrastructure.NewStorage(cfg.Host.DataDir).EnsureDirs()))
+			results = append(results, check("data directory", provision.NewStorage(cfg.Host.DataDir).EnsureDirs()))
 			if _, err := infraStorage(cfg); err != nil {
 				results = append(results, check("disk space", err))
 			} else {
@@ -121,8 +121,8 @@ func warnCheck(name string, err error) checkResult {
 	return checkResult{name: name, err: err, warn: true}
 }
 
-func infraStorage(cfg *config.Config) (infrastructure.DiskStats, error) {
-	st := infrastructure.NewStorage(cfg.Host.DataDir)
+func infraStorage(cfg *config.Config) (provision.DiskStats, error) {
+	st := provision.NewStorage(cfg.Host.DataDir)
 	return st.DiskUsage(cfg.Host.DataDir)
 }
 

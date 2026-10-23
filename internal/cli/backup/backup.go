@@ -21,8 +21,8 @@ import (
 
 	"golang.org/x/crypto/scrypt"
 
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/database"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 )
 
 // Archive entry names.
@@ -67,7 +67,7 @@ type CreateOptions struct {
 	Consistent    bool
 	Passphrase    string
 	MeninaVersion string
-	DB            *database.DB
+	DB            *sqlite.DB
 	Config        *config.Config
 	Volumes       VolumeManager
 	Log           *slog.Logger

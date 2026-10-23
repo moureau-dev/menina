@@ -8,8 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/moureau-dev/menina/internal/cli/backup"
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/deployment"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/cluster"
 	"github.com/moureau-dev/menina/internal/version"
 )
 
@@ -90,7 +90,7 @@ func volumeManager(app *App, cfg *config.Config, need bool) (backup.VolumeManage
 	if os.Geteuid() != 0 {
 		return nil, fmt.Errorf("--with-volumes/--with-images read the node's local-path storage and must run as root (try: sudo menina backup ...)")
 	}
-	cluster, err := deployment.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
+	cluster, err := k8s.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
 	if err != nil {
 		return nil, err
 	}

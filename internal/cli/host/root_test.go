@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/core/config"
 )
 
 func execute(args ...string) error {

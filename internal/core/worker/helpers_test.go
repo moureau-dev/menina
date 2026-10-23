@@ -7,18 +7,18 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/database"
-	"github.com/moureau-dev/menina/internal/deployment"
+	"github.com/moureau-dev/menina/internal/core/cluster"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 )
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func testDB(t *testing.T) *database.DB {
+func testDB(t *testing.T) *sqlite.DB {
 	t.Helper()
-	db, err := database.Open(filepath.Join(t.TempDir(), "test.db"))
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,22 +30,22 @@ func testDB(t *testing.T) *database.DB {
 }
 
 type fakeCluster struct {
-	status     *deployment.WorkloadStatus
+	status     *k8s.WorkloadStatus
 	clusterIP  string
-	applied    []deployment.Workload
-	services   []deployment.ServiceRef
-	workloads  []deployment.WorkloadRef
+	applied    []k8s.Workload
+	services   []k8s.ServiceRef
+	workloads  []k8s.WorkloadRef
 	deleted    []string
 	deletedSvc []string
 	scaled     map[string]int
 }
 
 func (f *fakeCluster) EnsureNamespace(context.Context, string) error { return nil }
-func (f *fakeCluster) ApplyWorkload(_ context.Context, w deployment.Workload) error {
+func (f *fakeCluster) ApplyWorkload(_ context.Context, w k8s.Workload) error {
 	f.applied = append(f.applied, w)
 	return nil
 }
-func (f *fakeCluster) ApplyService(_ context.Context, w deployment.Workload) error {
+func (f *fakeCluster) ApplyService(_ context.Context, w k8s.Workload) error {
 	f.applied = append(f.applied, w)
 	return nil
 }
@@ -66,22 +66,22 @@ func (f *fakeCluster) ScaleWorkload(_ context.Context, namespace, name string, r
 	f.scaled[namespace+"/"+name] = replicas
 	return nil
 }
-func (f *fakeCluster) ListWorkloads(context.Context) ([]deployment.WorkloadRef, error) {
+func (f *fakeCluster) ListWorkloads(context.Context) ([]k8s.WorkloadRef, error) {
 	return f.workloads, nil
 }
-func (f *fakeCluster) WorkloadStatus(context.Context, string, string) (*deployment.WorkloadStatus, error) {
+func (f *fakeCluster) WorkloadStatus(context.Context, string, string) (*k8s.WorkloadStatus, error) {
 	if f.status == nil {
-		return &deployment.WorkloadStatus{}, nil
+		return &k8s.WorkloadStatus{}, nil
 	}
 	return f.status, nil
 }
 func (f *fakeCluster) ServiceClusterIP(context.Context, string, string) (string, error) {
 	return f.clusterIP, nil
 }
-func (f *fakeCluster) ListServices(context.Context) ([]deployment.ServiceRef, error) {
+func (f *fakeCluster) ListServices(context.Context) ([]k8s.ServiceRef, error) {
 	return f.services, nil
 }
-func (f *fakeCluster) PodLogs(context.Context, string, string, deployment.LogOptions) (io.ReadCloser, error) {
+func (f *fakeCluster) PodLogs(context.Context, string, string, k8s.LogOptions) (io.ReadCloser, error) {
 	return io.NopCloser(nil), nil
 }
 func (f *fakeCluster) EnsureSecret(context.Context, string, string, map[string][]byte) error {
@@ -94,7 +94,7 @@ func (f *fakeCluster) EnsurePVC(context.Context, string, string, string, string)
 func (f *fakeCluster) DeletePVC(context.Context, string, string) error                    { return nil }
 func (f *fakeCluster) Ping(context.Context) error                                         { return nil }
 func (f *fakeCluster) CreateVolumeSnapshot(context.Context, string, string, string) error { return nil }
-func (f *fakeCluster) RunJob(context.Context, deployment.JobRequest) (*deployment.JobResult, error) {
+func (f *fakeCluster) RunJob(context.Context, k8s.JobRequest) (*k8s.JobResult, error) {
 	panic("unexpected RunJob call")
 }
 

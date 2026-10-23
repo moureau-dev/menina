@@ -9,9 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/notify"
-	"github.com/moureau-dev/menina/internal/secrets"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/notify"
+	"github.com/moureau-dev/menina/internal/core/secrets"
 )
 
 func newNotifyCommand(app *App) *cobra.Command {

@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/moureau-dev/menina/internal/cli/tui"
-	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/core/config"
 )
 
 // menuEntry is one row of the top-level menu. command is space-separated

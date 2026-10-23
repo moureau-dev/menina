@@ -17,14 +17,15 @@ import (
 	"time"
 
 	"github.com/moureau-dev/menina/internal/api"
-	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/core/cluster"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/notify"
+	"github.com/moureau-dev/menina/internal/core/registry"
+	"github.com/moureau-dev/menina/internal/core/secrets"
+	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 	"github.com/moureau-dev/menina/internal/core/worker"
-	"github.com/moureau-dev/menina/internal/database"
-	"github.com/moureau-dev/menina/internal/deployment"
 	"github.com/moureau-dev/menina/internal/edge"
-	"github.com/moureau-dev/menina/internal/notify"
-	"github.com/moureau-dev/menina/internal/registry"
-	"github.com/moureau-dev/menina/internal/secrets"
+	"github.com/moureau-dev/menina/internal/telemetry"
 )
 
 type broadcaster struct {
@@ -78,10 +79,10 @@ type Service struct {
 	configDir string
 	log       *slog.Logger
 
-	db          *database.DB
+	db          *sqlite.DB
 	watcher     *config.Watcher
-	cluster     deployment.Cluster
-	engine      *deployment.Engine
+	cluster     k8s.Cluster
+	engine      *k8s.Engine
 	jobs        *worker.Jobs
 	reconciler  *Reconciler
 	control     *api.Server
@@ -93,10 +94,10 @@ type Service struct {
 	sender      *notify.Sender
 }
 
-func (s *Service) DB() *database.DB { return s.db }
+func (s *Service) DB() *sqlite.DB { return s.db }
 
 func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Service, error) {
-	db, err := database.Open(cfg.Platform.DBPath)
+	db, err := sqlite.Open(cfg.Platform.DBPath)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +105,7 @@ func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Servic
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
 	cluster := newDeferredCluster(cfg.Kubernetes.Kubeconfig, log)
-	engine := deployment.NewEngine(cluster, db, nil, log)
+	engine := k8s.NewEngine(cluster, db, nil, log)
 	watcher := config.NewWatcher(configDir, cfg, config.NewResolver(cfg), 750*time.Millisecond, log)
 
 	svc := &Service{
@@ -146,8 +147,8 @@ func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Servic
 	return svc, nil
 }
 
-func (s *Service) SetDigestResolver(r deployment.DigestResolver) {
-	s.engine = deployment.NewEngine(s.cluster, s.db, r, s.log)
+func (s *Service) SetDigestResolver(r k8s.DigestResolver) {
+	s.engine = k8s.NewEngine(s.cluster, s.db, r, s.log)
 	s.jobs = worker.NewJobs(s.db, s.engine, s.cluster, func() *config.ResolvedConfig {
 		if snap := s.watcher.Snapshot(); snap != nil {
 			return snap.Resolved
@@ -251,7 +252,7 @@ func (s *Service) startEventsServer(ctx context.Context) error {
 }
 
 func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	w.Header().Set("Content-Type", telemetry.ContentType)
 	fmt.Fprintf(w, "# HELP menina_up Control plane liveness\n# TYPE menina_up gauge\nmenina_up 1\n")
 	fmt.Fprintf(w, "# HELP menina_snapshot_version Current routing snapshot version\n# TYPE menina_snapshot_version gauge\nmenina_snapshot_version %d\n", s.bus.snapshotVersion())
 	fmt.Fprintf(w, "# HELP menina_routes Number of configured proxy routes\n# TYPE menina_routes gauge\nmenina_routes %d\n", s.bus.snapshotRoutes())
@@ -267,7 +268,7 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		queue := 0
 		for status := range counts {
 			statuses = append(statuses, status)
-			if status == database.JobStatusPending || status == database.JobStatusProcessing {
+			if status == sqlite.JobStatusPending || status == sqlite.JobStatusProcessing {
 				queue += counts[status]
 			}
 		}
@@ -646,12 +647,12 @@ func (s *Service) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dedup := fmt.Sprintf("manual|%s|%s|%s|%d", req.Project, req.Environment, req.App, time.Now().UnixNano())
-	_, err = s.db.IngestRegistryEvent(r.Context(), &database.Event{
+	_, err = s.db.IngestRegistryEvent(r.Context(), &sqlite.Event{
 		DedupKey:   dedup,
 		Registry:   s.cfg.Registry.Domain,
 		Repository: app.Repository,
 		Tag:        app.Tag,
-	}, []database.Job{worker.PinJob(database.Job{
+	}, []sqlite.Job{worker.PinJob(sqlite.Job{
 		DedupKey:    dedup,
 		Kind:        "manual",
 		Project:     req.Project,
@@ -706,12 +707,12 @@ func (s *Service) handleRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dedup := fmt.Sprintf("rollback|%s|%s|%s|%d", req.Project, req.Environment, req.App, time.Now().UnixNano())
-	_, err = s.db.IngestRegistryEvent(r.Context(), &database.Event{
+	_, err = s.db.IngestRegistryEvent(r.Context(), &sqlite.Event{
 		DedupKey:   dedup,
 		Registry:   s.cfg.Registry.Domain,
 		Repository: app.Repository,
 		Digest:     req.Digest,
-	}, []database.Job{worker.PinJob(database.Job{
+	}, []sqlite.Job{worker.PinJob(sqlite.Job{
 		DedupKey:      dedup,
 		Kind:          "rollback",
 		Project:       req.Project,

@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/registry"
-	"github.com/moureau-dev/menina/internal/secrets"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/registry"
+	"github.com/moureau-dev/menina/internal/core/secrets"
 )
 
 func newRegistryCommand(app *App) *cobra.Command {

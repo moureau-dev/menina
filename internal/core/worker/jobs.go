@@ -13,19 +13,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/database"
-	"github.com/moureau-dev/menina/internal/deployment"
-	"github.com/moureau-dev/menina/internal/notify"
-	"github.com/moureau-dev/menina/internal/registry"
-	"github.com/moureau-dev/menina/internal/release"
-	"github.com/moureau-dev/menina/internal/secrets"
+	"github.com/moureau-dev/menina/internal/core/cluster"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/notify"
+	"github.com/moureau-dev/menina/internal/core/registry"
+	"github.com/moureau-dev/menina/internal/core/release"
+	"github.com/moureau-dev/menina/internal/core/secrets"
+	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 )
 
 // PinJob binds the job to the resolved app configuration it was queued
 // against. A deploy executes the pinned snapshot even if config changes before
 // the worker picks it up.
-func PinJob(job database.Job, app *config.ResolvedApp, version int64, actor, source string) database.Job {
+func PinJob(job sqlite.Job, app *config.ResolvedApp, version int64, actor, source string) sqlite.Job {
 	if app == nil {
 		return job
 	}
@@ -43,7 +43,7 @@ func PinJob(job database.Job, app *config.ResolvedApp, version int64, actor, sou
 
 // jobApp returns the app pinned to a job, or falls back to current config for
 // jobs queued before pinning was introduced.
-func jobApp(job database.Job, snap *config.ResolvedConfig) (*config.ResolvedApp, error) {
+func jobApp(job sqlite.Job, snap *config.ResolvedConfig) (*config.ResolvedApp, error) {
 	if job.ConfigSnapshot != "" {
 		var app config.ResolvedApp
 		if err := json.Unmarshal([]byte(job.ConfigSnapshot), &app); err != nil {
@@ -58,9 +58,9 @@ func jobApp(job database.Job, snap *config.ResolvedConfig) (*config.ResolvedApp,
 }
 
 type Jobs struct {
-	db         *database.DB
-	engine     *deployment.Engine
-	cluster    deployment.Cluster
+	db         *sqlite.DB
+	engine     *k8s.Engine
+	cluster    k8s.Cluster
 	snapshot   func() *config.ResolvedConfig
 	domain     string
 	scheme     string
@@ -72,7 +72,7 @@ type Jobs struct {
 	targets  map[string]*sync.Mutex
 }
 
-func NewJobs(db *database.DB, engine *deployment.Engine, cluster deployment.Cluster, snapshot func() *config.ResolvedConfig, domain string, log *slog.Logger) *Jobs {
+func NewJobs(db *sqlite.DB, engine *k8s.Engine, cluster k8s.Cluster, snapshot func() *config.ResolvedConfig, domain string, log *slog.Logger) *Jobs {
 	return &Jobs{db: db, engine: engine, cluster: cluster, snapshot: snapshot, domain: domain, log: log, targets: map[string]*sync.Mutex{}}
 }
 
@@ -123,9 +123,9 @@ func (j *Jobs) EmitDeploy(app *config.ResolvedApp, ev notify.Event) {
 	sender := j.sender
 	webhook := notify.Webhook{URL: url, Secret: secret, Events: app.Webhook.Events}
 	ev.Timestamp = time.Now().UTC()
-	payload := database.MarshalWebhookPayload(ev)
+	payload := sqlite.MarshalWebhookPayload(ev)
 	dedup := fmt.Sprintf("%s|%s|%s|%s|%s|%d", ev.Event, ev.Project, ev.Environment, ev.App, ev.Digest, ev.Timestamp.UnixNano())
-	deliveryID, err := j.db.RecordWebhookDelivery(context.Background(), database.WebhookDelivery{
+	deliveryID, err := j.db.RecordWebhookDelivery(context.Background(), sqlite.WebhookDelivery{
 		DedupKey: dedup, Project: ev.Project, Environment: ev.Environment, App: ev.App, Event: ev.Event, Payload: payload,
 	})
 	if err != nil {
@@ -190,13 +190,13 @@ func actorFor(kind string) string {
 	}
 }
 
-func (j *Jobs) MatchJobs(event registry.PushEvent) []database.Job {
+func (j *Jobs) MatchJobs(event registry.PushEvent) []sqlite.Job {
 	snap := j.snapshot()
 	if snap == nil {
 		return nil
 	}
 	repo := strings.TrimPrefix(event.Repository, "/")
-	var jobs []database.Job
+	var jobs []sqlite.Job
 	for _, rp := range snap.Projects {
 		for _, re := range rp.Environments {
 			for _, app := range re.Apps {
@@ -210,7 +210,7 @@ func (j *Jobs) MatchJobs(event registry.PushEvent) []database.Job {
 					continue
 				}
 				dedup := registry.DedupKey(j.domain, app.Repository, app.Tag, event.DeliveryID)
-				job := database.Job{
+				job := sqlite.Job{
 					DedupKey:    dedup,
 					Kind:        "deploy",
 					Project:     app.Project,
@@ -278,7 +278,7 @@ func (j *Jobs) processBatch(ctx context.Context) error {
 	return nil
 }
 
-func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
+func (j *Jobs) ProcessJob(ctx context.Context, job sqlite.Job) error {
 	lock := j.targetLock(job.Project, job.Environment, job.App)
 	lock.Lock()
 	defer lock.Unlock()
@@ -323,11 +323,11 @@ func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
 			return j.releaseFailed(ctx, job, app, "", "", digest, release.TriggerDeployError, true, true, fmt.Errorf("resolve digest: %w", err))
 		}
 	}
-	image := deployment.ImageForDigest(app, digest)
+	image := k8s.ImageForDigest(app, digest)
 	if err := j.waitForDependencies(ctx, app, snap); err != nil {
 		return j.releaseFailed(ctx, job, app, "", "", digest, release.TriggerTimeout, true, true, err)
 	}
-	secretHash, err := deployment.SecretFingerprint(app)
+	secretHash, err := k8s.SecretFingerprint(app)
 	if err != nil {
 		return j.releaseFailed(ctx, job, app, "", "", digest, release.TriggerDeployError, true, true, err)
 	}
@@ -420,10 +420,10 @@ func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
 	if err != nil {
 		return j.releaseFailed(ctx, job, app, relID, previousID, digest, release.TriggerDeployError, !migrated, true, fmt.Errorf("deploy: %w", err))
 	}
-	st, err := deployment.WaitForRollout(ctx, j.cluster, app.Namespace, app.Name, deployment.RolloutOptions{Timeout: 5 * time.Minute})
+	st, err := k8s.WaitForRollout(ctx, j.cluster, app.Namespace, app.Name, k8s.RolloutOptions{Timeout: 5 * time.Minute})
 	if err != nil {
 		trigger := release.TriggerDeployError
-		if ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, deployment.ErrRolloutTimeout) {
+		if ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, k8s.ErrRolloutTimeout) {
 			trigger = release.TriggerTimeout
 		}
 		return j.releaseFailed(ctx, job, app, relID, previousID, digest, trigger, !migrated, true, fmt.Errorf("rollout: %w", err))
@@ -463,7 +463,7 @@ func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
 		return err
 	}
 
-	_ = j.db.UpsertObserved(ctx, database.Observed{
+	_ = j.db.UpsertObserved(ctx, sqlite.Observed{
 		Project:        app.Project,
 		Environment:    app.Environment,
 		App:            app.Name,
@@ -493,7 +493,7 @@ func (j *Jobs) ProcessJob(ctx context.Context, job database.Job) error {
 	return j.db.CompleteJob(ctx, job.ID, digest)
 }
 
-func (j *Jobs) createRelease(ctx context.Context, job database.Job, app *config.ResolvedApp, digest, image, secretHash, previousID string) (string, error) {
+func (j *Jobs) createRelease(ctx context.Context, job sqlite.Job, app *config.ResolvedApp, digest, image, secretHash, previousID string) (string, error) {
 	verification, migration, recovery := "", "", ""
 	if app.Verification != nil {
 		verification = marshalSpec(app.Verification)
@@ -504,7 +504,7 @@ func (j *Jobs) createRelease(ctx context.Context, job database.Job, app *config.
 	if app.Recovery != nil {
 		recovery = marshalSpec(app.Recovery)
 	}
-	return j.db.CreateRelease(ctx, database.Release{
+	return j.db.CreateRelease(ctx, sqlite.Release{
 		Project:        app.Project,
 		Environment:    app.Environment,
 		App:            app.Name,
@@ -547,7 +547,7 @@ func (j *Jobs) runHook(ctx context.Context, app *config.ResolvedApp, image, kind
 		}
 	}
 	name := oneOffName(app.Name, kind)
-	req := deployment.JobRequest{
+	req := k8s.JobRequest{
 		Namespace:     app.Namespace,
 		Name:          name,
 		Project:       app.Project,
@@ -620,7 +620,7 @@ func (j *Jobs) waitForDependencies(ctx context.Context, app *config.ResolvedApp,
 // transient jobs and, when the job is terminal, applies the app's explicit
 // recovery policy. Recovery restores the previous image; it never claims to
 // reverse data or migration changes.
-func (j *Jobs) releaseFailed(ctx context.Context, job database.Job, app *config.ResolvedApp, relID, previousID, digest string, trigger release.RecoveryTrigger, retryable, recoverable bool, cause error) error {
+func (j *Jobs) releaseFailed(ctx context.Context, job sqlite.Job, app *config.ResolvedApp, relID, previousID, digest string, trigger release.RecoveryTrigger, retryable, recoverable bool, cause error) error {
 	actor := job.Actor
 	if actor == "" {
 		actor = actorFor(job.Kind)
@@ -704,13 +704,13 @@ func (j *Jobs) recoverRelease(ctx context.Context, app *config.ResolvedApp, relI
 		j.EmitDeploy(app, notify.Event{Event: "deploy.recovery_failed", Action: "recover", Status: "failed", Actor: "system", Digest: previous.Digest, Message: fmt.Sprintf("%s/%s/%s recovery failed: %v", app.Project, app.Environment, app.Name, err)})
 		return
 	}
-	st, err := deployment.WaitForRollout(ctx, j.cluster, recoverApp.Namespace, recoverApp.Name, deployment.RolloutOptions{Timeout: 5 * time.Minute})
+	st, err := k8s.WaitForRollout(ctx, j.cluster, recoverApp.Namespace, recoverApp.Name, k8s.RolloutOptions{Timeout: 5 * time.Minute})
 	if err != nil {
 		_ = j.db.TransitionRelease(ctx, relID, release.Failed, "recovery rollout failed: "+err.Error(), "system")
 		j.EmitDeploy(app, notify.Event{Event: "deploy.recovery_failed", Action: "recover", Status: "failed", Actor: "system", Digest: previous.Digest, Message: fmt.Sprintf("%s/%s/%s recovery rollout failed: %v", app.Project, app.Environment, app.Name, err)})
 		return
 	}
-	_ = j.db.UpsertObserved(ctx, database.Observed{
+	_ = j.db.UpsertObserved(ctx, sqlite.Observed{
 		Project:        app.Project,
 		Environment:    app.Environment,
 		App:            app.Name,
@@ -726,7 +726,7 @@ func (j *Jobs) recoverRelease(ctx context.Context, app *config.ResolvedApp, relI
 	if failedRelease.Migration != "" {
 		migrationState = failedRelease.Migration
 	}
-	restored, createErr := j.db.CreateRelease(ctx, database.Release{
+	restored, createErr := j.db.CreateRelease(ctx, sqlite.Release{
 		Project:        previous.Project,
 		Environment:    previous.Environment,
 		App:            previous.App,
@@ -759,7 +759,7 @@ func (j *Jobs) recoverRelease(ctx context.Context, app *config.ResolvedApp, relI
 
 func (j *Jobs) Ingest(ctx context.Context, event registry.PushEvent) (bool, int, error) {
 	jobs := j.MatchJobs(event)
-	ev := &database.Event{
+	ev := &sqlite.Event{
 		DedupKey:   registry.DedupKey(j.domain, event.Repository, event.Digest, event.DeliveryID),
 		Registry:   j.domain,
 		Repository: event.Repository,
@@ -778,7 +778,7 @@ func (j *Jobs) Ingest(ctx context.Context, event registry.PushEvent) (bool, int,
 // even when the app name is long.
 func oneOffName(app, kind string) string {
 	suffix := "-" + kind + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
-	base := deployment.SanitizeName(app)
+	base := k8s.SanitizeName(app)
 	if max := 63 - len(suffix); len(base) > max {
 		base = strings.TrimRight(base[:max], "-")
 	}
@@ -787,7 +787,7 @@ func oneOffName(app, kind string) string {
 
 // HandleInterruptedRelease marks a release left by a restarted control plane as
 // failed and applies the interrupted recovery trigger.
-func (j *Jobs) HandleInterruptedRelease(ctx context.Context, rel database.Release) {
+func (j *Jobs) HandleInterruptedRelease(ctx context.Context, rel sqlite.Release) {
 	lock := j.targetLock(rel.Project, rel.Environment, rel.App)
 	lock.Lock()
 	defer lock.Unlock()
@@ -809,5 +809,5 @@ func (j *Jobs) HandleInterruptedRelease(ctx context.Context, rel database.Releas
 
 func (j *Jobs) jobCancelled(ctx context.Context, id string) bool {
 	job, ok, err := j.db.JobByID(ctx, id)
-	return err == nil && ok && job.Status == database.JobStatusCancelled
+	return err == nil && ok && job.Status == sqlite.JobStatusCancelled
 }

@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/database"
-	"github.com/moureau-dev/menina/internal/deployment"
+	"github.com/moureau-dev/menina/internal/core/cluster"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 	"github.com/moureau-dev/menina/internal/edge"
 )
 
@@ -17,7 +17,7 @@ func TestBuildSnapshotResolvesClusterIPRoutes(t *testing.T) {
 	cluster := &fakeCluster{clusterIP: "10.43.0.5"}
 	cfg := config.Default()
 	cfg.TLS.Terminate = true
-	rec := NewReconciler(db, cluster, deployment.NewEngine(cluster, db, nil, testLogger()), resolvedFunc(), &cfg, testLogger())
+	rec := NewReconciler(db, cluster, k8s.NewEngine(cluster, db, nil, testLogger()), resolvedFunc(), &cfg, testLogger())
 	snap, err := rec.BuildSnapshot(testResolved())
 	if err != nil {
 		t.Fatal(err)
@@ -59,14 +59,14 @@ func TestReconcileWorkloadsAppliesAndPrunes(t *testing.T) {
 	db := testDB(t)
 	cluster := &fakeCluster{
 		clusterIP: "10.43.0.5",
-		workloads: []deployment.WorkloadRef{
+		workloads: []k8s.WorkloadRef{
 			{Namespace: "my-platform", Name: "api"},
 			{Namespace: "my-platform", Name: "stale"},
 			{Namespace: "menina-registry", Name: "zot"},
 		},
 	}
 	cfg := config.Default()
-	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
+	engine := k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
 	rec := NewReconciler(db, cluster, engine, resolvedFunc(), &cfg, testLogger())
 
 	rec.ReconcileWorkloads(context.Background(), testResolved())
@@ -89,10 +89,10 @@ func TestReconcileWorkloadsRemovesDisabledApp(t *testing.T) {
 	db := testDB(t)
 	cluster := &fakeCluster{
 		clusterIP: "10.43.0.5",
-		workloads: []deployment.WorkloadRef{{Namespace: "my-platform", Name: "api"}},
+		workloads: []k8s.WorkloadRef{{Namespace: "my-platform", Name: "api"}},
 	}
 	cfg := config.Default()
-	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
+	engine := k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
 	rec := NewReconciler(db, cluster, engine, resolvedFunc(), &cfg, testLogger())
 
 	rc := testResolved()
@@ -115,7 +115,7 @@ func TestReconcileWorkloadsStopsSoftDeleted(t *testing.T) {
 	cfg.Host.ConfigDir = dir
 
 	// A previously-running app has an observed row.
-	if err := db.UpsertObserved(ctx, database.Observed{Project: "my-platform", Environment: "production", App: "api"}); err != nil {
+	if err := db.UpsertObserved(ctx, sqlite.Observed{Project: "my-platform", Environment: "production", App: "api"}); err != nil {
 		t.Fatal(err)
 	}
 	// It is now soft-deleted: its config is in the trash directory of a live project.
@@ -133,9 +133,9 @@ func TestReconcileWorkloadsStopsSoftDeleted(t *testing.T) {
 
 	cluster := &fakeCluster{
 		clusterIP: "10.43.0.5",
-		workloads: []deployment.WorkloadRef{{Namespace: "my-platform", Name: "api", Project: "my-platform", Environment: "production", App: "api"}},
+		workloads: []k8s.WorkloadRef{{Namespace: "my-platform", Name: "api", Project: "my-platform", Environment: "production", App: "api"}},
 	}
-	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
+	engine := k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
 	rec := NewReconciler(db, cluster, engine, resolvedFunc(), &cfg, testLogger())
 
 	rc := testResolved()
@@ -154,7 +154,7 @@ func TestBuildSnapshotDropsRemovedExposure(t *testing.T) {
 	db := testDB(t)
 	cluster := &fakeCluster{clusterIP: "10.43.0.5"}
 	cfg := config.Default()
-	rec := NewReconciler(db, cluster, deployment.NewEngine(cluster, db, nil, testLogger()), resolvedFunc(), &cfg, testLogger())
+	rec := NewReconciler(db, cluster, k8s.NewEngine(cluster, db, nil, testLogger()), resolvedFunc(), &cfg, testLogger())
 	rc := testResolved()
 	rc.Projects["my-platform"].Environments["production"].Apps["api"].Exposure = config.ExposureSpec{}
 	snap, err := rec.BuildSnapshot(rc)
@@ -172,7 +172,7 @@ func TestReconcileWorkloadsAppliesChangedPort(t *testing.T) {
 	db := testDB(t)
 	cluster := &fakeCluster{clusterIP: "10.43.0.5"}
 	cfg := config.Default()
-	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
+	engine := k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
 	rec := NewReconciler(db, cluster, engine, resolvedFunc(), &cfg, testLogger())
 	rc := testResolved()
 	rc.Projects["my-platform"].Environments["production"].Apps["api"].Workload.Port = 9090
@@ -187,7 +187,7 @@ func TestReconcileAllRepublishesOnClusterIPDrift(t *testing.T) {
 	cluster := &fakeCluster{clusterIP: "10.0.0.1"}
 	cfg := config.Default()
 	cfg.TLS.Terminate = true
-	rec := NewReconciler(db, cluster, deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger()), resolvedFunc(), &cfg, testLogger())
+	rec := NewReconciler(db, cluster, k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger()), resolvedFunc(), &cfg, testLogger())
 	var published []*edge.Snapshot
 	rec.OnPublish(func(s *edge.Snapshot) { published = append(published, s) })
 
@@ -213,7 +213,7 @@ func TestBuildSnapshotSkipsDegradedService(t *testing.T) {
 	db := testDB(t)
 	cluster := &fakeCluster{clusterIP: ""}
 	cfg := config.Default()
-	rec := NewReconciler(db, cluster, deployment.NewEngine(cluster, db, nil, testLogger()), resolvedFunc(), &cfg, testLogger())
+	rec := NewReconciler(db, cluster, k8s.NewEngine(cluster, db, nil, testLogger()), resolvedFunc(), &cfg, testLogger())
 	snap, err := rec.BuildSnapshot(testResolved())
 	if err != nil {
 		t.Fatal(err)
@@ -225,8 +225,8 @@ func TestBuildSnapshotSkipsDegradedService(t *testing.T) {
 
 func TestReconcileTagsEnqueuesOnDrift(t *testing.T) {
 	db := testDB(t)
-	cluster := &fakeCluster{status: &deployment.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, Image: "registry.moureau.dev/my-platform/api@sha256:old"}}
-	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:new"}, testLogger())
+	cluster := &fakeCluster{status: &k8s.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, Image: "registry.moureau.dev/my-platform/api@sha256:old"}}
+	engine := k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:new"}, testLogger())
 	cfg := config.Default()
 	rec := NewReconciler(db, cluster, engine, resolvedFunc(), &cfg, testLogger())
 	rec.ReconcileTags(context.Background())
@@ -242,8 +242,8 @@ func TestReconcileTagsEnqueuesOnDrift(t *testing.T) {
 
 func TestReconcileTagsNoopWhenConverged(t *testing.T) {
 	db := testDB(t)
-	cluster := &fakeCluster{status: &deployment.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, Image: "registry.moureau.dev/my-platform/api@sha256:same"}}
-	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:same"}, testLogger())
+	cluster := &fakeCluster{status: &k8s.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, Image: "registry.moureau.dev/my-platform/api@sha256:same"}}
+	engine := k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:same"}, testLogger())
 	cfg := config.Default()
 	rec := NewReconciler(db, cluster, engine, resolvedFunc(), &cfg, testLogger())
 	rec.ReconcileTags(context.Background())

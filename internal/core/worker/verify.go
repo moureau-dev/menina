@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/deployment"
+	"github.com/moureau-dev/menina/internal/core/cluster"
+	"github.com/moureau-dev/menina/internal/core/config"
 )
 
 // VerificationResult is the durable outcome of declarative verification.
@@ -54,7 +54,7 @@ func (j *Jobs) verifyRelease(ctx context.Context, app *config.ResolvedApp, image
 		result.Checks = append(result.Checks, "http "+spec.Path)
 	}
 	if spec.SmokeTest != nil {
-		name := deployment.SanitizeName(fmt.Sprintf("%s-verify-%d", app.Name, time.Now().Unix()))
+		name := k8s.SanitizeName(fmt.Sprintf("%s-verify-%d", app.Name, time.Now().Unix()))
 		secretName := ""
 		if len(app.Secrets) > 0 {
 			var err error
@@ -65,7 +65,7 @@ func (j *Jobs) verifyRelease(ctx context.Context, app *config.ResolvedApp, image
 				return result
 			}
 		}
-		req := deployment.JobRequest{
+		req := k8s.JobRequest{
 			Namespace:     app.Namespace,
 			Name:          name,
 			Project:       app.Project,

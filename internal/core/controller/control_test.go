@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/database"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 )
 
 func serviceWithProject(t *testing.T) *Service {
@@ -72,8 +72,8 @@ func TestControlDeployReturnsSnapshotVersion(t *testing.T) {
 func TestControlJobsListAndCancel(t *testing.T) {
 	svc := serviceWithProject(t)
 	ctx := context.Background()
-	if _, err := svc.db.IngestRegistryEvent(ctx, &database.Event{DedupKey: "e", Repository: "p/api", Tag: "dev"},
-		[]database.Job{{DedupKey: "j", Kind: "manual", Project: "p", Environment: "dev", App: "api", Repository: "p/api", Tag: "dev"}}); err != nil {
+	if _, err := svc.db.IngestRegistryEvent(ctx, &sqlite.Event{DedupKey: "e", Repository: "p/api", Tag: "dev"},
+		[]sqlite.Job{{DedupKey: "j", Kind: "manual", Project: "p", Environment: "dev", App: "api", Repository: "p/api", Tag: "dev"}}); err != nil {
 		t.Fatal(err)
 	}
 	mux := svc.controlMux()
@@ -84,7 +84,7 @@ func TestControlJobsListAndCancel(t *testing.T) {
 		t.Fatalf("list code = %d", rr.Code)
 	}
 	var list struct {
-		Jobs []database.Job `json:"jobs"`
+		Jobs []sqlite.Job `json:"jobs"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &list); err != nil {
 		t.Fatal(err)
@@ -100,7 +100,7 @@ func TestControlJobsListAndCancel(t *testing.T) {
 		t.Fatalf("cancel code = %d, body = %s", rr.Code, rr.Body.String())
 	}
 	j, found, err := svc.db.JobByID(ctx, id)
-	if err != nil || !found || j.Status != database.JobStatusCancelled {
+	if err != nil || !found || j.Status != sqlite.JobStatusCancelled {
 		t.Fatalf("job = %+v found=%v err=%v", j, found, err)
 	}
 }

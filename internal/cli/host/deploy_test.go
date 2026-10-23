@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/moureau-dev/menina/internal/infrastructure"
+	"github.com/moureau-dev/menina/internal/provision"
 )
 
 func testCLILogger() *slog.Logger {
@@ -25,9 +25,9 @@ func installVars() map[string]string {
 }
 
 func TestInstallServicesPropagatesStartupFailure(t *testing.T) {
-	runner := infrastructure.NewFakeRunner()
+	runner := provision.NewFakeRunner()
 	runner.Errors["systemctl restart menina-serve.service"] = errors.New("unit failed")
-	systemd := infrastructure.NewSystemd(runner)
+	systemd := provision.NewSystemd(runner)
 	systemd.UnitDir = t.TempDir()
 	app := &App{Log: testCLILogger()}
 
@@ -38,9 +38,9 @@ func TestInstallServicesPropagatesStartupFailure(t *testing.T) {
 }
 
 func TestInstallServicesDetectsInactiveService(t *testing.T) {
-	runner := infrastructure.NewFakeRunner()
+	runner := provision.NewFakeRunner()
 	// is-active returns empty (not "active") -> treated as failed.
-	systemd := infrastructure.NewSystemd(runner)
+	systemd := provision.NewSystemd(runner)
 	systemd.UnitDir = t.TempDir()
 	app := &App{Log: testCLILogger()}
 
@@ -50,9 +50,9 @@ func TestInstallServicesDetectsInactiveService(t *testing.T) {
 }
 
 func TestInstallServicesSucceedsWhenActive(t *testing.T) {
-	runner := infrastructure.NewFakeRunner()
+	runner := provision.NewFakeRunner()
 	runner.Outputs["systemctl is-active menina-serve.service"] = "active"
-	systemd := infrastructure.NewSystemd(runner)
+	systemd := provision.NewSystemd(runner)
 	systemd.UnitDir = t.TempDir()
 	app := &App{Log: testCLILogger()}
 

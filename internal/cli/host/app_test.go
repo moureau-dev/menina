@@ -3,7 +3,7 @@ package host
 import (
 	"testing"
 
-	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/core/config"
 )
 
 func TestRequireProdConfirmation(t *testing.T) {

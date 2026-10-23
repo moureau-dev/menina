@@ -10,18 +10,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moureau-dev/menina/internal/config"
+	"github.com/moureau-dev/menina/internal/core/cluster"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/release"
+	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 	"github.com/moureau-dev/menina/internal/core/worker"
-	"github.com/moureau-dev/menina/internal/database"
-	"github.com/moureau-dev/menina/internal/deployment"
 	"github.com/moureau-dev/menina/internal/edge"
-	"github.com/moureau-dev/menina/internal/release"
 )
 
 type Reconciler struct {
-	db          *database.DB
-	cluster     deployment.Cluster
-	engine      *deployment.Engine
+	db          *sqlite.DB
+	cluster     k8s.Cluster
+	engine      *k8s.Engine
 	snapshot    func() *config.ResolvedConfig
 	cfg         *config.Config
 	log         *slog.Logger
@@ -36,7 +36,7 @@ const (
 	registryZotPort    = 5000
 )
 
-func NewReconciler(db *database.DB, cluster deployment.Cluster, engine *deployment.Engine, snapshot func() *config.ResolvedConfig, cfg *config.Config, log *slog.Logger) *Reconciler {
+func NewReconciler(db *sqlite.DB, cluster k8s.Cluster, engine *k8s.Engine, snapshot func() *config.ResolvedConfig, cfg *config.Config, log *slog.Logger) *Reconciler {
 	return &Reconciler{db: db, cluster: cluster, engine: engine, snapshot: snapshot, cfg: cfg, log: log}
 }
 
@@ -44,7 +44,7 @@ func (r *Reconciler) OnPublish(fn func(*edge.Snapshot)) { r.onPublish = fn }
 
 func (r *Reconciler) BuildSnapshot(rc *config.ResolvedConfig) (*edge.Snapshot, error) {
 	snap := &edge.Snapshot{Version: rc.Version, GeneratedAt: time.Now()}
-	var dbroutes []database.Route
+	var dbroutes []sqlite.Route
 	for _, rp := range rc.Projects {
 		for _, re := range rp.Environments {
 			for _, app := range re.Apps {
@@ -86,7 +86,7 @@ func (r *Reconciler) BuildSnapshot(rc *config.ResolvedConfig) (*edge.Snapshot, e
 							Idle:  app.Exposure.Timeouts.Idle,
 						},
 					})
-					dbroutes = append(dbroutes, database.Route{
+					dbroutes = append(dbroutes, sqlite.Route{
 						Host:         host,
 						PathPrefix:   app.Exposure.PathPrefix,
 						Project:      app.Project,
@@ -123,7 +123,7 @@ func (r *Reconciler) BuildSnapshot(rc *config.ResolvedConfig) (*edge.Snapshot, e
 				TLS:          r.cfg.TLS.Terminate,
 				RedirectHTTP: r.cfg.TLS.HTTPRedirect,
 			})
-			dbroutes = append(dbroutes, database.Route{
+			dbroutes = append(dbroutes, sqlite.Route{
 				Host:         r.cfg.Registry.Domain,
 				PathPrefix:   "/",
 				Project:      "_registry",
@@ -247,9 +247,9 @@ func (r *Reconciler) syncSoftDeletes(ctx context.Context) {
 		r.log.Warn("config reconcile: could not scan soft deletes", "error", err)
 		return
 	}
-	targets := make([]database.SoftDeleteTarget, 0, len(found))
+	targets := make([]sqlite.SoftDeleteTarget, 0, len(found))
 	for _, s := range found {
-		targets = append(targets, database.SoftDeleteTarget{Project: s.Project, Environment: s.Environment, App: s.App})
+		targets = append(targets, sqlite.SoftDeleteTarget{Project: s.Project, Environment: s.Environment, App: s.App})
 	}
 	if err := r.db.SyncObservedSoftDeletes(ctx, targets); err != nil {
 		r.log.Warn("config reconcile: could not record soft deletes", "error", err)
@@ -259,7 +259,7 @@ func (r *Reconciler) syncSoftDeletes(ctx context.Context) {
 func (r *Reconciler) desiredImage(ctx context.Context, app *config.ResolvedApp) string {
 	digest, err := r.engine.ResolveDigest(ctx, app)
 	if err == nil && digest != "" {
-		return deployment.ImageForDigest(app, digest)
+		return k8s.ImageForDigest(app, digest)
 	}
 	if err != nil {
 		// Preserve the currently pinned digest instead of falling back to a
@@ -269,7 +269,7 @@ func (r *Reconciler) desiredImage(ctx context.Context, app *config.ResolvedApp) 
 		}
 		r.log.Warn("config reconcile: could not resolve digest; using configured tag", "app", app.Name, "error", err)
 	}
-	return deployment.ImageForDigest(app, "")
+	return k8s.ImageForDigest(app, "")
 }
 
 func (r *Reconciler) pruneWorkloads(ctx context.Context, desired map[string]bool) {
@@ -320,7 +320,7 @@ func (r *Reconciler) pruneWorkloads(ctx context.Context, desired map[string]bool
 	}
 }
 
-func softDeleted(list []database.SoftDeleteTarget, project, environment, app string) bool {
+func softDeleted(list []sqlite.SoftDeleteTarget, project, environment, app string) bool {
 	for _, t := range list {
 		if t.Project == project && t.Environment == environment && t.App == app {
 			return true
@@ -369,12 +369,12 @@ func (r *Reconciler) ReconcileTags(ctx context.Context) {
 				if err != nil {
 					continue
 				}
-				desiredImage := deployment.ImageForDigest(app, digest)
+				desiredImage := k8s.ImageForDigest(app, digest)
 				status := "ready"
 				if st.ReadyReplicas < st.Replicas {
 					status = "progressing"
 				}
-				_ = r.db.UpsertObserved(ctx, database.Observed{
+				_ = r.db.UpsertObserved(ctx, sqlite.Observed{
 					Project:        app.Project,
 					Environment:    app.Environment,
 					App:            app.Name,
@@ -389,13 +389,13 @@ func (r *Reconciler) ReconcileTags(ctx context.Context) {
 					continue
 				}
 				r.log.Info("drift detected; enqueuing reconciliation deploy", "app", app.Name, "desired", desiredImage, "current", st.Image)
-				_, err = r.db.IngestRegistryEvent(ctx, &database.Event{
+				_, err = r.db.IngestRegistryEvent(ctx, &sqlite.Event{
 					DedupKey:   fmt.Sprintf("reconcile|%s|%s|%s|%d", app.Project, app.Environment, app.Name, time.Now().UnixNano()),
 					Registry:   r.cfg.Registry.Domain,
 					Repository: app.Repository,
 					Tag:        app.Tag,
 					Digest:     digest,
-				}, []database.Job{worker.PinJob(database.Job{
+				}, []sqlite.Job{worker.PinJob(sqlite.Job{
 					DedupKey:    fmt.Sprintf("reconcile|%s|%s|%s|%d", app.Project, app.Environment, app.Name, time.Now().UnixNano()),
 					Kind:        "reconcile",
 					Project:     app.Project,

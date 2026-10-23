@@ -17,11 +17,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	deployassets "github.com/moureau-dev/menina/deploy"
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/deployment"
-	"github.com/moureau-dev/menina/internal/infrastructure"
-	"github.com/moureau-dev/menina/internal/registry"
-	"github.com/moureau-dev/menina/internal/secrets"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/cluster"
+	"github.com/moureau-dev/menina/internal/provision"
+	"github.com/moureau-dev/menina/internal/core/registry"
+	"github.com/moureau-dev/menina/internal/core/secrets"
 )
 
 const (
@@ -171,17 +171,17 @@ func deployInfra(ctx context.Context, app *App, cfg *config.Config) error {
 	}
 	if cfg.Kubernetes.IngressOwnership == config.IngressOwnershipMenina && cfg.TLS.Terminate {
 		for _, addr := range []string{cfg.Platform.HTTPListen, cfg.Platform.HTTPSListen} {
-			port, err := infrastructure.ParseListenPort(addr)
+			port, err := provision.ParseListenPort(addr)
 			if err != nil {
 				return err
 			}
-			if err := infrastructure.PortFree(ctx, port); err != nil {
+			if err := provision.PortFree(ctx, port); err != nil {
 				return fmt.Errorf("cannot own public ingress: %w (remediation: stop the component holding the port, or select external ingress ownership)", err)
 			}
 		}
 	}
-	runner := infrastructure.ExecRunner{}
-	k3 := infrastructure.NewK3s(runner, app.Log)
+	runner := provision.ExecRunner{}
+	k3 := provision.NewK3s(runner, app.Log)
 	if cfg.Kubernetes.Managed {
 		if err := k3.EnsureInstalled(ctx, cfg.Kubernetes.DisableTraefik); err != nil {
 			return err
@@ -197,7 +197,7 @@ func deployInfra(ctx context.Context, app *App, cfg *config.Config) error {
 		return err
 	}
 
-	storage := infrastructure.NewStorage(cfg.Host.DataDir)
+	storage := provision.NewStorage(cfg.Host.DataDir)
 	if err := storage.EnsureDirs(); err != nil {
 		return err
 	}
@@ -235,7 +235,7 @@ func deployInfra(ctx context.Context, app *App, cfg *config.Config) error {
 	return nil
 }
 
-func ensureZotAuthSecret(ctx context.Context, cluster deployment.Cluster, cfg *config.Config) (string, string, error) {
+func ensureZotAuthSecret(ctx context.Context, cluster k8s.Cluster, cfg *config.Config) (string, string, error) {
 	if !cfg.Registry.Auth.Enabled {
 		return "", "", nil
 	}
@@ -266,7 +266,7 @@ func zotEventEndpoint(ctx context.Context, app *App, cfg *config.Config) (string
 	if _, p, err := net.SplitHostPort(cfg.Platform.EventsListen); err == nil && p != "" {
 		port = p
 	}
-	if ip, err := deployment.NodeInternalIP(ctx, cfg.Kubernetes.Kubeconfig); err == nil && ip != "" {
+	if ip, err := k8s.NodeInternalIP(ctx, cfg.Kubernetes.Kubeconfig); err == nil && ip != "" {
 		return fmt.Sprintf("http://%s:%s%s", ip, port, path), nil
 	}
 	return "", fmt.Errorf("could not determine a node address for the Zot event sink; set registry.notifications.endpoint explicitly (the cluster must be able to reach Menina's registry listener)")
@@ -276,7 +276,7 @@ func deployZot(ctx context.Context, app *App, cfg *config.Config) error {
 	if err := registry.ValidateAgainstZotVersion(cfg.Registry.ZotVersion); err != nil {
 		return err
 	}
-	cluster, err := deployment.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
+	cluster, err := k8s.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
 	if err != nil {
 		return fmt.Errorf("connect to Kubernetes to deploy Zot: %w", err)
 	}
@@ -305,7 +305,7 @@ func deployZot(ctx context.Context, app *App, cfg *config.Config) error {
 		}
 		params.EventToken = token
 	}
-	w := deployment.Workload{
+	w := k8s.Workload{
 		Name:          "zot",
 		Namespace:     ns,
 		Image:         cfg.Registry.ZotImage + ":" + cfg.Registry.ZotVersion,
@@ -342,14 +342,14 @@ func deployZot(ctx context.Context, app *App, cfg *config.Config) error {
 	if err := cluster.ApplyService(ctx, w); err != nil {
 		return err
 	}
-	if _, err := deployment.WaitForRollout(ctx, cluster, ns, "zot", deployment.RolloutOptions{Timeout: 5 * time.Minute}); err != nil {
+	if _, err := k8s.WaitForRollout(ctx, cluster, ns, "zot", k8s.RolloutOptions{Timeout: 5 * time.Minute}); err != nil {
 		return fmt.Errorf("Zot did not become ready: %w", err)
 	}
 	app.Infof("Zot ready in namespace %s (image %s)", ns, w.Image)
 	return nil
 }
 
-func installServices(ctx context.Context, app *App, systemd *infrastructure.Systemd, services []string, vars map[string]string) error {
+func installServices(ctx context.Context, app *App, systemd *provision.Systemd, services []string, vars map[string]string) error {
 	var failed []string
 	for _, name := range services {
 		content, err := deployassets.RenderUnit(name, vars)
@@ -379,7 +379,7 @@ func deployPlatform(ctx context.Context, app *App, cfg *config.Config) error {
 		return fmt.Errorf("menina deploy installs system services and must run as root (try: sudo menina deploy platform)")
 	}
 	if cfg.Registry.Enabled {
-		cluster, err := deployment.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
+		cluster, err := k8s.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
 		if err != nil {
 			return fmt.Errorf("cannot verify the registry before deploying platform services: %w", err)
 		}
@@ -394,7 +394,7 @@ func deployPlatform(ctx context.Context, app *App, cfg *config.Config) error {
 	if err := ensureServiceKubeconfig(ctx, app, cfg); err != nil {
 		return err
 	}
-	systemd := infrastructure.NewSystemd(infrastructure.ExecRunner{})
+	systemd := provision.NewSystemd(provision.ExecRunner{})
 	binary, err := os.Executable()
 	if err != nil {
 		binary = "/usr/local/bin/menina"
@@ -424,17 +424,17 @@ func deployPlatform(ctx context.Context, app *App, cfg *config.Config) error {
 			app.Log.Warn("DNS configuration skipped", "error", err)
 		}
 	}
-	infrastructure.OpenHostPorts(ctx, infrastructure.ExecRunner{}, app.Log, exposedPorts(cfg))
+	provision.OpenHostPorts(ctx, provision.ExecRunner{}, app.Log, exposedPorts(cfg))
 	app.Infof("Platform deployment complete. Run `menina status` to verify.")
 	return nil
 }
 
 // exposedPorts returns every raw TCP/UDP port exposed by the resolved
 // configuration, so deploy can open the host firewall for L4-exposed apps.
-func exposedPorts(cfg *config.Config) []infrastructure.PortRule {
-	var rules []infrastructure.PortRule
+func exposedPorts(cfg *config.Config) []provision.PortRule {
+	var rules []provision.PortRule
 	for _, p := range l4Exposures(cfg) {
-		rules = append(rules, infrastructure.PortRule{Port: p.Port, Protocol: p.Proto})
+		rules = append(rules, provision.PortRule{Port: p.Port, Protocol: p.Proto})
 	}
 	return rules
 }
@@ -493,7 +493,7 @@ func configurePublicDNS(ctx context.Context, app *App, cfg *config.Config) error
 		app.Log.Warn("could not determine the public IP; skipping DNS automation")
 		return nil
 	}
-	client := infrastructure.NewCloudflareClient(token)
+	client := provision.NewCloudflareClient(token)
 	zone := cfg.Networking.Cloudflare.Zone
 	for _, domain := range dnsTargets(cfg, exposureHosts(cfg)) {
 		z := zone
@@ -669,7 +669,7 @@ func applyServicePermissions(app *App, cfg *config.Config) error {
 func ensureSystemUser(ctx context.Context, app *App, cfg *config.Config) error {
 	name := orDefault(cfg.Platform.User, "menina")
 	group := orDefault(cfg.Platform.Group, name)
-	um := infrastructure.NewUserManager(infrastructure.ExecRunner{})
+	um := provision.NewUserManager(provision.ExecRunner{})
 	if err := um.Ensure(ctx, name); err != nil {
 		return fmt.Errorf("ensure service user %q: %w", name, err)
 	}
@@ -699,7 +699,7 @@ func resolveKubeconfig(cfg *config.Config) {
 func waitForKubernetes(ctx context.Context, app *App, cfg *config.Config, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {
-		cluster, err := deployment.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
+		cluster, err := k8s.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
 		if err == nil {
 			if err := cluster.Ping(ctx); err == nil {
 				return nil
@@ -743,7 +743,7 @@ func ensureServiceKubeconfig(ctx context.Context, app *App, cfg *config.Config) 
 		return fmt.Errorf("no Kubernetes kubeconfig found; cannot provision the Menina service identity")
 	}
 	ns := orDefault(cfg.Platform.Namespace, defaultPlatformNS)
-	data, err := deployment.ProvisionServiceAccess(ctx, src, ns, "menina")
+	data, err := k8s.ProvisionServiceAccess(ctx, src, ns, "menina")
 	if err != nil {
 		return fmt.Errorf("provision scoped Kubernetes access (refusing to use the admin kubeconfig): %w", err)
 	}
@@ -809,7 +809,7 @@ func applyRegistryCredentials(ctx context.Context, app *App, cfg *config.Config)
 	if err != nil {
 		return err
 	}
-	k3 := infrastructure.NewK3s(infrastructure.ExecRunner{}, app.Log)
+	k3 := provision.NewK3s(provision.ExecRunner{}, app.Log)
 	if err := k3.WriteRegistriesConfig(ctx, registriesConfigPath, buildRegistriesYAML(cfg, username, password)); err != nil {
 		return fmt.Errorf("write %s: %w", registriesConfigPath, err)
 	}
@@ -822,7 +822,7 @@ func applyRegistryCredentials(ctx context.Context, app *App, cfg *config.Config)
 		}
 	}
 
-	cluster, err := deployment.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
+	cluster, err := k8s.NewKubernetesCluster(cfg.Kubernetes.Kubeconfig)
 	if err != nil {
 		app.Log.Warn("registry credential rotated on disk, but Kubernetes was unreachable; re-run `menina deploy` to apply it", "error", err)
 		return nil
@@ -849,7 +849,7 @@ func applyRegistryCredentials(ctx context.Context, app *App, cfg *config.Config)
 
 // installBackupTimer installs the daily backup unit and timer. It is
 // best-effort: the backup command remains usable manually.
-func installBackupTimer(ctx context.Context, app *App, systemd *infrastructure.Systemd, vars map[string]string) error {
+func installBackupTimer(ctx context.Context, app *App, systemd *provision.Systemd, vars map[string]string) error {
 	for _, name := range []string{"menina-backup.service", "menina-backup.timer"} {
 		content, err := deployassets.RenderUnit(name, vars)
 		if err != nil {

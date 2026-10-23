@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/moureau-dev/menina/internal/deployment"
+	"github.com/moureau-dev/menina/internal/core/cluster"
 )
 
 // VolumeSpec identifies a PersistentVolumeClaim to capture or restore.
@@ -37,7 +37,7 @@ type VolumeManager interface {
 // fast path; it only works with the local-path storage class / single node.
 type LocalPathVolumeManager struct {
 	StorageDir string
-	Cluster    deployment.Cluster
+	Cluster    k8s.Cluster
 	Log        interface{ Warn(string, ...any) }
 }
 

@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/moureau-dev/menina/internal/config"
-	"github.com/moureau-dev/menina/internal/database"
-	"github.com/moureau-dev/menina/internal/deployment"
-	"github.com/moureau-dev/menina/internal/notify"
-	"github.com/moureau-dev/menina/internal/registry"
+	"github.com/moureau-dev/menina/internal/core/cluster"
+	"github.com/moureau-dev/menina/internal/core/config"
+	"github.com/moureau-dev/menina/internal/core/notify"
+	"github.com/moureau-dev/menina/internal/core/registry"
+	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 )
 
 func TestEmitDeployPostsWebhook(t *testing.T) {
@@ -28,7 +28,7 @@ func TestEmitDeployPostsWebhook(t *testing.T) {
 
 	db := testDB(t)
 	cluster := &fakeCluster{}
-	jobs := NewJobs(db, deployment.NewEngine(cluster, db, nil, testLogger()), cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
+	jobs := NewJobs(db, k8s.NewEngine(cluster, db, nil, testLogger()), cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
 	jobs.SetSender(notify.NewSender(testLogger()))
 	app := &config.ResolvedApp{
 		Project: "my-platform", Environment: "production", Name: "api",
@@ -71,7 +71,7 @@ func TestRepositoryMatches(t *testing.T) {
 func TestMatchJobs(t *testing.T) {
 	db := testDB(t)
 	cluster := &fakeCluster{}
-	jobs := NewJobs(db, deployment.NewEngine(cluster, db, nil, testLogger()), cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
+	jobs := NewJobs(db, k8s.NewEngine(cluster, db, nil, testLogger()), cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
 	got := jobs.MatchJobs(registry.PushEvent{Repository: "my-platform/api", Tag: "production", DeliveryID: "d1"})
 	if len(got) != 1 {
 		t.Fatalf("matched %d jobs, want 1", len(got))
@@ -87,7 +87,7 @@ func TestMatchJobs(t *testing.T) {
 func TestIngestPersistsDurablyAndDeduplicates(t *testing.T) {
 	db := testDB(t)
 	cluster := &fakeCluster{}
-	jobs := NewJobs(db, deployment.NewEngine(cluster, db, nil, testLogger()), cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
+	jobs := NewJobs(db, k8s.NewEngine(cluster, db, nil, testLogger()), cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
 	event := registry.PushEvent{Repository: "my-platform/api", Tag: "production", Digest: "sha256:1", DeliveryID: "delivery-1"}
 	created, n, err := jobs.Ingest(context.Background(), event)
 	if err != nil || !created || n != 1 {
@@ -108,8 +108,8 @@ func TestIngestPersistsDurablyAndDeduplicates(t *testing.T) {
 
 func TestProcessJobDeploysAndRecords(t *testing.T) {
 	db := testDB(t)
-	cluster := &fakeCluster{status: &deployment.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "old"}}
-	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:new"}, testLogger())
+	cluster := &fakeCluster{status: &k8s.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "old"}}
+	engine := k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:new"}, testLogger())
 	jobs := NewJobs(db, engine, cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
 	_, _, err := jobs.Ingest(context.Background(), registry.PushEvent{Repository: "my-platform/api", Tag: "production", DeliveryID: "d"})
 	if err != nil {
@@ -137,8 +137,8 @@ func TestProcessJobDeploysAndRecords(t *testing.T) {
 
 func TestProcessJobIsNoOpWhenAlreadyDesired(t *testing.T) {
 	db := testDB(t)
-	cluster := &fakeCluster{status: &deployment.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "registry.moureau.dev/my-platform/api@sha256:same"}}
-	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:same"}, testLogger())
+	cluster := &fakeCluster{status: &k8s.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "registry.moureau.dev/my-platform/api@sha256:same"}}
+	engine := k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:same"}, testLogger())
 	jobs := NewJobs(db, engine, cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
 	_, _, _ = jobs.Ingest(context.Background(), registry.PushEvent{Repository: "my-platform/api", Tag: "production", DeliveryID: "d"})
 	pending, _ := db.PendingJobs(context.Background(), 10)
@@ -158,10 +158,10 @@ func TestProcessJobIsNoOpWhenAlreadyDesired(t *testing.T) {
 
 func TestProcessJobNoOpDoesNotDuplicateRelease(t *testing.T) {
 	db := testDB(t)
-	cluster := &fakeCluster{status: &deployment.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "registry.moureau.dev/my-platform/api@sha256:same"}}
-	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:same"}, testLogger())
+	cluster := &fakeCluster{status: &k8s.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "registry.moureau.dev/my-platform/api@sha256:same"}}
+	engine := k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:same"}, testLogger())
 	jobs := NewJobs(db, engine, cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
-	if err := db.RecordRelease(context.Background(), database.Release{Project: "my-platform", Environment: "production", App: "api", Repository: "registry.moureau.dev/my-platform/api", Tag: "production", Digest: "sha256:same", State: "active"}); err != nil {
+	if err := db.RecordRelease(context.Background(), sqlite.Release{Project: "my-platform", Environment: "production", App: "api", Repository: "registry.moureau.dev/my-platform/api", Tag: "production", Digest: "sha256:same", State: "active"}); err != nil {
 		t.Fatal(err)
 	}
 	_, _, _ = jobs.Ingest(context.Background(), registry.PushEvent{Repository: "my-platform/api", Tag: "production", DeliveryID: "d"})
@@ -178,14 +178,14 @@ func TestProcessJobNoOpDoesNotDuplicateRelease(t *testing.T) {
 func TestProcessJobFailureRequeues(t *testing.T) {
 	db := testDB(t)
 	cluster := &fakeCluster{}
-	engine := deployment.NewEngine(cluster, db, errResolver{}, testLogger())
+	engine := k8s.NewEngine(cluster, db, errResolver{}, testLogger())
 	jobs := NewJobs(db, engine, cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
 	_, _, _ = jobs.Ingest(context.Background(), registry.PushEvent{Repository: "my-platform/api", Tag: "production", DeliveryID: "d"})
 	pending, _ := db.PendingJobs(context.Background(), 10)
 	if err := jobs.ProcessJob(context.Background(), pending[0]); err == nil {
 		t.Fatal("expected process error")
 	}
-	requeued, _ := db.JobsByStatus(context.Background(), database.JobStatusPending)
+	requeued, _ := db.JobsByStatus(context.Background(), sqlite.JobStatusPending)
 	if len(requeued) != 1 || requeued[0].Attempts != 1 {
 		t.Fatalf("expected requeued job with attempts=1, got %+v", requeued)
 	}
@@ -194,12 +194,12 @@ func TestProcessJobFailureRequeues(t *testing.T) {
 func TestProcessJobDropsRemovedTarget(t *testing.T) {
 	db := testDB(t)
 	cluster := &fakeCluster{}
-	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
+	engine := k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger())
 	empty := func() *config.ResolvedConfig {
 		return &config.ResolvedConfig{Projects: map[string]*config.ResolvedProject{}}
 	}
 	jobs := NewJobs(db, engine, cluster, empty, "registry.moureau.dev", testLogger())
-	if _, err := db.IngestRegistryEvent(context.Background(), &database.Event{DedupKey: "e1"}, []database.Job{{
+	if _, err := db.IngestRegistryEvent(context.Background(), &sqlite.Event{DedupKey: "e1"}, []sqlite.Job{{
 		DedupKey: "j1", Kind: "deploy", Project: "my-platform", Environment: "production", App: "api",
 	}}); err != nil {
 		t.Fatal(err)
@@ -211,7 +211,7 @@ func TestProcessJobDropsRemovedTarget(t *testing.T) {
 	if p, _ := db.PendingJobs(context.Background(), 10); len(p) != 0 {
 		t.Fatalf("job for a removed target must not be requeued: %+v", p)
 	}
-	done, _ := db.JobsByStatus(context.Background(), database.JobStatusDone)
+	done, _ := db.JobsByStatus(context.Background(), sqlite.JobStatusDone)
 	if len(done) != 1 {
 		t.Fatalf("expected the job to be dropped (done), got %+v", done)
 	}
@@ -225,10 +225,10 @@ func (errResolver) ResolveTag(context.Context, string, string) (string, error) {
 
 func TestProcessJobDeploysRollbackDigest(t *testing.T) {
 	db := testDB(t)
-	cluster := &fakeCluster{status: &deployment.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "old"}}
-	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:latest"}, testLogger())
+	cluster := &fakeCluster{status: &k8s.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "old"}}
+	engine := k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:latest"}, testLogger())
 	jobs := NewJobs(db, engine, cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
-	if _, err := db.IngestRegistryEvent(context.Background(), &database.Event{DedupKey: "r1", Registry: "r", Repository: "x"}, []database.Job{{
+	if _, err := db.IngestRegistryEvent(context.Background(), &sqlite.Event{DedupKey: "r1", Registry: "r", Repository: "x"}, []sqlite.Job{{
 		DedupKey: "rj1", Kind: "rollback", Project: "my-platform", Environment: "production", App: "api", DesiredDigest: "sha256:old",
 	}}); err != nil {
 		t.Fatal(err)
@@ -244,8 +244,8 @@ func TestProcessJobDeploysRollbackDigest(t *testing.T) {
 
 func TestRapidPushesCoalescePendingJobs(t *testing.T) {
 	db := testDB(t)
-	cluster := &fakeCluster{status: &deployment.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "old"}}
-	engine := deployment.NewEngine(cluster, db, stubResolver{digest: "sha256:new"}, testLogger())
+	cluster := &fakeCluster{status: &k8s.WorkloadStatus{Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, Image: "old"}}
+	engine := k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:new"}, testLogger())
 	jobs := NewJobs(db, engine, cluster, resolvedFunc(), "registry.moureau.dev", testLogger())
 	for _, delivery := range []string{"d1", "d2", "d3"} {
 		if _, _, err := jobs.Ingest(context.Background(), registry.PushEvent{Repository: "my-platform/api", Tag: "production", DeliveryID: delivery}); err != nil {
@@ -259,7 +259,7 @@ func TestRapidPushesCoalescePendingJobs(t *testing.T) {
 	if err := jobs.ProcessJob(context.Background(), pending[0]); err != nil {
 		t.Fatal(err)
 	}
-	superseded, _ := db.JobsByStatus(context.Background(), database.JobStatusSuperseded)
+	superseded, _ := db.JobsByStatus(context.Background(), sqlite.JobStatusSuperseded)
 	if len(superseded) != 2 {
 		t.Fatalf("expected 2 coalesced jobs, got %d", len(superseded))
 	}
@@ -271,7 +271,7 @@ func TestRapidPushesCoalescePendingJobs(t *testing.T) {
 func TestIngestPinsResolvedConfiguration(t *testing.T) {
 	snap := resolvedFunc()()
 	app := snap.Projects["my-platform"].Environments["production"].Apps["api"]
-	job := PinJob(database.Job{Kind: "deploy", Project: "my-platform", Environment: "production", App: "api"}, app, snap.Version, "registry", "registry-push")
+	job := PinJob(sqlite.Job{Kind: "deploy", Project: "my-platform", Environment: "production", App: "api"}, app, snap.Version, "registry", "registry-push")
 	if job.ConfigVersion != 1 || job.ConfigHash == "" || job.ConfigSnapshot == "" {
 		t.Fatalf("job was not pinned: %+v", job)
 	}
