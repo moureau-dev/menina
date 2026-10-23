@@ -58,7 +58,7 @@ plans and state-token mismatches use `conflict`, and schema incompatibilities us
 | `menina identity` | Manage profiles, scopes, keys, enrollment tokens, and bootstrap commands. See [IDENTITY.md](IDENTITY.md) |
 | `menina audit list` | Query captured API and forced-command audit events |
 | `menina whoami` | Show the server-derived actor for this session |
-| `menina serve [--api-listen HOST:PORT]` | Run the control-plane service (watcher, webhooks, deployments). The optional HTTP API listener uses the control token; bind it to loopback until identity and scopes land |
+| `menina serve [--api-listen HOST:PORT]` | Run the control-plane service (watcher, webhooks, deployments). The optional HTTP API listener uses the control token; bind it to loopback until HTTP identity is added; it currently acts as local admin |
 | `menina proxy` | Run the reverse proxy |
 
 `menina-core` and `menina-edge` run the same controller and proxy roles as

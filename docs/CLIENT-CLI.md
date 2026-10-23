@@ -526,7 +526,7 @@ unless `--prune` is explicitly reviewed and applied via `--from-plan`.
 `<config-dir>/.revisions/`. List them with `menina config revisions` on the host,
 or `menina config revisions --host root@vps` from the client; restore with
 `menina config rollback <id> --yes` (also available through the client with
-`--host`). Revisions restore YAML only, not deployed images. Revisions record
+`--host`). Both use the host API when `serve` is running. Revisions restore YAML only, not deployed images. Revisions record
 actor, source repo/revision, plan id and a content hash; retention defaults to 50
 and is configurable with `MENINA_REVISION_RETENTION`. `.revisions/` is included
 in backup/restore. Revisions are not backfilled for applies that happened before
@@ -560,6 +560,12 @@ Without `--host`, it applies to the local config directory
 ```bash
 ssh -T <host> menina apply --local -f -
 ```
+
+The host computes the plan, then executes it through the local API when `serve`
+is running. The API revalidates the base state token, plan hash, file hashes,
+and `source.repo` ownership before writing. If the control plane is down, the
+host falls back to local file execution. `config revisions` and
+`config rollback` use the same API-first path.
 
 The host is cached in the user config directory (`menina/host`, mode 0600).
 `MENINA_HOST` is honoured, and `--local` skips the cache. Network auth is left to
