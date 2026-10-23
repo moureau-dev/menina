@@ -11,9 +11,9 @@ cmd/
   menina-edge/            optional edge proxy entry point
 
 internal/
-  api/                    command contract, client, routing subscription
+  api/                    command contract, dispatcher, client, routing subscription
     errors/               classified errors and stable exit codes
-    transport/            unix, http, and ssh adapters
+    transport/            unix, http, ssh, and stdio adapters
   cli/
     host/                 host commands, prompts, TUI menus
     client/               shared client commands (init/validate/apply/build/push, secrets, jobs, config, meta)

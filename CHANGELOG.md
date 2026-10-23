@@ -9,6 +9,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - Operational state contract with shared contract tests, an in-memory fake for
   controller tests, and an existing-database migration test.
+- Versioned API command dispatcher with actor context, in-memory idempotency,
+  shared transport parity tests, and a stdio adapter.
 
 ## [0.1.2] - 2026-10-23
 

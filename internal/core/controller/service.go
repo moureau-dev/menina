@@ -88,6 +88,7 @@ type Service struct {
 	jobs        *worker.Jobs
 	reconciler  *Reconciler
 	control     *unix.Server
+	dispatcher  *api.Dispatcher
 	registry    *registry.Client
 	eventsSrv   *http.Server
 	bus         *broadcaster
@@ -133,6 +134,7 @@ func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Servic
 	svc.jobs.SetAllowHooks(cfg.Security.AllowAppHooks)
 	svc.reconciler = NewReconciler(db, cluster, engine, snapFn, cfg, log)
 	svc.reconciler.OnPublish(svc.bus.publish)
+	svc.dispatcher = api.NewDispatcher(svc.controlMux())
 	if cfg.Registry.Enabled {
 		svc.registry = registry.NewClient(registryBaseURL(cfg), "", "", !cfg.TLS.Terminate)
 	}
@@ -181,7 +183,7 @@ func (s *Service) Run(ctx context.Context) error {
 		return fmt.Errorf("control token: %w", err)
 	}
 	s.token = token
-	control, err := unix.NewServer(s.cfg.Platform.ControlSocket, token, s.controlMux())
+	control, err := unix.NewServer(s.cfg.Platform.ControlSocket, token, s.Handler())
 	if err != nil {
 		return err
 	}
@@ -787,8 +789,13 @@ func (s *Service) watcherLastError() string {
 
 func (s *Service) Token() string { return s.token }
 
-// Handler returns the HTTP API handler for non-Unix transports.
-func (s *Service) Handler() http.Handler { return s.controlMux() }
+// Handler returns the versioned API dispatcher used by every transport.
+func (s *Service) Handler() http.Handler {
+	if s.dispatcher == nil {
+		s.dispatcher = api.NewDispatcher(s.controlMux())
+	}
+	return s.dispatcher
+}
 
 func (b *broadcaster) snapshotVersion() int64 {
 	if s := b.snapshot(); s != nil {
