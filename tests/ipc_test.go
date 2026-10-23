@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/moureau-dev/menina/internal/api"
+	"github.com/moureau-dev/menina/internal/api/transport/unix"
 	"github.com/moureau-dev/menina/internal/edge"
 )
 
@@ -64,7 +65,7 @@ func TestControlIPCDeliversRoutingSnapshotToProxy(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	server, err := api.NewServer(socket, token, mux)
+	server, err := unix.NewServer(socket, token, mux)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +117,7 @@ func TestControlRejectsUnauthorizedClient(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	server, _ := api.NewServer(socket, token, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server, _ := unix.NewServer(socket, token, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "secret")
 	}))
 	if err := server.Start(ctx); err != nil {

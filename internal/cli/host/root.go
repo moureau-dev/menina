@@ -94,6 +94,7 @@ func NewRootCommand() *cobra.Command {
 		newUpgradeCommand(app),
 		newVersionCommand(app),
 		newInstallCommand(app),
+		newAPISSHCommand(app),
 	)
 	root.AddCommand(client.NewCommands(client.Options{
 		ConfigDir: &app.Opts.ConfigDir,

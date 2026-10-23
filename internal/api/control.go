@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -46,58 +45,6 @@ func EnsureToken(path string) (string, error) {
 		return "", err
 	}
 	return token, nil
-}
-
-type Server struct {
-	socketPath string
-	token      string
-	handler    http.Handler
-	ln         net.Listener
-	srv        *http.Server
-}
-
-func NewServer(socketPath, token string, handler http.Handler) (*Server, error) {
-	return &Server{socketPath: socketPath, token: token, handler: handler}, nil
-}
-
-func (c *Server) Start(ctx context.Context) error {
-	if err := os.MkdirAll(filepath.Dir(c.socketPath), 0o755); err != nil {
-		return err
-	}
-	_ = os.Remove(c.socketPath)
-	ln, err := net.Listen("unix", c.socketPath)
-	if err != nil {
-		return fmt.Errorf("listen on control socket: %w", err)
-	}
-	if err := os.Chmod(c.socketPath, 0o660); err != nil {
-		return err
-	}
-	c.ln = ln
-	c.srv = &http.Server{Handler: c.withAuth(c.handler)}
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = c.srv.Shutdown(shutdownCtx)
-	}()
-	go func() {
-		if err := c.srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-			fmt.Fprintf(os.Stderr, "control server: %v\n", err)
-		}
-	}()
-	return nil
-}
-
-func (c *Server) withAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth := r.Header.Get("Authorization")
-		token := strings.TrimPrefix(auth, "Bearer ")
-		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(c.token)) != 1 {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 type Client struct {
@@ -258,4 +205,26 @@ func controlError(path string, code int, body string) error {
 	default:
 		return fmt.Errorf("%s", message)
 	}
+}
+
+// Request performs an API call and returns the HTTP status and response body.
+// A non-2xx status is also returned as a classified error.
+func (c *Client) Request(ctx context.Context, method, path string, body []byte) (int, []byte, error) {
+	var r io.Reader
+	if len(body) > 0 {
+		r = strings.NewReader(string(body))
+	}
+	resp, err := c.do(ctx, method, path, r)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp.StatusCode, nil, err
+	}
+	if resp.StatusCode >= 300 {
+		return resp.StatusCode, data, controlError(path, resp.StatusCode, string(data))
+	}
+	return resp.StatusCode, data, nil
 }

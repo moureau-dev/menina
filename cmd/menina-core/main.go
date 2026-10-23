@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/moureau-dev/menina/internal/api"
+	httpapi "github.com/moureau-dev/menina/internal/api/transport/http"
 	"github.com/moureau-dev/menina/internal/core/config"
 	"github.com/moureau-dev/menina/internal/core/controller"
 	"github.com/moureau-dev/menina/internal/core/registry"
@@ -17,6 +19,7 @@ import (
 func main() {
 	configDir := flag.String("config-dir", envOr("MENINA_CONFIG_DIR", "/etc/menina"), "configuration directory")
 	verbose := flag.Bool("verbose", false, "verbose logging")
+	apiListen := flag.String("api-listen", "", "optional host:port for the HTTP API; bind to loopback")
 	flag.Parse()
 
 	level := slog.LevelInfo
@@ -50,6 +53,18 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	if *apiListen != "" {
+		token, err := api.EnsureToken(cfg.Security.ControlTokenFile)
+		if err != nil {
+			log.Error("control token", "error", err)
+			os.Exit(1)
+		}
+		go func() {
+			if err := httpapi.Serve(ctx, *apiListen, token, svc.Handler()); err != nil {
+				log.Error("api http listener stopped", "error", err)
+			}
+		}()
+	}
 	if err := svc.Run(ctx); err != nil {
 		log.Error("controller stopped", "error", err)
 		os.Exit(1)
