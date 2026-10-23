@@ -401,8 +401,8 @@ menina secret verify --host root@vps --project demo --environment production --j
 
 The client pipes the value to the host's `menina secret set` over SSH stdin; it
 never goes into the manifest, client config, arguments, or logs. `--host` falls
-back to `MENINA_HOST` or the cached host used by `apply`. You can also run the
-`secret` commands directly on the host.
+back to `MENINA_HOST`, the selected `--profile` context, or the cached host used
+by `apply`. You can also run the `secret` commands directly on the host.
 
 Secret files are mode `0660`; the environment directory is `0770` with setgid.
 Run the command as a user in the `menina` group (or root) so the control plane
@@ -417,8 +417,8 @@ The manifest never contains secret values.
 
 The standalone client runs the manifest and image commands (`init`, `validate`,
 `apply`, `build`, `push`, `schema`, `capabilities`, `install`) plus `secret`,
-`job`, `config`, `version`, and `upgrade`. It proxies `apply`, `job`, `config`,
-and `secret` over SSH with `--host`.
+`job`, `config`, `context`, `whoami`, `version`, and `upgrade`. It proxies
+`apply`, `job`, `config`, and `secret` over SSH with `--host`.
 
 `app`, `release`, `status`, `routes`, and `doctor` are host commands. Run them
 over SSH:
@@ -564,6 +564,34 @@ ssh -T <host> menina apply --local -f -
 The host is cached in the user config directory (`menina/host`, mode 0600).
 `MENINA_HOST` is honoured, and `--local` skips the cache. Network auth is left to
 `ssh` and your keys/agent; no credentials are stored.
+
+### Client contexts
+
+Store reusable targets under `menina/contexts.yml` in the user config
+directory:
+
+```bash
+menina context set production --host deploy@vps --host-key "ssh-ed25519 AAAA..."
+menina context use production
+menina context list
+menina --profile production whoami
+```
+
+`--profile` (or `MENINA_PROFILE`) selects a stored context. `--host` and
+`MENINA_HOST` override the context host. Precedence is:
+
+1. `--host`
+2. `MENINA_HOST`
+3. selected context host
+4. cached host
+
+A stored `host-key` pins the SSH host key: the client writes a temporary
+`known_hosts` entry and uses `StrictHostKeyChecking=yes` for that command.
+Without it, SSH uses its normal known-hosts policy.
+
+`menina whoami` runs on the host and reports the server-derived profile and
+scopes. It shows `local (administrative)` when invoked directly on the host
+without an enrolled key.
 
 Production confirmation (`security.enforceProdPolicy`) applies to deployments,
 not to writing desired state. Build/push and `app deploy` remain the rollout

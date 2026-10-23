@@ -22,6 +22,7 @@ type Options struct {
 	ConfigDir      *string
 	JSON           *bool
 	NonInteractive *bool
+	Profile        *string
 }
 
 type App struct {
@@ -38,6 +39,7 @@ func NewCommands(opts Options) []*cobra.Command {
 		newPushCommand(app),
 		newSchemaCommand(app),
 		newCapabilitiesCommand(app),
+		newContextCommand(app),
 	}
 }
 
@@ -72,9 +74,9 @@ func (a *App) printJSON(v any) error {
 
 // NewRootCommand builds the standalone client command tree.
 func NewRootCommand() *cobra.Command {
-	var configDir string
+	var configDir, profile string
 	var jsonOutput, verbose, nonInteractive bool
-	app := &App{opts: Options{ConfigDir: &configDir, JSON: &jsonOutput, NonInteractive: &nonInteractive}}
+	app := &App{opts: Options{ConfigDir: &configDir, JSON: &jsonOutput, NonInteractive: &nonInteractive, Profile: &profile}}
 	root := &cobra.Command{
 		Use:   "menina",
 		Short: "Menina client: apply, build and push repository manifests",
@@ -89,13 +91,14 @@ func NewRootCommand() *cobra.Command {
 		},
 	}
 	root.PersistentFlags().StringVar(&configDir, "config-dir", envOr("MENINA_CONFIG_DIR", "/etc/menina"), "host configuration directory (used for secret refs)")
+	root.PersistentFlags().StringVar(&profile, "profile", envOr("MENINA_PROFILE", ""), "stored client context (or MENINA_PROFILE)")
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output machine-readable JSON")
 	root.PersistentFlags().BoolVar(&verbose, "verbose", false, "verbose logging")
 	root.PersistentFlags().BoolVar(&nonInteractive, "non-interactive", false, "never prompt or open the TUI; fail instead")
 	_ = verbose
 
 	root.AddCommand(NewCommands(app.opts)...)
-	root.AddCommand(newInstallCommand(app), newSecretCommand(app), newClientJobCommand(app), newClientConfigCommand(app), newVersionCommand(app), newUpgradeCommand(app))
+	root.AddCommand(newInstallCommand(app), newSecretCommand(app), newClientJobCommand(app), newClientConfigCommand(app), newWhoamiCommand(app), newVersionCommand(app), newUpgradeCommand(app))
 
 	info := version.Get()
 	root.Version = info.Version

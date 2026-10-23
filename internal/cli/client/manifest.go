@@ -257,7 +257,7 @@ func newApplyCommand(app *App) *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !local {
-				if target := chooseClientHost(host); target != "" {
+				if target := app.chooseClientHost(host, app.profile()); target != "" {
 					var data []byte
 					if fromPlan == "" {
 						var err error
@@ -696,18 +696,6 @@ func mergeProject(dst, src *config.Project) {
 	}
 }
 
-func chooseClientHost(flagHost string) string {
-	if flagHost != "" {
-		_ = writeCachedHost(flagHost)
-		return flagHost
-	}
-	if host := os.Getenv("MENINA_HOST"); host != "" {
-		return host
-	}
-	host, _ := readCachedHost()
-	return host
-}
-
 func clientHostPath() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
@@ -746,7 +734,10 @@ func sshApply(ctx context.Context, app *App, host string, data []byte, o *manife
 	if strings.HasPrefix(host, "-") {
 		return fmt.Errorf("invalid SSH host %q", host)
 	}
-	args := []string{"-T", host, "menina", "apply", "--local"}
+	pin, cleanup := app.sshArgs(host, app.profile())
+	defer cleanup()
+	args := append([]string{}, pin...)
+	args = append(args, "-T", host, "menina", "apply", "--local")
 	if fromPlan != "" {
 		args = append(args, "--from-plan", fromPlan)
 	} else {

@@ -39,6 +39,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   enforced by the API authorizer and forced-command wrapper.
 - Server-side ownership enforcement. `source.repo` is checked for apply and
   prune plans, so a client cannot overwrite or prune another repository's apps.
+- Client contexts with `--profile` / `MENINA_PROFILE`, SSH host-key pinning,
+  and `whoami` for the server-derived profile.
 
 ## [0.1.2] - 2026-10-23
 

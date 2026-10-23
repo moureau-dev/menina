@@ -58,6 +58,8 @@ makes the multi-node/HA work explicit instead of hiding it under “HA/DR”.
   enforced centrally by the API authorizer and forced-command wrapper.
 - Ownership enforcement: `source.repo` is checked server-side for apply and
   prune plans, not only in the client.
+- Client contexts: stored targets, `--profile` / `MENINA_PROFILE` precedence,
+  pinned SSH host keys, and `whoami`.
 - Per-app release states, pinned job configuration, verification, hooks,
   recovery policies, digest promotion, secret-staleness reporting, scheduled
   backups, metrics/alert guidance, and probe-timing hardening (v0.1.0/v0.1.1).
@@ -120,23 +122,21 @@ step.
 
 ### Client identity and access
 
-1. **39 Client contexts and CI credentials.** `--profile` / `MENINA_PROFILE`
-   over stored contexts, flag/env precedence, host-key pinning, `whoami`.
-2. **41 One-paste bootstrap.** `setup` prints the reachable host, host-key
+1. **41 One-paste bootstrap.** `setup` prints the reachable host, host-key
    fingerprint, and enrollment command; the installer verifies with `whoami`.
-3. **40 In-process SSH transport.** Remove the `openssh-client` dependency and
+2. **40 In-process SSH transport.** Remove the `openssh-client` dependency and
     pin host keys by fingerprint.
 
 ### Secrets and registry
 
-4. **16a Project-scoped secret permissions.**
-5. **20 Secret storage isolation** beyond the shared `menina` group.
-6. **16b Per-project/client registry credentials**, preferring short-lived
+3. **16a Project-scoped secret permissions.**
+4. **20 Secret storage isolation** beyond the shared `menina` group.
+5. **16b Per-project/client registry credentials**, preferring short-lived
     registry tokens over a shared htpasswd.
 
 ### Audit and authorization
 
-7. **21 Multi-client readiness gate.**
+6. **21 Multi-client readiness gate.**
 
 Identity is selected by the execution context, not the manifest. Client-side
 selection is `--profile` / `MENINA_PROFILE` over a stored context, with
@@ -293,20 +293,19 @@ single-node setup most importance scores drop.
 | 34 | 2, 3, 4, 5 | Canary/blue-green, maxSurge/maxUnavailable, traffic splitting | 8 | 7 | Needs release sets + verification + recovery + traffic control. |
 | 35 | 12, 13 | Log retention/search, alerting, deploy events | 7 | 8 | Needs metrics/events first; much can be external. |
 | 36 | 16a, 19a, 19b, 19c, 25, 42, 43, 45 | Larger-scale quotas/multitenancy/audit export | 9 | 6 | Identity/authorization/quotas must land first. |
-| 39 | — | Client contexts + env/CI credentials | 4 | 7 | Contexts, flag/env precedence, `whoami`, BatchMode, host-key pinning. |
-| 40 | 39 | In-process SSH transport | 6 | 5 | Remove `openssh-client` dependency; pin host keys by fingerprint. |
-| 41 | 39 | One-paste bootstrap | 4 | 8 | `setup` prints reachable host, host-key fingerprint, and enrollment command; installer verifies with `whoami`. |
+| 40 | — | In-process SSH transport | 6 | 5 | Remove `openssh-client` dependency; pin host keys by fingerprint. |
+| 41 | — | One-paste bootstrap | 4 | 8 | `setup` prints reachable host, host-key fingerprint, and enrollment command; installer verifies with `whoami`. |
 | 42 | 19a | CI workload identity | 5 | 7 | OIDC federation exchanges a workload token for a short-lived client credential; no stored CI key. |
 | 43 | 16b | Registry token service | 6 | 7 | Docker token auth with per-project scopes and short TTL; replaces shared htpasswd. |
 | 44 | 19a | HTTP API + WebSocket/SSE | 7 | 4 | Optional browser/hosted surface. Not required for multi-tenancy; SSH stays the CLI and break-glass path. HTTP transport landed; auth, SSE/WS, and UI remain. |
 | 45 | — | Per-tenant rate limits and fairness | 5 | 6 | Bound registry pulls, job throughput, and concurrency so one tenant cannot starve the rest. |
 | 49 | — | Edge request metrics and access logs | 5 | 8 | Per-route status/latency/errors, in-flight/bytes, cert expiry, snapshot age, redacted logs. |
 
-Tier 2 is 7 core items, six deferred larger-team controls, and one optional
+Tier 2 is 6 core items, six deferred larger-team controls, and one optional
 product-gated interface. The suffixed IDs keep earlier references addressable;
 16, 18, 19, 37, and 38 were split; 49 covers the remaining edge monitoring
-work exposed by the refactor. Difficulty totals are 38 for the core, 35 for the
-deferred controls, and 7 for the optional interface (80 total). The umbrella
+work exposed by the refactor. Difficulty totals are 34 for the core, 35 for the
+deferred controls, and 7 for the optional interface (76 total). The umbrella
 items understated identity lifecycle, command enforcement, and short-lived
 credential work.
 

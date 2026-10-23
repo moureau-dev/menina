@@ -16,7 +16,7 @@ var forcedAllowed = map[string]bool{
 	"app": true, "release": true, "job": true, "secret": true, "config": true,
 	"status": true, "routes": true, "notify": true, "registry": true,
 	"apply": true, "api-ssh": true, "version": true, "capabilities": true,
-	"audit": true,
+	"audit": true, "whoami": true,
 }
 
 func newSSHForcedCommand(app *App) *cobra.Command {

@@ -231,7 +231,7 @@ func menuApply(cmd *cobra.Command, app *App) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	host, _ := readCachedHost()
+	host, _, _ := app.resolveHost("", app.profile())
 	host, err = clientAsk("SSH host (blank = local)", strings.TrimSpace(host))
 	if err != nil {
 		return "", err

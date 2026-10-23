@@ -23,7 +23,7 @@ func clientConfigRevisions(app *App, hostFlag *string) *cobra.Command {
 		Use:   "revisions",
 		Short: "List apply revisions on the host",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			target, err := requireClientHost(*hostFlag)
+			target, err := app.requireClientHost(*hostFlag)
 			if err != nil {
 				return err
 			}
@@ -37,7 +37,7 @@ func clientConfigRevisions(app *App, hostFlag *string) *cobra.Command {
 			if app.jsonOutput() {
 				remote = append(remote, "--json")
 			}
-			return runSSHInherit(cmd, target, remote...)
+			return app.runSSHInherit(cmd, target, remote...)
 		},
 	}
 	cmd.Flags().StringVar(&project, "project", "", "filter by project")
@@ -52,7 +52,7 @@ func clientConfigRollback(app *App, hostFlag *string) *cobra.Command {
 		Short: "Restore an apply revision on the host",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			target, err := requireClientHost(*hostFlag)
+			target, err := app.requireClientHost(*hostFlag)
 			if err != nil {
 				return err
 			}
@@ -63,7 +63,7 @@ func clientConfigRollback(app *App, hostFlag *string) *cobra.Command {
 			if app.jsonOutput() {
 				remote = append(remote, "--json")
 			}
-			return runSSHInherit(cmd, target, remote...)
+			return app.runSSHInherit(cmd, target, remote...)
 		},
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm the restore")
