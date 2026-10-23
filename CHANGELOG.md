@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-23
+
 ### Added
 - Operational state contract with shared contract tests, an in-memory fake for
   controller tests, and an existing-database migration test.
