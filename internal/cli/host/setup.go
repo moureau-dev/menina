@@ -15,6 +15,7 @@ import (
 	"github.com/moureau-dev/menina/internal/cli/tui"
 	"github.com/moureau-dev/menina/internal/core/config"
 	"github.com/moureau-dev/menina/internal/core/secrets"
+	"github.com/moureau-dev/menina/internal/provision"
 )
 
 type prompter struct {
@@ -425,6 +426,7 @@ func newSetupCommand(app *App) *cobra.Command {
 				return err
 			}
 			app.Infof("Configuration written to %s/config.yml", cfg.Host.ConfigDir)
+			printBootstrapSummary(app, cfg)
 			app.Infof("Next: run `menina deploy`")
 			return nil
 		},
@@ -448,4 +450,20 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+func printBootstrapSummary(app *App, cfg config.Config) {
+	host := cfg.Networking.PublicIP
+	if host == "" {
+		host, _ = os.Hostname()
+	}
+	user := os.Getenv("SUDO_USER")
+	if user == "" {
+		user = "root"
+	}
+	app.Infof("Reachable host: %s@%s", user, host)
+	if _, fingerprint, err := provision.HostKey("/etc/ssh"); err == nil {
+		app.Infof("Host key: %s", fingerprint)
+	}
+	app.Infof("Enroll a client: menina identity bootstrap admin")
 }

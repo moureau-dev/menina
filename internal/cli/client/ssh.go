@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,6 +29,10 @@ func (a *App) requireClientHost(flagHost string) (string, error) {
 }
 
 func (a *App) runSSHInherit(cmd *cobra.Command, host string, args ...string) error {
+	return a.runSSHWithInput(cmd, host, nil, args...)
+}
+
+func (a *App) runSSHWithInput(cmd *cobra.Command, host string, input []byte, args ...string) error {
 	if strings.HasPrefix(host, "-") {
 		return fmt.Errorf("invalid SSH host %q", host)
 	}
@@ -37,7 +42,12 @@ func (a *App) runSSHInherit(cmd *cobra.Command, host string, args ...string) err
 	full = append(full, "-T", host, "menina")
 	full = append(full, args...)
 	c := exec.CommandContext(cmd.Context(), "ssh", full...)
-	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if input != nil {
+		c.Stdin = bytes.NewReader(input)
+	} else {
+		c.Stdin = os.Stdin
+	}
+	c.Stdout, c.Stderr = os.Stdout, os.Stderr
 	if err := c.Run(); err != nil {
 		return fmt.Errorf("ssh %s: %w", host, err)
 	}

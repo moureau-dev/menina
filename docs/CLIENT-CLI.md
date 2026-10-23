@@ -417,8 +417,8 @@ The manifest never contains secret values.
 
 The standalone client runs the manifest and image commands (`init`, `validate`,
 `apply`, `build`, `push`, `schema`, `capabilities`, `install`) plus `secret`,
-`job`, `config`, `context`, `whoami`, `version`, and `upgrade`. It proxies
-`apply`, `job`, `config`, and `secret` over SSH with `--host`.
+`job`, `config`, `context`, `enroll`, `whoami`, `version`, and `upgrade`. It
+proxies `apply`, `job`, `config`, and `secret` over SSH with `--host`.
 
 `app`, `release`, `status`, `routes`, and `doctor` are host commands. Run them
 over SSH:
@@ -592,6 +592,25 @@ Without it, SSH uses its normal known-hosts policy.
 `menina whoami` runs on the host and reports the server-derived profile and
 scopes. It shows `local (administrative)` when invoked directly on the host
 without an enrolled key.
+
+### One-paste bootstrap
+
+On the host, create or reuse a profile and print a one-time client command:
+
+```bash
+menina identity bootstrap admin
+```
+
+That prints the reachable SSH host, host-key fingerprint, the one-time token,
+and a command such as:
+
+```bash
+menina enroll menina_enroll_... --host root@vps --host-key "ssh-ed25519 AAAA..."
+```
+
+`enroll` reads `--public-key` or the first `~/.ssh/id_*.pub`, stores the context,
+sends the token to the host over SSH stdin, attaches the key to the profile, and
+then runs `whoami`. The token is used once and is never stored on the client.
 
 Production confirmation (`security.enforceProdPolicy`) applies to deployments,
 not to writing desired state. Build/push and `app deploy` remain the rollout

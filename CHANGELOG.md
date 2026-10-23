@@ -41,6 +41,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   prune plans, so a client cannot overwrite or prune another repository's apps.
 - Client contexts with `--profile` / `MENINA_PROFILE`, SSH host-key pinning,
   and `whoami` for the server-derived profile.
+- One-paste bootstrap: `setup` prints the reachable host and host-key
+  fingerprint, `identity bootstrap` creates a profile and enrollment token, and
+  `menina enroll` consumes the token and verifies with `whoami`.
 
 ## [0.1.2] - 2026-10-23
 
