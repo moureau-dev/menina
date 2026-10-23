@@ -273,7 +273,14 @@ menina status|routes|doctor
 menina registry status|credential
 menina notify list|test|deliveries|replay
 menina backup|restore|upgrade
+menina serve [--api-listen HOST:PORT]
+menina proxy
 ```
+
+`menina-core` and `menina-edge` are optional standalone binaries for the
+controller and proxy roles. The canonical entrypoint remains `menina serve` and
+`menina proxy`. The HTTP API listener is disabled by default, uses the control
+token, and should bind to loopback until identity and scopes land.
 
 ### Deploy pipeline
 

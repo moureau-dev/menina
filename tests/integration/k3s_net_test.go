@@ -2,7 +2,7 @@
 
 // This test validates the host(Menina proxy netns) -> k8s ClusterIP path.
 // It MUST run inside the k3s node's network namespace (i.e. on the host where
-// k3s and Menina's proxy both run), because that is the supported deployment.
+// k3s and Menina's proxy both run), because that is the supported k8s.
 // Run it via scripts/k3s-net-e2e.sh which executes it inside the k3s node.
 package integration
 
@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/moureau-dev/menina/internal/deployment"
-	"github.com/moureau-dev/menina/internal/proxy"
+	"github.com/moureau-dev/menina/internal/core/cluster"
+	"github.com/moureau-dev/menina/internal/edge"
 )
 
 func TestHostToClusterIPEndToEnd(t *testing.T) {
@@ -29,7 +29,7 @@ func TestHostToClusterIPEndToEnd(t *testing.T) {
 	defer cancel()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	cluster, err := deployment.NewKubernetesCluster(os.Getenv("KUBECONFIG"))
+	cluster, err := k8s.NewKubernetesCluster(os.Getenv("KUBECONFIG"))
 	if err != nil {
 		t.Fatalf("kubeconfig: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestHostToClusterIPEndToEnd(t *testing.T) {
 	if err := cluster.EnsureNamespace(ctx, ns); err != nil {
 		t.Fatal(err)
 	}
-	w := deployment.Workload{
+	w := k8s.Workload{
 		Project: "e2e", Environment: "test", App: "web", Name: "web", Namespace: ns,
 		Image: "nginx:alpine", Port: 80, ContainerPort: 80, Replicas: 1, Type: "service",
 	}
@@ -51,7 +51,7 @@ func TestHostToClusterIPEndToEnd(t *testing.T) {
 	if err := cluster.ApplyWorkload(ctx, w); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := deployment.WaitForRollout(ctx, cluster, ns, "web", deployment.RolloutOptions{Timeout: 3 * time.Minute}); err != nil {
+	if _, err := k8s.WaitForRollout(ctx, cluster, ns, "web", k8s.RolloutOptions{Timeout: 3 * time.Minute}); err != nil {
 		t.Fatalf("initial rollout: %v", err)
 	}
 
@@ -61,13 +61,13 @@ func TestHostToClusterIPEndToEnd(t *testing.T) {
 	}
 	t.Logf("web ClusterIP = %s", ip)
 
-	server, err := proxy.NewServer(proxy.Options{Log: log})
+	server, err := edge.NewServer(edge.Options{Log: log})
 	if err != nil {
 		t.Fatal(err)
 	}
 	routeHost := "e2e.local"
 	backend := fmt.Sprintf("%s:80", ip)
-	if err := server.UpdateSnapshot(&proxy.Snapshot{Version: 1, Routes: []proxy.Route{{Host: routeHost, PathPrefix: "/", Backend: backend}}}); err != nil {
+	if err := server.UpdateSnapshot(&edge.Snapshot{Version: 1, Routes: []edge.Route{{Host: routeHost, PathPrefix: "/", Backend: backend}}}); err != nil {
 		t.Fatal(err)
 	}
 	front := httptest.NewServer(server.Handler())
@@ -82,7 +82,7 @@ func TestHostToClusterIPEndToEnd(t *testing.T) {
 	if err := cluster.RestartWorkload(ctx, ns, "web"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := deployment.WaitForRollout(ctx, cluster, ns, "web", deployment.RolloutOptions{Timeout: 3 * time.Minute}); err != nil {
+	if _, err := k8s.WaitForRollout(ctx, cluster, ns, "web", k8s.RolloutOptions{Timeout: 3 * time.Minute}); err != nil {
 		t.Fatalf("rollout after restart: %v", err)
 	}
 	ip2, _ := cluster.ServiceClusterIP(ctx, ns, "web")

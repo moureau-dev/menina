@@ -26,7 +26,7 @@ client ──TLS──▶ menina proxy ──http──▶ Kubernetes Service (C
 1. **The control plane builds a snapshot.** On every reconciliation (and config
    change) `menina serve` resolves projects/environments/apps, looks up each
    exposed app's Service `ClusterIP`, and produces a `proxy.Snapshot` (version,
-   timestamp, list of routes). See `internal/platform/reconciliation.go`.
+   timestamp, list of routes). See `internal/core/controller/reconciliation.go`.
 2. **The proxy subscribes** over the control socket (initial `Snapshot()` then a
    `Stream()`), reconnecting with backoff if the control plane restarts
    (`internal/cli/proxy.go`).
@@ -34,7 +34,7 @@ client ──TLS──▶ menina proxy ──http──▶ Kubernetes Service (C
    rejects a snapshot with an empty host, an unparsable backend, or a duplicate
    `host+pathPrefix`, then stores it behind an `atomic.Pointer`. In-flight
    requests keep using the old table; new requests see the new one immediately.
-   There is no request-path lock (`internal/proxy/routes.go`).
+   There is no request-path lock (`internal/edge/routes.go`).
 4. **Lookup** lowercases the host, strips any port, matches the host bucket, and
    picks the **longest** matching `pathPrefix` (routes are sorted by prefix
    length descending). Hosts are matched exactly — there are no wildcard hosts.
@@ -327,5 +327,5 @@ route; the media path uses the UDP port you expose.
 
 The proxy package has focused tests for routing table validation/lookup
 (longest prefix, duplicate rejection, atomic swap) and TLS/manual cert handling
-(`internal/proxy/*_test.go`), plus the shared streaming/gzip/forwarded-header
+(`internal/edge/*_test.go`), plus the shared streaming/gzip/forwarded-header
 behavior exercised through `httptest`.

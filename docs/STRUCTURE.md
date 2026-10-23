@@ -1,33 +1,43 @@
 # Repository structure
 
-Menina has one Linux host binary, one cross-platform client binary, and shared
-packages that must stay portable.
+Menina has a host CLI binary, a cross-platform client binary, optional role
+binaries, and shared packages that must stay portable.
 
 ```text
 cmd/
-  menina/                 host CLI entry point
+  menina/                 host CLI and provisioner entry point
   menina-client/          standalone cross-platform client entry point
+  menina-core/            optional controller and workers entry point
+  menina-edge/            optional edge proxy entry point
 
 internal/
-  backup/                 portable backup/restore (DB, config, revisions, opt-in volumes/images)
-  cli/                    host CLI commands, prompts, TUI, SSH/TUI menus
-  clientcli/              shared client commands (init/validate/apply/build/push, secrets, jobs, config, meta)
-  clierr/                 classified CLI errors and stable exit codes
-  config/                 desired-state model, loader, resolver, validation, revisions, lock, state token
-  database/               SQLite jobs, releases, routes, events, observed state
-    migrations/           ordered SQLite migrations
-  deployment/             Kubernetes workloads, PVCs, services, logs, rollout
-  infrastructure/         k3s, systemd, storage, firewall, users, cloudflare
-  kube/                   minimal Kubernetes API client
-  manifest/               .menina.yml parsing, interpolation, rendering, plans, schema contract tests
-  notify/                 deploy webhook delivery (HMAC, retries, delivery id)
-  platform/               control plane, job workers, reconciler, control socket
-  proxy/                  HTTP/L4 proxy, routing snapshots, TLS
-  registry/               Zot client, digest resolution, push events, bundled resolver
-  release/                portable per-app release states and recovery policy
-  schema/                 embedded versioned manifest JSON Schema
-  secrets/                secret refs, file writing, resolution
-  tui/                    Bubble Tea widgets and badges
+  api/                    command contract, client, routing subscription
+    errors/               classified errors and stable exit codes
+    transport/            unix, http, and ssh adapters
+  cli/
+    host/                 host commands, prompts, TUI menus
+    client/               shared client commands (init/validate/apply/build/push, secrets, jobs, config, meta)
+    tui/                  Bubble Tea widgets and badges
+    backup/               portable backup/restore commands and helpers
+  contract/
+    manifest/             .menina.yml parsing, interpolation, rendering, plans
+    schema/               embedded versioned manifest JSON Schema
+  core/
+    cluster/              Kubernetes workloads, PVCs, services, logs, rollout
+      kube/               minimal Kubernetes API client
+    config/               desired-state model, loader, resolver, validation, revisions, lock, state token
+    controller/           control plane, reconciler, HTTP command handlers
+    notify/               deploy webhook delivery (HMAC, retries, delivery id)
+    registry/             Zot client, digest resolution, push events, bundled resolver
+    release/              per-app release states and recovery policy
+    secrets/              secret refs, file writing, resolution
+    state/
+      sqlite/             SQLite jobs, releases, routes, events, observed state
+        migrations/       ordered SQLite migrations
+    worker/               deploy job execution, rollout, verification
+  edge/                   HTTP/L4 proxy, routing snapshots, TLS
+  provision/           k3s, systemd, storage, firewall, users, cloudflare
+  telemetry/              metric names and shared instrumentation constants
   version/                build version metadata
 
 deploy/                   systemd units and Zot configuration/assets
@@ -40,16 +50,21 @@ website/                  marketing site and docs sync/deploy source
 
 ## Package conventions
 
-- Go packages live under `internal/<area>/`; keep host-only dependencies out of
-  `clientcli`, `manifest`, and `schema`.
+- Go packages live under `internal/`; keep host-only dependencies out of
+  `cli/client`, `contract/manifest`, and `contract/schema`.
 - Tests are co-located as `*_test.go`.
-- SQLite migrations are ordered files under `internal/database/migrations/`.
-- Host commands live in `internal/cli`; shared client commands live in
-  `internal/clientcli`. Do not duplicate command logic between them.
-- Manifest translation belongs in `internal/manifest`, not in CLI handlers.
-- The canonical manifest schema is `internal/schema/menina.schema.json`; the
-  website publishes it at `/schema/v1/menina.schema.json` with an unversioned
-  alias.
+- SQLite migrations are ordered files under
+  `internal/core/state/sqlite/migrations/`. Their filenames are the recorded
+  schema versions and must not be renamed or renumbered.
+- Host commands live in `internal/cli/host`; shared client commands live in
+  `internal/cli/client`. Do not duplicate command logic between them.
+- Manifest translation belongs in `internal/contract/manifest`, not in CLI
+  handlers.
+- The canonical manifest schema is
+  `internal/contract/schema/menina.schema.json`; the website publishes it at
+  `/schema/v1/menina.schema.json` with an unversioned alias.
+- The API is the mutation path for running state. The CLI uses it; the API
+  handlers call controller and worker operations.
 - Top-level docs (`README.md`, `CHANGELOG.md`, `ROADMAP.md`, `llms.txt`,
   `AGENTS.md`) stay at the repository root.
 

@@ -13,19 +13,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/moureau-dev/menina/internal/platform"
-	"github.com/moureau-dev/menina/internal/proxy"
+	"github.com/moureau-dev/menina/internal/api"
+	"github.com/moureau-dev/menina/internal/api/transport/unix"
+	"github.com/moureau-dev/menina/internal/edge"
 )
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func waitDial(t *testing.T, socket, tokenPath string) *platform.ControlClient {
+func waitDial(t *testing.T, socket, tokenPath string) *api.Client {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		client, err := platform.DialControl(socket, tokenPath)
+		client, err := api.Dial(socket, tokenPath)
 		if err == nil {
 			return client
 		}
@@ -43,14 +44,14 @@ func TestControlIPCDeliversRoutingSnapshotToProxy(t *testing.T) {
 
 	socket := filepath.Join(t.TempDir(), "control.sock")
 	tokenPath := filepath.Join(t.TempDir(), "control.token")
-	token, err := platform.EnsureToken(tokenPath)
+	token, err := api.EnsureToken(tokenPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	snapshot := &proxy.Snapshot{
+	snapshot := &edge.Snapshot{
 		Version: 42,
-		Routes: []proxy.Route{{
+		Routes: []edge.Route{{
 			Host: "example.com", PathPrefix: "/",
 			Backend: strings.TrimPrefix(backend.URL, "http://"),
 			Service: "web", Namespace: "menina-apps",
@@ -64,7 +65,7 @@ func TestControlIPCDeliversRoutingSnapshotToProxy(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	server, err := platform.NewControlServer(socket, token, mux)
+	server, err := unix.NewServer(socket, token, mux)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +82,7 @@ func TestControlIPCDeliversRoutingSnapshotToProxy(t *testing.T) {
 		t.Fatalf("snapshot = %+v", got)
 	}
 
-	proxyServer, err := proxy.NewServer(proxy.Options{Log: testLogger()})
+	proxyServer, err := edge.NewServer(edge.Options{Log: testLogger()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,13 +111,13 @@ func TestControlIPCDeliversRoutingSnapshotToProxy(t *testing.T) {
 func TestControlRejectsUnauthorizedClient(t *testing.T) {
 	socket := filepath.Join(t.TempDir(), "control.sock")
 	tokenPath := filepath.Join(t.TempDir(), "control.token")
-	token, err := platform.EnsureToken(tokenPath)
+	token, err := api.EnsureToken(tokenPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	server, _ := platform.NewControlServer(socket, token, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server, _ := unix.NewServer(socket, token, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "secret")
 	}))
 	if err := server.Start(ctx); err != nil {

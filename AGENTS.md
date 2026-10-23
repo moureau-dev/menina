@@ -37,7 +37,7 @@ After any significant change, check these files need updating:
 - `docs/*.md` — CLI, configuration, proxy, registry, operations, client CLI.
 - `docs/STRUCTURE.md` — update when adding, removing, or moving packages,
   top-level directories, or major files.
-- `examples/.menina.example.yml`, `internal/schema/menina.schema.json`, and the
+- `examples/.menina.example.yml`, `internal/contract/schema/menina.schema.json`, and the
   `menina init` template when manifest fields change. Keep parser, schema,
   example, and contract tests in sync.
 - `scripts/install*.sh` / `.ps1` when install paths, asset names, or PATH
@@ -50,7 +50,7 @@ tests locally if code or schema behavior changed.
 
 ### Website deploy
 
-Changes to `docs/`, `llms.txt`, `internal/schema/menina.schema.json`, or the
+Changes to `docs/`, `llms.txt`, `internal/contract/schema/menina.schema.json`, or the
 installer scripts are served by the website. After changing them:
 
 ```bash
@@ -64,8 +64,8 @@ The sync step copies docs, rewrites links to absolute URLs, and publishes the sc
 
 - Go 1.26, Cobra CLI, YAML via `gopkg.in/yaml.v3`.
 - The host binary is Linux-only. The standalone client must stay cross-platform
-  (Linux, macOS, Windows). Keep host-only packages out of `internal/clientcli`,
-  `internal/manifest`, and `internal/schema`.
+  (Linux, macOS, Windows). Keep host-only packages out of `internal/cli/client`,
+  `internal/contract/manifest`, and `internal/contract/schema`.
 - Desired state is YAML under `/etc/menina`; operational state is SQLite.
 - The manifest is a front-end to the same config model. Do not invent runtime
   semantics that the resolver or reconciler do not understand.

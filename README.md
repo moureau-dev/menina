@@ -45,13 +45,17 @@ for orchestration and the image registry.
 | Deployment engine | Uses the Kubernetes API to manage workloads |
 | k3s + Zot | Container orchestration, image registry, application runtime |
 
-One executable, distinct modes:
+One host executable, optional role binaries, distinct modes:
 
 ```bash
 menina app deploy api --project my-platform --environment production
 menina serve   # control plane: watcher + registry listener + reconciliation
 menina proxy   # reverse proxy (separate process, independent restarts)
 ```
+
+`menina-core` and `menina-edge` provide the same controller and proxy roles as
+standalone binaries. The canonical install still uses `menina serve` and
+`menina proxy`.
 
 ## Install
 

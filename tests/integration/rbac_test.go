@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/moureau-dev/menina/internal/deployment"
-	"github.com/moureau-dev/menina/internal/kube"
+	"github.com/moureau-dev/menina/internal/core/cluster"
+	"github.com/moureau-dev/menina/internal/core/cluster/kube"
 )
 
 func TestProvisionedServiceIdentityIsScoped(t *testing.T) {
@@ -19,7 +19,7 @@ func TestProvisionedServiceIdentityIsScoped(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	data, err := deployment.ProvisionServiceAccess(ctx, os.Getenv("KUBECONFIG"), "menina-system", "menina")
+	data, err := k8s.ProvisionServiceAccess(ctx, os.Getenv("KUBECONFIG"), "menina-system", "menina")
 	if err != nil {
 		t.Fatalf("ProvisionServiceAccess: %v", err)
 	}
