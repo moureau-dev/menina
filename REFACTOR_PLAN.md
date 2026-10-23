@@ -188,8 +188,8 @@ and "first invent the seam, then implement the feature."
 
 Landed status: only items 30 and 44 have their incidental reduction reflected
 in `ROADMAP.md` so far, both from 8 to 7. Items 17, 18a, and 38b keep their
-scores until the command handlers move behind API dispatch middleware. The
-policy, schema, and query work is unchanged.
+scores until item 46 moves the command handlers behind the API dispatcher. The
+implementation gaps below were added to the roadmap as items 46-49.
 
 How to read the difficulty numbers:
 
@@ -441,20 +441,22 @@ The structural refactor is in place, but these plan items are not complete:
 - The API still has no dispatcher. HTTP handlers live in `controller`, and
   `api` owns only the client, errors, routing subscription, and transports.
   Server-derived actor, scope, audit, idempotency, and versioned request types
-  are not implemented.
+  are not implemented. Roadmap item 46.
 - `apply` still writes desired-state YAML directly on the host, and
   `config revisions` / `config rollback` still operate on local files. The API
-  is not yet the only mutation path for desired state.
+  is not yet the only mutation path for desired state. Roadmap item 47.
 - `internal/core/state` has no store contract or contract test suite. There is
-  no fake store, and `internal/testutil` was not created.
-- The pre-refactor database migration test was not added.
+  no fake store, `internal/testutil` was not created, and the pre-refactor
+  database migration test was not added. Roadmap item 48.
 - The SSH client still execs the host CLI. `menina api-ssh` exists, but the
   client does not use it, and SSH key to actor mapping is not implemented.
+  Covered by item 38a.
 - `internal/cli/host/serve.go` imports `core/controller`, violating the
   acceptance criterion as written. Only `serve` does this.
 - Transport tests are adapter-specific. There is no shared request matrix, and
-  the optional stdio adapter was not added.
+  the optional stdio adapter was not added. Covered by item 46.
 - `telemetry` defines metric names but not health or edge request metrics.
+  Covered by item 49.
 - `docs/STRUCTURE.md` was updated after the moves, not in the same change.
 
 ## Open questions
