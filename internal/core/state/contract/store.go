@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/moureau-dev/menina/internal/core/identity"
 	"github.com/moureau-dev/menina/internal/core/release"
 	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 )
@@ -14,11 +15,13 @@ import (
 // Store is the operational state used by the control plane.
 type Store interface {
 	ActiveRelease(ctx context.Context, project, environment, app string) (sqlite.Release, bool, error)
+	AddProfileKey(ctx context.Context, k identity.Key) (string, error)
 	CancelJob(ctx context.Context, id string) (bool, error)
 	ClaimJob(ctx context.Context, id string) (bool, error)
 	CompleteJob(ctx context.Context, id string, digest string) error
 	CompleteWebhookDelivery(ctx context.Context, id, status string, attempts, responseCode int, lastError string) error
 	CountJobsByStatus(ctx context.Context) (map[string]int, error)
+	CreateProfile(ctx context.Context, p identity.Profile) (string, error)
 	CreateRelease(ctx context.Context, r sqlite.Release) (string, error)
 	DeleteObserved(ctx context.Context, project, environment, app string) error
 	FailJob(ctx context.Context, id string, errmsg string) (bool, error)
@@ -34,6 +37,9 @@ type Store interface {
 	Observed(ctx context.Context) ([]sqlite.Observed, error)
 	PendingEvents(ctx context.Context, limit int) ([]sqlite.Event, error)
 	PendingJobs(ctx context.Context, limit int) ([]sqlite.Job, error)
+	ProfileByID(ctx context.Context, id string) (identity.Profile, bool, error)
+	ProfileKeys(ctx context.Context, profileID string) ([]identity.Key, error)
+	Profiles(ctx context.Context) ([]identity.Profile, error)
 	RecordWebhookDelivery(ctx context.Context, d sqlite.WebhookDelivery) (string, error)
 	ReleaseByID(ctx context.Context, id string) (sqlite.Release, bool, error)
 	Releases(ctx context.Context, project, environment, app string) ([]sqlite.Release, error)
@@ -41,6 +47,7 @@ type Store interface {
 	ReleaseStats(ctx context.Context) ([]sqlite.ReleaseStat, error)
 	ReplaceRoutes(ctx context.Context, routes []sqlite.Route) error
 	RequeueProcessingJobs(ctx context.Context) (int64, error)
+	ResolveKey(ctx context.Context, fingerprint string) (identity.Profile, identity.Key, bool, error)
 	Routes(ctx context.Context) ([]sqlite.Route, error)
 	SetJobRelease(ctx context.Context, id, releaseID string) error
 	SetMeta(ctx context.Context, key, value string) error
@@ -48,6 +55,7 @@ type Store interface {
 	SupersedePendingJobs(ctx context.Context, project, environment, app, keepID string) error
 	SyncObservedSoftDeletes(ctx context.Context, targets []sqlite.SoftDeleteTarget) error
 	TransitionRelease(ctx context.Context, id string, state release.State, message, actor string) error
+	UpdateProfile(ctx context.Context, p identity.Profile) error
 	UpdateReleaseFields(ctx context.Context, id, verification, migration, recovery, secretHash string) error
 	UpsertObserved(ctx context.Context, o sqlite.Observed) error
 	WebhookDeliveries(ctx context.Context, status string, limit int) ([]sqlite.WebhookDelivery, error)

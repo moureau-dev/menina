@@ -2,6 +2,7 @@ package sqlite_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -17,8 +18,20 @@ func TestMigrateExistingDatabasePreservesData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := before.Migrate(ctx); err != nil {
+	if _, err := before.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`); err != nil {
 		t.Fatal(err)
+	}
+	for _, version := range []string{"0001_init", "0002_job_backoff", "0003_fix_deleted_at", "0004_releases_and_pinning", "0005_release_backfill"} {
+		data, err := os.ReadFile(filepath.Join("migrations", version+".sql"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := before.ExecContext(ctx, string(data)); err != nil {
+			t.Fatalf("apply %s: %v", version, err)
+		}
+		if _, err := before.ExecContext(ctx, `INSERT INTO schema_migrations (version, applied_at) VALUES (?, unixepoch())`, version); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := before.IngestRegistryEvent(ctx, &sqlite.Event{DedupKey: "existing-event", Repository: "p/api", Tag: "production"}, []sqlite.Job{{
 		DedupKey: "existing-job", Kind: "manual", Project: "p", Environment: "production", App: "api", Repository: "registry.example.com/p/api", Tag: "production",
@@ -59,7 +72,7 @@ func TestMigrateExistingDatabasePreservesData(t *testing.T) {
 		}
 		got = append(got, version)
 	}
-	want := []string{"0001_init", "0002_job_backoff", "0003_fix_deleted_at", "0004_releases_and_pinning", "0005_release_backfill"}
+	want := []string{"0001_init", "0002_job_backoff", "0003_fix_deleted_at", "0004_releases_and_pinning", "0005_release_backfill", "0006_identity"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("migrations = %v, want %v", got, want)
 	}

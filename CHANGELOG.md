@@ -15,6 +15,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `config rollback` execute through the API with server-side base-state and
   file-hash revalidation, falling back to local files when the control plane is
   down.
+- Identity profile model and storage, with scopes, attached keys, expiry,
+  status, last-seen tracking, and server-side key resolution. Adds migration
+  `0006_identity`.
 
 ## [0.1.2] - 2026-10-23
 

@@ -27,6 +27,7 @@ internal/
       kube/               minimal Kubernetes API client
     config/               desired-state model, loader, resolver, validation, revisions, lock, state token
       plan/               reviewed apply plans and server-side plan execution
+    identity/             profiles, scopes, keys, expiry, status, last seen
     controller/           control plane, reconciler, HTTP command handlers
     notify/               deploy webhook delivery (HMAC, retries, delivery id)
     registry/             Zot client, digest resolution, push events, bundled resolver

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moureau-dev/menina/internal/core/identity"
 	"github.com/moureau-dev/menina/internal/core/release"
 	"github.com/moureau-dev/menina/internal/core/state/contract"
 	"github.com/moureau-dev/menina/internal/core/state/sqlite"
@@ -82,6 +83,40 @@ func Run(t *testing.T, newStore NewStore) {
 		got, ok, err := store.WebhookDeliveryByID(ctx, id)
 		if err != nil || !ok || got.Status != "delivered" || got.ResponseCode != 200 {
 			t.Fatalf("delivery=%+v ok=%v err=%v", got, ok, err)
+		}
+	})
+
+	t.Run("identity profiles and keys", func(t *testing.T) {
+		store := newStore(t)
+		id, err := store.CreateProfile(ctx, identity.Profile{Name: "operator", Scopes: []string{"deploy", "read"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		profile, ok, err := store.ProfileByID(ctx, id)
+		if err != nil || !ok || profile.Name != "operator" || len(profile.Scopes) != 2 {
+			t.Fatalf("profile=%+v ok=%v err=%v", profile, ok, err)
+		}
+		keyID, err := store.AddProfileKey(ctx, identity.Key{ProfileID: id, Fingerprint: "SHA256:test", Comment: "laptop"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys, err := store.ProfileKeys(ctx, id)
+		if err != nil || len(keys) != 1 || keys[0].ID != keyID {
+			t.Fatalf("keys=%+v err=%v", keys, err)
+		}
+		resolved, key, ok, err := store.ResolveKey(ctx, "SHA256:test")
+		if err != nil || !ok || resolved.ID != id || key.ID != keyID || resolved.LastSeenAt.IsZero() {
+			t.Fatalf("resolved=%+v key=%+v ok=%v err=%v", resolved, key, ok, err)
+		}
+		if _, _, ok, err := store.ResolveKey(ctx, "SHA256:missing"); err != nil || ok {
+			t.Fatalf("unknown key ok=%v err=%v", ok, err)
+		}
+		profile.Status = identity.StatusDisabled
+		if err := store.UpdateProfile(ctx, profile); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, ok, err := store.ResolveKey(ctx, "SHA256:test"); err != nil || ok {
+			t.Fatalf("disabled profile resolved ok=%v err=%v", ok, err)
 		}
 	})
 
