@@ -140,7 +140,8 @@ the host's registry event listener.
   `--from-plan`. It requires `source.repo` and never prunes another repo’s apps.
 - `--if-state-token <token>` is compare-and-swap (`--if-revision` is an alias).
 - `--verify` re-reads written config and confirms apps/overrides.
-- `source.repo` is an ownership hint, not authorization. `source.revision` is
+- `source.repo` is an ownership hint, not authorization, but apply/prune plans
+  are checked against existing app ownership server-side. `source.revision` is
   informational.
 - Every apply records a revision. `menina config revisions` /
   `config rollback <id> --yes` restore YAML, not deployed images; the client can
@@ -273,6 +274,9 @@ menina job list|watch|cancel
 menina status|routes|doctor
 menina registry status|credential
 menina notify list|test|deliveries|replay
+menina identity profile|key|enroll|bootstrap
+menina audit list
+menina whoami
 menina backup|restore|upgrade
 menina serve [--api-listen HOST:PORT]
 menina proxy
@@ -281,7 +285,34 @@ menina proxy
 `menina-core` and `menina-edge` are optional standalone binaries for the
 controller and proxy roles. The canonical entrypoint remains `menina serve` and
 `menina proxy`. The HTTP API listener is disabled by default, uses the control
-token, and should bind to loopback until HTTP identity is added; it currently acts as local admin.
+token, and should bind to loopback until HTTP identity is added; it currently
+acts as local admin.
+
+### Identity, scopes, and audit
+
+- Profiles, keys, enrollment tokens, and audit events live in SQLite. Identity
+  administration is local to the host and root/administrative.
+- A client never asserts its identity. SSH keys resolve to profiles, and the host
+  injects the actor. Local root access remains administrative.
+- Scopes are `admin`, `read`, `deploy`, `secrets`, and `registry`. They can be
+  global, `project:<p>:<scope>`, `project:<p>/<env>:<scope>`, or
+  `project:<p>/<env>/<app>:<scope>`.
+- `menina identity bootstrap <profile>` creates a profile and one-time
+  enrollment token and prints a client `menina enroll ...` command. Tokens are
+  hashed at rest, short-lived, and single-use.
+- Forced commands use `menina ssh-forced` with an allowlisted command set. It
+  requires `MENINA_KEY_FINGERPRINT` from authorized_keys and, for OpenSSH,
+  `PermitUserEnvironment yes`. See
+  [`docs/IDENTITY.md`](https://menina.moureau.dev/docs/IDENTITY.md).
+- `menina audit list` queries actor, key, action, target, project/environment/app,
+  outcome, and timestamps. Denied authorization attempts are recorded. Secret
+  values are never recorded.
+- `menina whoami` reports the server-derived profile and scopes, or local admin.
+- The versioned command envelope is `POST /v1/commands`; also
+  `/config/apply`, `/config/revisions`, `/config/rollback`, and `/audit`.
+  Actor headers are trusted only over the local socket.
+- Client contexts: `menina context set|list|use|delete`, `--profile` /
+  `MENINA_PROFILE`, and optional pinned `host-key`.
 
 ### Deploy pipeline
 
@@ -304,10 +335,11 @@ without a TTY must not prompt. Bare `menina` opens the TUI on a TTY.
 
 ## Not supported (today)
 
-No HTTP/3/QUIC, ACME wildcards, built-in auth/RBAC/SSO, rate limiting/WAF,
-multi-node k3s or HA control plane, replicated/RWX storage by default, canary or
-blue-green deploys, user-defined cron jobs, a general orchestration DAG, or
-per-user registry credentials (one shared push/pull credential). One-off Jobs
+No HTTP/3/QUIC, ACME wildcards, SSO/OIDC, multi-team RBAC beyond scopes,
+per-team quotas, rate limiting/WAF, multi-node k3s or HA control plane,
+replicated/RWX storage by default, canary or blue-green deploys, user-defined
+cron jobs, a general orchestration DAG, or per-user registry credentials (one
+shared push/pull credential). One-off Jobs
 exist internally for hooks and verification smoke tests. Automatic recovery is
 per-app and policy-driven; it is not a project-wide transaction.
 
