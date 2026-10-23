@@ -307,6 +307,13 @@ Items 1-15 (Tier 1) landed in the unreleased line, including the previously
 hidden one-off Job primitive used by migration hooks and verification smoke
 tests. The table remains as a dependency reference for the higher tiers.
 
+The package and role refactor on `refactor/rearchitecture` provides the API
+dispatch boundary, separate edge and core binaries, and the state interface
+described in `REFACTOR_PLAN.md`. It does not change the difficulty scores below,
+which remain end-to-end estimates. It removes incidental integration work for
+items 17, 18a, 38b, 44, and 30; the domain and operations work for those items
+is unchanged.
+
 ## Explicit non-goals for the current line
 
 - Pretending single-node SQLite/local-path is HA.
