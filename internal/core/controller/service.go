@@ -402,6 +402,9 @@ func (s *Service) controlMux() http.Handler {
 	mux.HandleFunc("/promote", s.handlePromote)
 	mux.HandleFunc("/webhook-deliveries", s.handleWebhookDeliveries)
 	mux.HandleFunc("/webhook-replay", s.handleWebhookReplay)
+	mux.HandleFunc("/config/apply", s.handleConfigApply)
+	mux.HandleFunc("/config/revisions", s.handleConfigRevisions)
+	mux.HandleFunc("/config/rollback", s.handleConfigRollback)
 	return mux
 }
 

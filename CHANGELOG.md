@@ -11,6 +11,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   controller tests, and an existing-database migration test.
 - Versioned API command dispatcher with actor context, in-memory idempotency,
   shared transport parity tests, and a stdio adapter.
+- API-first desired-state mutations. `apply`, `config revisions`, and
+  `config rollback` execute through the API with server-side base-state and
+  file-hash revalidation, falling back to local files when the control plane is
+  down.
 
 ## [0.1.2] - 2026-10-23
 

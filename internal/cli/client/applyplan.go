@@ -1,31 +1,28 @@
 package client
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/moureau-dev/menina/internal/api"
 	"github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/contract/manifest"
 	"github.com/moureau-dev/menina/internal/core/config"
+	configplan "github.com/moureau-dev/menina/internal/core/config/plan"
 	"github.com/moureau-dev/menina/internal/version"
 )
 
-type applyChange struct {
-	Path   string `json:"path"`
-	Action string `json:"action"`
-	Diff   string `json:"diff,omitempty"`
-}
+type applyChange = configplan.Change
+type planWrite = configplan.Write
+type planDelete = configplan.Delete
+type applyPlan = configplan.Plan
 
 func planApply(configDir string, r *manifest.Rendered, deletions []string) ([]applyChange, error) {
 	files, err := r.Plan(configDir)
@@ -213,45 +210,11 @@ func verifyApply(configDir string, r *manifest.Rendered) error {
 	return nil
 }
 
-type planWrite struct {
-	Path          string `json:"path"`
-	Content       []byte `json:"content"`
-	Before        []byte `json:"before,omitempty"`
-	BeforeHash    string `json:"beforeHash"`
-	BeforeExisted bool   `json:"beforeExisted"`
-}
-
-type planDelete struct {
-	Path   string `json:"path"`
-	Before []byte `json:"before,omitempty"`
-	Hash   string `json:"hash"`
-}
-
-type applyPlan struct {
-	ID          string       `json:"id"`
-	Project     string       `json:"project"`
-	Environment string       `json:"environment"`
-	BaseState   string       `json:"baseState"`
-	Schema      int          `json:"schemaVersion"`
-	ToolVersion string       `json:"toolVersion"`
-	CreatedAt   time.Time    `json:"createdAt"`
-	Writes      []planWrite  `json:"writes"`
-	Deletes     []planDelete `json:"deletes"`
-}
-
 func currentStateToken(configDir, project, environment string) (string, error) {
-	cfg, err := config.LoadPlatform(configDir)
-	if err != nil {
-		return "", err
-	}
-	projects, err := config.LoadAllProjects(config.ProjectsDir(configDir))
-	if err != nil {
-		return "", err
-	}
-	return config.StateToken(cfg, projects, project, environment)
+	return configplan.CurrentStateToken(configDir, project, environment)
 }
 
-func savePlan(configDir string, r *manifest.Rendered, deletions []string) (*applyPlan, error) {
+func savePlan(configDir string, r *manifest.Rendered, deletions []string) (*configplan.Plan, error) {
 	files, err := r.Plan(configDir)
 	if err != nil {
 		return nil, err
@@ -260,19 +223,20 @@ func savePlan(configDir string, r *manifest.Rendered, deletions []string) (*appl
 	if err != nil {
 		return nil, err
 	}
-	plan := &applyPlan{
+	p := &configplan.Plan{
 		Project: r.Project.Name, Environment: r.Environment.Name, BaseState: base,
 		Schema: manifest.CurrentVersion, ToolVersion: version.Get().Version, CreatedAt: time.Now().UTC(),
+		SourceRepo: r.File.Source.Repo, SourceRevision: r.File.Source.Revision,
 	}
 	for _, file := range files {
-		w := planWrite{Path: file.Path, Content: file.Content}
+		w := configplan.Write{Path: file.Path, Content: file.Content}
 		if before, err := os.ReadFile(file.Path); err == nil {
 			w.Before, w.BeforeExisted = before, true
-			w.BeforeHash = contentHash(before)
+			w.BeforeHash = configplan.ContentHash(before)
 		} else if !os.IsNotExist(err) {
 			return nil, err
 		}
-		plan.Writes = append(plan.Writes, w)
+		p.Writes = append(p.Writes, w)
 	}
 	for _, path := range deletions {
 		before, err := os.ReadFile(path)
@@ -282,127 +246,17 @@ func savePlan(configDir string, r *manifest.Rendered, deletions []string) (*appl
 		if err != nil {
 			return nil, err
 		}
-		plan.Deletes = append(plan.Deletes, planDelete{Path: path, Before: before, Hash: contentHash(before)})
+		p.Deletes = append(p.Deletes, configplan.Delete{Path: path, Before: before, Hash: configplan.ContentHash(before)})
 	}
-	plan.ID = planHash(plan)
-	dir := filepath.Join(configDir, ".plans")
-	if err := os.MkdirAll(dir, 0o770|os.ModeSetgid); err != nil {
+	p.ID = configplan.Hash(p)
+	if err := configplan.Save(configDir, p); err != nil {
 		return nil, err
 	}
-	data, err := json.Marshal(plan)
-	if err != nil {
-		return nil, err
-	}
-	path := filepath.Join(dir, plan.ID+".json")
-	if err := os.WriteFile(path, data, 0o640); err != nil {
-		return nil, err
-	}
-	prunePlanFiles(dir)
-	return plan, nil
+	return p, nil
 }
 
-func loadPlan(configDir, id string) (*applyPlan, error) {
-	if id == "" || strings.ContainsAny(id, `/\`) {
-		return nil, fmt.Errorf("invalid plan id %q", id)
-	}
-	data, err := os.ReadFile(filepath.Join(configDir, ".plans", id+".json"))
-	if err != nil {
-		return nil, err
-	}
-	var plan applyPlan
-	if err := json.Unmarshal(data, &plan); err != nil {
-		return nil, err
-	}
-	return &plan, nil
-}
-
-func planHash(plan *applyPlan) string {
-	type hashable struct {
-		Project     string       `json:"project"`
-		Environment string       `json:"environment"`
-		BaseState   string       `json:"baseState"`
-		Schema      int          `json:"schemaVersion"`
-		ToolVersion string       `json:"toolVersion"`
-		Writes      []planWrite  `json:"writes"`
-		Deletes     []planDelete `json:"deletes"`
-	}
-	h := hashable{plan.Project, plan.Environment, plan.BaseState, plan.Schema, plan.ToolVersion, plan.Writes, plan.Deletes}
-	data, _ := json.Marshal(h)
-	return contentHash(data)
-}
-
-func contentHash(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
-func prunePlanFiles(dir string) {
-	entries, _ := os.ReadDir(dir)
-	var names []string
-	for _, e := range entries {
-		if !e.IsDir() && filepath.Ext(e.Name()) == ".json" {
-			names = append(names, e.Name())
-		}
-	}
-	if len(names) <= 50 {
-		return
-	}
-	sort.Strings(names)
-	for _, name := range names[:len(names)-50] {
-		_ = os.Remove(filepath.Join(dir, name))
-	}
-}
-
-func verifyPlanBase(configDir string, plan *applyPlan) error {
-	current, err := currentStateToken(configDir, plan.Project, plan.Environment)
-	if err != nil {
-		return err
-	}
-	if current != plan.BaseState {
-		return apierrors.New(apierrors.CodeConflict, "configuration changed since this plan was created", "run `apply --diff` again and review the new plan")
-	}
-	for _, w := range plan.Writes {
-		before, err := os.ReadFile(w.Path)
-		switch {
-		case err == nil && (contentHash(before) != w.BeforeHash || !w.BeforeExisted):
-			return apierrors.New(apierrors.CodeConflict, fmt.Sprintf("%s changed since the plan was created", w.Path), "run `apply --diff` again")
-		case os.IsNotExist(err) && w.BeforeExisted:
-			return apierrors.New(apierrors.CodeConflict, fmt.Sprintf("%s was removed since the plan was created", w.Path), "run `apply --diff` again")
-		case err != nil && !os.IsNotExist(err):
-			return err
-		}
-	}
-	for _, d := range plan.Deletes {
-		before, err := os.ReadFile(d.Path)
-		if os.IsNotExist(err) {
-			return apierrors.New(apierrors.CodeConflict, fmt.Sprintf("%s was already removed since the plan was created", d.Path), "run `apply --diff` again")
-		}
-		if err != nil {
-			return err
-		}
-		if contentHash(before) != d.Hash {
-			return apierrors.New(apierrors.CodeConflict, fmt.Sprintf("%s changed since the plan was created", d.Path), "run `apply --diff` again")
-		}
-	}
-	return nil
-}
-
-func planChanges(plan *applyPlan) []applyChange {
-	var changes []applyChange
-	for _, w := range plan.Writes {
-		action := "create"
-		if w.BeforeExisted {
-			action = "update"
-			if string(w.Before) == string(w.Content) || yamlEqual(w.Before, w.Content) {
-				continue
-			}
-		}
-		changes = append(changes, applyChange{Path: w.Path, Action: action, Diff: lineDiff(string(w.Before), string(w.Content))})
-	}
-	for _, d := range plan.Deletes {
-		changes = append(changes, applyChange{Path: d.Path, Action: "delete", Diff: lineDiff(string(d.Before), "")})
-	}
-	return changes
+func loadPlan(configDir, id string) (*configplan.Plan, error) {
+	return configplan.Load(configDir, id)
 }
 
 func applyFromPlan(cmd *cobra.Command, app *App, planID, ifRevision string, diff, dryRun, verify bool) error {
@@ -410,21 +264,10 @@ func applyFromPlan(cmd *cobra.Command, app *App, planID, ifRevision string, diff
 	if err != nil {
 		return apierrors.Wrap(apierrors.CodeNotFound, err)
 	}
-	lock, err := config.AcquireLock(app.configDir(), 10*time.Second)
-	if err != nil {
-		return apierrors.Wrap(apierrors.CodeConflict, err)
-	}
-	defer lock.Release()
-	if err := lock.Check(); err != nil {
-		return apierrors.Wrap(apierrors.CodeConflict, err)
-	}
-	if err := verifyPlanBase(app.configDir(), plan); err != nil {
-		return err
-	}
 	if ifRevision != "" && ifRevision != plan.BaseState {
 		return apierrors.New(apierrors.CodeConflict, "--if-revision does not match the plan base state", "regenerate the plan")
 	}
-	changes := planChanges(plan)
+	changes := configplan.Changes(plan)
 	if diff || dryRun {
 		if app.jsonOutput() {
 			return app.printJSON(map[string]any{
@@ -444,64 +287,43 @@ func applyFromPlan(cmd *cobra.Command, app *App, planID, ifRevision string, diff
 		}
 		return nil
 	}
-	paths := make([]string, 0, len(plan.Writes)+len(plan.Deletes))
-	for _, w := range plan.Writes {
-		paths = append(paths, w.Path)
-	}
-	for _, d := range plan.Deletes {
-		paths = append(paths, d.Path)
-	}
-	revision, err := config.SaveRevisionWithMeta(app.configDir(), config.RevisionMeta{
-		Project: plan.Project, Environment: plan.Environment, PlanID: plan.ID,
-	}, paths)
+	result, err := executePlan(cmd, app, plan, ifRevision, verify)
 	if err != nil {
 		return err
 	}
-	for _, w := range plan.Writes {
-		if err := os.MkdirAll(filepath.Dir(w.Path), 0o770|os.ModeSetgid); err != nil {
-			return err
-		}
-		if err := os.WriteFile(w.Path, w.Content, 0o640); err != nil {
-			return err
-		}
-		if err := os.Chmod(w.Path, 0o640); err != nil {
-			return err
-		}
-	}
-	for _, d := range plan.Deletes {
-		if err := os.Remove(d.Path); err != nil && !os.IsNotExist(err) {
-			return err
-		}
-	}
-	if verify {
-		for _, w := range plan.Writes {
-			if _, err := os.Stat(w.Path); err != nil {
-				return fmt.Errorf("verification failed: %s: %w", w.Path, err)
+	return printPlanResult(app, plan, result)
+}
+
+func executePlan(cmd *cobra.Command, app *App, plan *configplan.Plan, ifStateToken string, verify bool) (configplan.Result, error) {
+	if cfg, err := app.loadConfig(); err == nil {
+		if client, err := api.Dial(cfg.Platform.ControlSocket, cfg.Security.ControlTokenFile); err == nil {
+			result, err := client.ApplyPlan(cmd.Context(), *plan, ifStateToken, verify)
+			if err != nil {
+				return configplan.Result{}, err
 			}
-		}
-		for _, d := range plan.Deletes {
-			if _, err := os.Stat(d.Path); !os.IsNotExist(err) {
-				return fmt.Errorf("verification failed: %s still exists", d.Path)
-			}
+			return result, nil
 		}
 	}
-	newState, _ := currentStateToken(app.configDir(), plan.Project, plan.Environment)
+	return configplan.Apply(app.configDir(), plan, ifStateToken, verify, "cli")
+}
+
+func printPlanResult(app *App, plan *configplan.Plan, result configplan.Result) error {
 	if app.jsonOutput() {
 		return app.printJSON(map[string]any{
-			"project": plan.Project, "environment": plan.Environment, "applied": true,
-			"planId": plan.ID, "revision": revision, "stateToken": newState,
-			"baseStateToken": plan.BaseState, "pruned": len(plan.Deletes), "verified": verify,
+			"project": result.Project, "environment": result.Environment, "applied": true,
+			"planId": result.PlanID, "revision": result.Revision, "stateToken": result.StateToken,
+			"baseStateToken": plan.BaseState, "pruned": result.Pruned, "verified": result.Verified,
 		})
 	}
-	app.infof("Applied plan %s for %s/%s", plan.ID, plan.Project, plan.Environment)
-	if revision != "" {
-		app.infof("Revision: %s", revision)
+	app.infof("Applied plan %s for %s/%s", result.PlanID, result.Project, result.Environment)
+	if result.Revision != "" {
+		app.infof("Revision: %s", result.Revision)
 	}
-	if newState != "" {
-		app.infof("State token: %s", newState)
+	if result.StateToken != "" {
+		app.infof("State token: %s", result.StateToken)
 	}
-	if len(plan.Deletes) > 0 {
-		app.infof("Pruned %d stale file(s).", len(plan.Deletes))
+	if result.Pruned > 0 {
+		app.infof("Pruned %d stale file(s).", result.Pruned)
 	}
 	return nil
 }

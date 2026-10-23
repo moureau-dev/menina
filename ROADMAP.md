@@ -38,6 +38,9 @@ makes the multi-node/HA work explicit instead of hiding it under “HA/DR”.
   controller tests, and an existing-database migration test.
 - Versioned API command dispatcher with actor context, in-memory idempotency,
   shared transport parity tests, and a stdio adapter.
+- API-first desired-state mutations: `apply`, `config revisions`, and
+  `config rollback` execute through the API with server-side base-state and
+  file-hash revalidation, with local fallback when the control plane is down.
 - Per-app release states, pinned job configuration, verification, hooks,
   recovery policies, digest promotion, secret-staleness reporting, scheduled
   backups, metrics/alert guidance, and probe-timing hardening (v0.1.0/v0.1.1).
@@ -93,54 +96,47 @@ share one host, require project-scoped credentials and attributable audit logs.
 A shared administrative identity is not a tenant boundary. RBAC/SSO can follow.
 
 The work is split into independently shippable pieces. The API command path
-(item 46) is landed, so items 17, 18a, 38b, and 44 can attach to it. Item 47
-builds on it. Items 37a-38b must land together: identity without enforcement is
-not a security boundary.
-
-### Desired state
-
-1. **47 API-first desired-state mutations.** Route `apply`,
-   `config revisions`, and `config rollback` through the API with server-side
-   base-state token and file-hash revalidation. Local inspection may remain for
-   diagnostics.
+(item 46) and API-first desired-state mutations (item 47) are landed, so items
+17, 18a, 38b, and 44 can attach to them. Items 37a-38b must land together:
+identity without enforcement is not a security boundary.
 
 ### Client identity and access
 
-2. **37a Identity/profile model + storage.** Name, scopes, attached keys,
+1. **37a Identity/profile model + storage.** Name, scopes, attached keys,
    expiry, status, and last seen. The server derives the profile from the
    authenticated key; the client never asserts its own identity.
-3. **37b Enrollment token lifecycle.** One-time token, short TTL, hashed at
+2. **37b Enrollment token lifecycle.** One-time token, short TTL, hashed at
    rest, consumed transactionally, never reprinted.
-4. **37c Key lifecycle.** Rotate, revoke, list, display fingerprints, with
+3. **37c Key lifecycle.** Rotate, revoke, list, display fingerprints, with
    optional short TTL / SSH certificates.
-5. **38a Key-derived actor and forced-command wrapper.** Map the authenticated
+4. **38a Key-derived actor and forced-command wrapper.** Map the authenticated
    key to a profile, allowlist `menina` subcommands, inject the actor
    server-side, and have remote clients use the API bridge instead of execing
    the host CLI.
-6. **38b Scope enforcement.** Check scopes against the requested command,
+5. **38b Scope enforcement.** Check scopes against the requested command,
    project, environment, and action.
-7. **39 Client contexts and CI credentials.** `--profile` / `MENINA_PROFILE`
+6. **39 Client contexts and CI credentials.** `--profile` / `MENINA_PROFILE`
    over stored contexts, flag/env precedence, host-key pinning, `whoami`.
-8. **41 One-paste bootstrap.** `setup` prints the reachable host, host-key
+7. **41 One-paste bootstrap.** `setup` prints the reachable host, host-key
    fingerprint, and enrollment command; the installer verifies with `whoami`.
-9. **40 In-process SSH transport.** Remove the `openssh-client` dependency and
+8. **40 In-process SSH transport.** Remove the `openssh-client` dependency and
     pin host keys by fingerprint.
 
 ### Secrets and registry
 
-10. **16a Project-scoped secret permissions.**
-11. **20 Secret storage isolation** beyond the shared `menina` group.
-12. **16b Per-project/client registry credentials**, preferring short-lived
+9. **16a Project-scoped secret permissions.**
+10. **20 Secret storage isolation** beyond the shared `menina` group.
+11. **16b Per-project/client registry credentials**, preferring short-lived
     registry tokens over a shared htpasswd.
 
 ### Audit and authorization
 
-13. **17 Audit capture and query.** Actor, key, action, target, plan/state
+12. **17 Audit capture and query.** Actor, key, action, target, plan/state
     token, source repo, and timestamps.
-14. **18a Authorization model and enforcement** beyond secrets and registry.
-15. **18b Ownership enforcement.** `source.repo` becomes a check, not a
+13. **18a Authorization model and enforcement** beyond secrets and registry.
+14. **18b Ownership enforcement.** `source.repo` becomes a check, not a
     boundary.
-16. **21 Multi-client readiness gate.**
+15. **21 Multi-client readiness gate.**
 
 Identity is selected by the execution context, not the manifest. Client-side
 selection is `--profile` / `MENINA_PROFILE` over a stored context, with
@@ -312,15 +308,13 @@ single-node setup most importance scores drop.
 | 43 | 16b, 38b | Registry token service | 6 | 7 | Docker token auth with per-project scopes and short TTL; replaces shared htpasswd. |
 | 44 | 18a, 19a | HTTP API + WebSocket/SSE | 7 | 4 | Optional browser/hosted surface. Not required for multi-tenancy; SSH stays the CLI and break-glass path. HTTP transport landed; auth, SSE/WS, and UI remain. |
 | 45 | 18a | Per-tenant rate limits and fairness | 5 | 6 | Bound registry pulls, job throughput, and concurrency so one tenant cannot starve the rest. |
-| 47 | — | API-first desired-state mutations | 5 | 7 | `apply`, `config revisions`, and `config rollback` through the API with server-side revalidation. |
 | 49 | — | Edge request metrics and access logs | 5 | 8 | Per-route status/latency/errors, in-flight/bytes, cert expiry, snapshot age, redacted logs. |
 
-Tier 2 is 16 core items, six deferred larger-team controls, and one optional
+Tier 2 is 15 core items, six deferred larger-team controls, and one optional
 product-gated interface. The suffixed IDs keep earlier references addressable;
-16, 18, 19, 37, and 38 were split; 47 and 49 cover the remaining
-desired-state and edge monitoring work exposed by the refactor. Difficulty
-totals are 80 for the core, 35 for the deferred controls, and 7 for the optional
-interface (122 total). The umbrella items understated identity lifecycle, command
+16, 18, 19, 37, and 38 were split; 49 covers the remaining edge monitoring
+work exposed by the refactor. Difficulty totals are 75 for the core, 35 for the
+deferred controls, and 7 for the optional interface (117 total). The umbrella items understated identity lifecycle, command
 enforcement, and short-lived credential work.
 
 Items 1-15 (Tier 1) landed in the unreleased line, including the previously
