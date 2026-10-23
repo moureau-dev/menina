@@ -3,9 +3,9 @@ package main
 import (
 	"os"
 
-	"github.com/moureau-dev/menina/internal/clientcli"
+	"github.com/moureau-dev/menina/internal/cli/client"
 )
 
 func main() {
-	os.Exit(clientcli.Execute())
+	os.Exit(client.Execute())
 }

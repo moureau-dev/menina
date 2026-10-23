@@ -1,0 +1,127 @@
+package host
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/moureau-dev/menina/internal/config"
+)
+
+func printStaticStatus(app *App, cfg *config.Config, controlErr error) error {
+	if app.Opts.JSON {
+		return app.PrintJSON(map[string]any{
+			"controlPlane": "unavailable: " + controlErr.Error(),
+			"configDir":    cfg.Host.ConfigDir,
+			"registry":     cfg.Registry.Domain,
+			"tls":          cfg.TLS.Mode,
+			"networking":   cfg.Networking.Mode,
+		})
+	}
+	app.Infof("Menina status (control plane unavailable: %v)", controlErr)
+	app.Infof("  config dir:      %s", cfg.Host.ConfigDir)
+	app.Infof("  registry:        %s", cfg.Registry.Domain)
+	app.Infof("  tls mode:        %s", cfg.TLS.Mode)
+	app.Infof("  networking:      %s", cfg.Networking.Mode)
+	app.Infof("  start the control plane with `menina serve`")
+	return nil
+}
+
+func newStatusCommand(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show overall platform health",
+		Long:  "Show overall platform health. Degrades gracefully when the control plane is unavailable. Use --json for machine-readable output.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := app.LoadConfig()
+			if err != nil {
+				return err
+			}
+			client, err := app.Control(cfg)
+			if err != nil {
+				return printStaticStatus(app, cfg, err)
+			}
+			var status map[string]any
+			if err := client.GetJSON(cmd.Context(), "/status", &status); err != nil {
+				return printStaticStatus(app, cfg, err)
+			}
+			if app.Opts.JSON {
+				return app.PrintJSON(status)
+			}
+			app.Infof("Menina status")
+			for _, key := range []string{"pid", "snapshotVersion", "routes", "kubernetes", "registry", "configLastError"} {
+				if v, ok := status[key]; ok {
+					app.Infof("  %-16s %v", key+":", v)
+				}
+			}
+			if jobs, ok := status["jobs"].(map[string]any); ok {
+				app.Infof("  jobs:            %v", jobs)
+			}
+			return nil
+		},
+	}
+}
+
+func newRoutesCommand(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "routes",
+		Short: "Inspect public hostname mappings",
+		Long:  "List the public hostname → Service mappings published by the control plane. Use --json for machine-readable output.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := app.LoadConfig()
+			if err != nil {
+				return err
+			}
+			if client, err := app.Control(cfg); err == nil {
+				var routes []map[string]any
+				if err := client.GetJSON(cmd.Context(), "/routes", &routes); err != nil {
+					return err
+				}
+				if app.Opts.JSON {
+					return app.PrintJSON(routes)
+				}
+				if len(routes) == 0 {
+					app.Infof("No routes configured.")
+					return nil
+				}
+				app.Infof("%-30s %-10s %-30s %s", "HOST", "PORT", "SERVICE", "PROJECT/ENV/APP")
+				for _, r := range routes {
+					app.Infof("%-30v %-10v %-30v %v/%v/%v", r["host"], r["port"], r["service"], r["project"], r["environment"], r["app"])
+				}
+				printL4Routes(app, cfg)
+				return nil
+			}
+			db, err := app.OpenDB(cfg)
+			if err != nil {
+				return err
+			}
+			routes, err := db.Routes(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if app.Opts.JSON {
+				return app.PrintJSON(routes)
+			}
+			for _, r := range routes {
+				app.Infof("%s -> %s/%s:%d (%s/%s/%s)", r.Host, r.Namespace, r.Service, r.Port, r.Project, r.Environment, r.App)
+			}
+			printL4Routes(app, cfg)
+			return nil
+		},
+	}
+}
+
+// printL4Routes lists raw TCP/UDP exposures (hostPort), which are not part of
+// the HTTP routing snapshot.
+func printL4Routes(app *App, cfg *config.Config) {
+	ports := l4Exposures(cfg)
+	if len(ports) == 0 {
+		return
+	}
+	app.Infof("")
+	app.Infof("%-12s %s", "L4 PORT", "PROJECT/ENV/APP")
+	for _, p := range ports {
+		app.Infof("%-12s %s/%s/%s", fmt.Sprintf("%d/%s", p.Port, strings.ToLower(p.Proto)), p.Project, p.Environment, p.App)
+	}
+}
