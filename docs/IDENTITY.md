@@ -51,7 +51,8 @@ menina enroll menina_enroll_... --host root@vps --host-key "ssh-ed25519 AAAA..."
 `menina enroll` stores the context, reads the client public key, sends the token
 to the host over SSH stdin, consumes it, and runs `whoami`. The token is never
 stored on the client. Bootstrap assumes the client already has SSH access to run
-enrollment.
+enrollment. Without the forced-command authorized_keys entry, that `whoami`
+reports local administrative access, not the enrolled profile.
 
 ## Scopes
 
