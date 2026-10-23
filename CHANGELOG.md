@@ -21,6 +21,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - One-time enrollment tokens with short TTL, hashed-at-rest storage, and
   transactional consumption that attaches a key to a profile. Adds migration
   `0007_enrollment_tokens`.
+- Key lifecycle operations: list keys, parse authorized-key fingerprints,
+  revoke one key without disturbing others, rotate a key in one transaction,
+  and set or clear key expiry.
 
 ## [0.1.2] - 2026-10-23
 

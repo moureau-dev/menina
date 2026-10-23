@@ -65,8 +65,8 @@ func (p Profile) Validate() error {
 	if p.Name == "" {
 		return fmt.Errorf("profile name is required")
 	}
-	if p.Status == "" {
-		return fmt.Errorf("profile status is required")
+	if err := ValidateStatus(p.Status); err != nil {
+		return err
 	}
 	return ValidateScopes(p.Scopes)
 }
@@ -94,6 +94,18 @@ func ValidateScopes(scopes []string) error {
 	return nil
 }
 
+// ValidateStatus checks a profile or key status.
+func ValidateStatus(status Status) error {
+	switch status {
+	case StatusActive, StatusDisabled, StatusRevoked:
+		return nil
+	case "":
+		return fmt.Errorf("status is required")
+	default:
+		return fmt.Errorf("unknown status %q", status)
+	}
+}
+
 // Validate checks key fields.
 func (k Key) Validate() error {
 	if k.ProfileID == "" {
@@ -102,8 +114,5 @@ func (k Key) Validate() error {
 	if k.Fingerprint == "" {
 		return fmt.Errorf("key fingerprint is required")
 	}
-	if k.Status == "" {
-		return fmt.Errorf("key status is required")
-	}
-	return nil
+	return ValidateStatus(k.Status)
 }

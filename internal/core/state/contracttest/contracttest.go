@@ -121,6 +121,47 @@ func Run(t *testing.T, newStore NewStore) {
 		}
 	})
 
+	t.Run("key lifecycle", func(t *testing.T) {
+		store := newStore(t)
+		profileID, err := store.CreateProfile(ctx, identity.Profile{Name: "keys", Scopes: []string{"read"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		oldID, err := store.AddProfileKey(ctx, identity.Key{ProfileID: profileID, Fingerprint: "SHA256:old", Comment: "old"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		keepID, err := store.AddProfileKey(ctx, identity.Key{ProfileID: profileID, Fingerprint: "SHA256:keep", Comment: "keep"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.RevokeKey(ctx, oldID); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, ok, err := store.ResolveKey(ctx, "SHA256:old"); err != nil || ok {
+			t.Fatalf("revoked key resolved ok=%v err=%v", ok, err)
+		}
+		if _, _, ok, err := store.ResolveKey(ctx, "SHA256:keep"); err != nil || !ok {
+			t.Fatalf("kept key failed ok=%v err=%v", ok, err)
+		}
+		rotated, err := store.RotateKey(ctx, keepID, identity.Key{Fingerprint: "SHA256:new", Comment: "new"}, true)
+		if err != nil || rotated.ID == "" || rotated.ProfileID != profileID {
+			t.Fatalf("rotated=%+v err=%v", rotated, err)
+		}
+		if _, _, ok, err := store.ResolveKey(ctx, "SHA256:keep"); err != nil || ok {
+			t.Fatalf("old rotated key resolved ok=%v err=%v", ok, err)
+		}
+		if _, key, ok, err := store.ResolveKey(ctx, "SHA256:new"); err != nil || !ok || key.ID != rotated.ID {
+			t.Fatalf("new key resolved ok=%v key=%+v err=%v", ok, key, err)
+		}
+		if err := store.UpdateKeyExpiry(ctx, rotated.ID, time.Now().Add(-time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, ok, err := store.ResolveKey(ctx, "SHA256:new"); err != nil || ok {
+			t.Fatalf("expired key resolved ok=%v err=%v", ok, err)
+		}
+	})
+
 	t.Run("enrollment token lifecycle", func(t *testing.T) {
 		store := newStore(t)
 		profileID, err := store.CreateProfile(ctx, identity.Profile{Name: "new-client", Scopes: []string{"deploy"}})

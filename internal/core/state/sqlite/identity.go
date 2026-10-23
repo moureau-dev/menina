@@ -334,3 +334,107 @@ func (db *DB) ConsumeEnrollmentToken(ctx context.Context, tokenHash string, now 
 	key.UpdatedAt = now.UTC()
 	return profile, key, nil
 }
+
+// KeyByID returns one profile key.
+func (db *DB) KeyByID(ctx context.Context, id string) (identity.Key, bool, error) {
+	row := db.QueryRowContext(ctx, `SELECT id, profile_id, fingerprint, public_key, comment, status, expires_at, created_at, updated_at, last_seen_at
+		FROM profile_keys WHERE id = ?`, id)
+	k, err := scanKey(row)
+	if err == sql.ErrNoRows {
+		return identity.Key{}, false, nil
+	}
+	if err != nil {
+		return identity.Key{}, false, err
+	}
+	return k, true, nil
+}
+
+// KeyByFingerprint returns one profile key by fingerprint.
+func (db *DB) KeyByFingerprint(ctx context.Context, fingerprint string) (identity.Key, bool, error) {
+	row := db.QueryRowContext(ctx, `SELECT id, profile_id, fingerprint, public_key, comment, status, expires_at, created_at, updated_at, last_seen_at
+		FROM profile_keys WHERE fingerprint = ?`, fingerprint)
+	k, err := scanKey(row)
+	if err == sql.ErrNoRows {
+		return identity.Key{}, false, nil
+	}
+	if err != nil {
+		return identity.Key{}, false, err
+	}
+	return k, true, nil
+}
+
+// RevokeKey marks one key revoked without touching other keys.
+func (db *DB) RevokeKey(ctx context.Context, id string) error {
+	res, err := db.ExecContext(ctx, `UPDATE profile_keys SET status = ?, updated_at = unixepoch() WHERE id = ?`, identity.StatusRevoked, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("key %q not found", id)
+	}
+	return nil
+}
+
+// UpdateKeyExpiry sets or clears a key expiry.
+func (db *DB) UpdateKeyExpiry(ctx context.Context, id string, expiresAt time.Time) error {
+	var expires any
+	if !expiresAt.IsZero() {
+		expires = expiresAt.Unix()
+	}
+	res, err := db.ExecContext(ctx, `UPDATE profile_keys SET expires_at = ?, updated_at = unixepoch() WHERE id = ?`, expires, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("key %q not found", id)
+	}
+	return nil
+}
+
+// RotateKey attaches a new key to the old key's profile and optionally revokes
+// the old key in the same transaction.
+func (db *DB) RotateKey(ctx context.Context, oldKeyID string, newKey identity.Key, revokeOld bool) (identity.Key, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return identity.Key{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var profileID string
+	if err := tx.QueryRowContext(ctx, `SELECT profile_id FROM profile_keys WHERE id = ?`, oldKeyID).Scan(&profileID); err != nil {
+		if err == sql.ErrNoRows {
+			return identity.Key{}, fmt.Errorf("key %q not found", oldKeyID)
+		}
+		return identity.Key{}, err
+	}
+	newKey.ProfileID = profileID
+	if newKey.Status == "" {
+		newKey.Status = identity.StatusActive
+	}
+	if err := newKey.Validate(); err != nil {
+		return identity.Key{}, err
+	}
+	var expires any
+	if !newKey.ExpiresAt.IsZero() {
+		expires = newKey.ExpiresAt.Unix()
+	}
+	var id string
+	if err := tx.QueryRowContext(ctx, `INSERT INTO profile_keys (profile_id, fingerprint, public_key, comment, status, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
+		newKey.ProfileID, newKey.Fingerprint, newKey.PublicKey, newKey.Comment, newKey.Status, expires).Scan(&id); err != nil {
+		return identity.Key{}, fmt.Errorf("rotate key: %w", err)
+	}
+	if revokeOld {
+		if _, err := tx.ExecContext(ctx, `UPDATE profile_keys SET status = ?, updated_at = unixepoch() WHERE id = ?`, identity.StatusRevoked, oldKeyID); err != nil {
+			return identity.Key{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return identity.Key{}, err
+	}
+	now := time.Now().UTC()
+	newKey.ID = id
+	newKey.CreatedAt = now
+	newKey.UpdatedAt = now
+	return newKey, nil
+}

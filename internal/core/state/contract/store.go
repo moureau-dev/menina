@@ -31,6 +31,8 @@ type Store interface {
 	IngestRegistryEvent(ctx context.Context, e *sqlite.Event, jobs []sqlite.Job) (bool, error)
 	InterruptedReleases(ctx context.Context, olderThan time.Duration) ([]sqlite.Release, error)
 	JobByID(ctx context.Context, id string) (sqlite.Job, bool, error)
+	KeyByFingerprint(ctx context.Context, fingerprint string) (identity.Key, bool, error)
+	KeyByID(ctx context.Context, id string) (identity.Key, bool, error)
 	JobEventsAfter(ctx context.Context, jobID string, after int64) ([]sqlite.JobEvent, error)
 	JobIDByDedupKey(ctx context.Context, dedup string) (string, bool, error)
 	LatestJobByTarget(ctx context.Context, project, environment, app string) (sqlite.Job, bool, error)
@@ -50,6 +52,8 @@ type Store interface {
 	ReplaceRoutes(ctx context.Context, routes []sqlite.Route) error
 	RequeueProcessingJobs(ctx context.Context) (int64, error)
 	ResolveKey(ctx context.Context, fingerprint string) (identity.Profile, identity.Key, bool, error)
+	RevokeKey(ctx context.Context, id string) error
+	RotateKey(ctx context.Context, oldKeyID string, newKey identity.Key, revokeOld bool) (identity.Key, error)
 	Routes(ctx context.Context) ([]sqlite.Route, error)
 	SetJobRelease(ctx context.Context, id, releaseID string) error
 	SetMeta(ctx context.Context, key, value string) error
@@ -57,6 +61,7 @@ type Store interface {
 	SupersedePendingJobs(ctx context.Context, project, environment, app, keepID string) error
 	SyncObservedSoftDeletes(ctx context.Context, targets []sqlite.SoftDeleteTarget) error
 	TransitionRelease(ctx context.Context, id string, state release.State, message, actor string) error
+	UpdateKeyExpiry(ctx context.Context, id string, expiresAt time.Time) error
 	UpdateProfile(ctx context.Context, p identity.Profile) error
 	UpdateReleaseFields(ctx context.Context, id, verification, migration, recovery, secretHash string) error
 	UpsertObserved(ctx context.Context, o sqlite.Observed) error
