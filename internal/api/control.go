@@ -228,3 +228,27 @@ func (c *Client) Request(ctx context.Context, method, path string, body []byte) 
 	}
 	return resp.StatusCode, data, nil
 }
+
+// Command sends one versioned API request through the local transport.
+func (c *Client) Command(ctx context.Context, req Request) (Response, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return Response{}, err
+	}
+	resp, err := c.do(ctx, http.MethodPost, "/v1/commands", strings.NewReader(string(body)))
+	if err != nil {
+		return Response{}, err
+	}
+	defer resp.Body.Close()
+	var out Response
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return Response{}, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return out, controlError("/v1/commands", resp.StatusCode, "")
+	}
+	if out.Error != nil {
+		return out, apierrors.New(out.Error.Code, out.Error.Message, out.Error.Hint)
+	}
+	return out, nil
+}

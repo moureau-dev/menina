@@ -1,11 +1,13 @@
 package host
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
 	"github.com/spf13/cobra"
 
+	"github.com/moureau-dev/menina/internal/api"
 	"github.com/moureau-dev/menina/internal/api/errors"
 	"github.com/moureau-dev/menina/internal/core/config"
 )
@@ -82,21 +84,11 @@ func configRevisions(app *App) *cobra.Command {
 		Short:   "List apply revisions (pre-apply snapshots)",
 		Example: "  menina config revisions\n  menina config revisions --project my-app --json",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			revisions, err := config.ListRevisions(app.Opts.ConfigDir)
+			revisions, err := listRevisions(app, project, environment)
 			if err != nil {
 				return err
 			}
-			filtered := revisions[:0]
-			for _, rev := range revisions {
-				if project != "" && rev.Project != project {
-					continue
-				}
-				if environment != "" && rev.Environment != environment {
-					continue
-				}
-				filtered = append(filtered, rev)
-			}
-			sort.Slice(filtered, func(i, j int) bool { return filtered[i].CreatedAt.After(filtered[j].CreatedAt) })
+			filtered := revisions
 			if app.Opts.JSON {
 				return app.PrintJSON(filtered)
 			}
@@ -134,8 +126,8 @@ func configRollback(app *App) *cobra.Command {
 			if !confirmDestructive(app, fmt.Sprintf("Restore configuration revision %q?", args[0]), yes) {
 				return fmt.Errorf("aborted")
 			}
-			if err := config.RestoreRevision(app.Opts.ConfigDir, args[0]); err != nil {
-				return apierrors.Wrap(apierrors.CodeNotFound, err)
+			if err := rollbackRevision(app, args[0]); err != nil {
+				return err
 			}
 			if app.Opts.JSON {
 				return app.PrintJSON(map[string]any{"restored": args[0]})
@@ -146,4 +138,40 @@ func configRollback(app *App) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm the restore")
 	return cmd
+}
+
+func listRevisions(app *App, project, environment string) ([]config.Revision, error) {
+	if cfg, err := app.LoadConfig(); err == nil {
+		if client, err := api.Dial(cfg.Platform.ControlSocket, cfg.Security.ControlTokenFile); err == nil {
+			return client.ConfigRevisions(context.Background(), project, environment)
+		}
+	}
+	revisions, err := config.ListRevisions(app.Opts.ConfigDir)
+	if err != nil {
+		return nil, err
+	}
+	filtered := revisions[:0]
+	for _, rev := range revisions {
+		if project != "" && rev.Project != project {
+			continue
+		}
+		if environment != "" && rev.Environment != environment {
+			continue
+		}
+		filtered = append(filtered, rev)
+	}
+	sort.Slice(filtered, func(i, j int) bool { return filtered[i].CreatedAt.After(filtered[j].CreatedAt) })
+	return filtered, nil
+}
+
+func rollbackRevision(app *App, id string) error {
+	if cfg, err := app.LoadConfig(); err == nil {
+		if client, err := api.Dial(cfg.Platform.ControlSocket, cfg.Security.ControlTokenFile); err == nil {
+			return client.ConfigRollback(context.Background(), id)
+		}
+	}
+	if err := config.RestoreRevision(app.Opts.ConfigDir, id); err != nil {
+		return apierrors.Wrap(apierrors.CodeNotFound, err)
+	}
+	return nil
 }

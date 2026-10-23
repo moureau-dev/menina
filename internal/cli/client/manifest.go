@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -354,73 +353,39 @@ func newApplyCommand(app *App) *cobra.Command {
 			if prune {
 				return apierrors.New(apierrors.CodeValidation, "apply --prune must be reviewed before execution", "run `apply --diff --prune`, then `apply --from-plan <plan-id>`")
 			}
-			lock, err := config.AcquireLock(app.configDir(), 10*time.Second)
-			if err != nil {
-				return apierrors.Wrap(apierrors.CodeConflict, err)
-			}
-			defer lock.Release()
-			baseState, err := currentStateToken(app.configDir(), r.Project.Name, r.Environment.Name)
+			plan, err := savePlan(app.configDir(), r, deletions)
 			if err != nil {
 				return err
 			}
-			if ifRevision != "" && ifRevision != baseState {
+			if ifRevision != "" && ifRevision != plan.BaseState {
 				return apierrors.New(apierrors.CodeConflict, "configuration changed since the state token was read", "run `apply --diff` again and review the new plan")
 			}
-			if err := lock.Check(); err != nil {
-				return apierrors.Wrap(apierrors.CodeConflict, err)
-			}
-			files, err := r.Plan(app.configDir())
+			result, err := executePlan(cmd, app, plan, ifRevision, verify)
 			if err != nil {
 				return err
-			}
-			revisionPaths := make([]string, 0, len(files)+len(deletions))
-			for _, file := range files {
-				revisionPaths = append(revisionPaths, file.Path)
-			}
-			revisionPaths = append(revisionPaths, deletions...)
-			revision, err := config.SaveRevisionWithMeta(app.configDir(), config.RevisionMeta{
-				Project: r.Project.Name, Environment: r.Environment.Name,
-				SourceRepo: r.File.Source.Repo, SourceRevision: r.File.Source.Revision,
-			}, revisionPaths)
-			if err != nil {
-				return err
-			}
-			if err := r.Write(app.configDir()); err != nil {
-				return err
-			}
-			for _, path := range deletions {
-				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-					return err
-				}
-			}
-			newState, _ := currentStateToken(app.configDir(), r.Project.Name, r.Environment.Name)
-			if verify {
-				if err := verifyApply(app.configDir(), r); err != nil {
-					return err
-				}
 			}
 			if app.jsonOutput() {
 				summary := manifestSummary(r)
 				summary["applied"] = true
-				summary["verified"] = verify
-				summary["pruned"] = len(deletions)
-				summary["revision"] = revision
-				summary["stateToken"] = newState
-				summary["baseStateToken"] = baseState
+				summary["verified"] = result.Verified
+				summary["pruned"] = result.Pruned
+				summary["revision"] = result.Revision
+				summary["stateToken"] = result.StateToken
+				summary["baseStateToken"] = plan.BaseState
 				return app.printJSON(summary)
 			}
 			printManifestSummary(app, r)
-			if verify {
+			if result.Verified {
 				app.infof("Verified written config.")
 			}
-			if len(deletions) > 0 {
-				app.infof("Pruned %d stale file(s).", len(deletions))
+			if result.Pruned > 0 {
+				app.infof("Pruned %d stale file(s).", result.Pruned)
 			}
-			if revision != "" {
-				app.infof("Revision: %s", revision)
+			if result.Revision != "" {
+				app.infof("Revision: %s", result.Revision)
 			}
-			if newState != "" {
-				app.infof("State token: %s", newState)
+			if result.StateToken != "" {
+				app.infof("State token: %s", result.StateToken)
 			}
 			app.infof("Applied. Push images to deploy, or run `menina app deploy <app> --project %s --environment %s`.", r.Project.Name, r.Environment.Name)
 			return nil

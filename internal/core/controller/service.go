@@ -23,6 +23,7 @@ import (
 	"github.com/moureau-dev/menina/internal/core/notify"
 	"github.com/moureau-dev/menina/internal/core/registry"
 	"github.com/moureau-dev/menina/internal/core/secrets"
+	"github.com/moureau-dev/menina/internal/core/state/contract"
 	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 	"github.com/moureau-dev/menina/internal/core/worker"
 	"github.com/moureau-dev/menina/internal/edge"
@@ -80,13 +81,14 @@ type Service struct {
 	configDir string
 	log       *slog.Logger
 
-	db          *sqlite.DB
+	db          contract.Store
 	watcher     *config.Watcher
 	cluster     k8s.Cluster
 	engine      *k8s.Engine
 	jobs        *worker.Jobs
 	reconciler  *Reconciler
 	control     *unix.Server
+	dispatcher  *api.Dispatcher
 	registry    *registry.Client
 	eventsSrv   *http.Server
 	bus         *broadcaster
@@ -95,7 +97,7 @@ type Service struct {
 	sender      *notify.Sender
 }
 
-func (s *Service) DB() *sqlite.DB { return s.db }
+func (s *Service) DB() contract.Store { return s.db }
 
 func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Service, error) {
 	db, err := sqlite.Open(cfg.Platform.DBPath)
@@ -132,6 +134,7 @@ func NewService(cfg *config.Config, configDir string, log *slog.Logger) (*Servic
 	svc.jobs.SetAllowHooks(cfg.Security.AllowAppHooks)
 	svc.reconciler = NewReconciler(db, cluster, engine, snapFn, cfg, log)
 	svc.reconciler.OnPublish(svc.bus.publish)
+	svc.dispatcher = api.NewDispatcher(svc.controlMux())
 	if cfg.Registry.Enabled {
 		svc.registry = registry.NewClient(registryBaseURL(cfg), "", "", !cfg.TLS.Terminate)
 	}
@@ -180,7 +183,7 @@ func (s *Service) Run(ctx context.Context) error {
 		return fmt.Errorf("control token: %w", err)
 	}
 	s.token = token
-	control, err := unix.NewServer(s.cfg.Platform.ControlSocket, token, s.controlMux())
+	control, err := unix.NewServer(s.cfg.Platform.ControlSocket, token, s.Handler())
 	if err != nil {
 		return err
 	}
@@ -399,6 +402,9 @@ func (s *Service) controlMux() http.Handler {
 	mux.HandleFunc("/promote", s.handlePromote)
 	mux.HandleFunc("/webhook-deliveries", s.handleWebhookDeliveries)
 	mux.HandleFunc("/webhook-replay", s.handleWebhookReplay)
+	mux.HandleFunc("/config/apply", s.handleConfigApply)
+	mux.HandleFunc("/config/revisions", s.handleConfigRevisions)
+	mux.HandleFunc("/config/rollback", s.handleConfigRollback)
 	return mux
 }
 
@@ -786,8 +792,13 @@ func (s *Service) watcherLastError() string {
 
 func (s *Service) Token() string { return s.token }
 
-// Handler returns the HTTP API handler for non-Unix transports.
-func (s *Service) Handler() http.Handler { return s.controlMux() }
+// Handler returns the versioned API dispatcher used by every transport.
+func (s *Service) Handler() http.Handler {
+	if s.dispatcher == nil {
+		s.dispatcher = api.NewDispatcher(s.controlMux())
+	}
+	return s.dispatcher
+}
 
 func (b *broadcaster) snapshotVersion() int64 {
 	if s := b.snapshot(); s != nil {

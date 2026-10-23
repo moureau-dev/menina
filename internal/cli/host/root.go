@@ -95,6 +95,8 @@ func NewRootCommand() *cobra.Command {
 		newVersionCommand(app),
 		newInstallCommand(app),
 		newAPISSHCommand(app),
+		newIdentityCommand(app),
+		newSSHForcedCommand(app),
 	)
 	root.AddCommand(client.NewCommands(client.Options{
 		ConfigDir: &app.Opts.ConfigDir,

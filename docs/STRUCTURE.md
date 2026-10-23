@@ -11,9 +11,9 @@ cmd/
   menina-edge/            optional edge proxy entry point
 
 internal/
-  api/                    command contract, client, routing subscription
+  api/                    command contract, dispatcher, client, routing subscription
     errors/               classified errors and stable exit codes
-    transport/            unix, http, and ssh adapters
+    transport/            unix, http, ssh, and stdio adapters
   cli/
     host/                 host commands, prompts, TUI menus
     client/               shared client commands (init/validate/apply/build/push, secrets, jobs, config, meta)
@@ -26,12 +26,17 @@ internal/
     cluster/              Kubernetes workloads, PVCs, services, logs, rollout
       kube/               minimal Kubernetes API client
     config/               desired-state model, loader, resolver, validation, revisions, lock, state token
+      plan/               reviewed apply plans and server-side plan execution
+    identity/             profiles, scopes, keys, enrollment tokens, rotation, revocation, expiry, status
     controller/           control plane, reconciler, HTTP command handlers
     notify/               deploy webhook delivery (HMAC, retries, delivery id)
     registry/             Zot client, digest resolution, push events, bundled resolver
     release/              per-app release states and recovery policy
     secrets/              secret refs, file writing, resolution
     state/
+      contract/           operational state interface used by controller and worker
+      contracttest/       shared contract test suite for store implementations
+      fake/               in-memory store double for controller tests
       sqlite/             SQLite jobs, releases, routes, events, observed state
         migrations/       ordered SQLite migrations
     worker/               deploy job execution, rollout, verification

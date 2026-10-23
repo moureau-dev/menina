@@ -13,13 +13,14 @@ import (
 	"github.com/moureau-dev/menina/internal/core/cluster"
 	"github.com/moureau-dev/menina/internal/core/config"
 	"github.com/moureau-dev/menina/internal/core/release"
+	"github.com/moureau-dev/menina/internal/core/state/contract"
 	"github.com/moureau-dev/menina/internal/core/state/sqlite"
 	"github.com/moureau-dev/menina/internal/core/worker"
 	"github.com/moureau-dev/menina/internal/edge"
 )
 
 type Reconciler struct {
-	db          *sqlite.DB
+	db          contract.Store
 	cluster     k8s.Cluster
 	engine      *k8s.Engine
 	snapshot    func() *config.ResolvedConfig
@@ -36,7 +37,7 @@ const (
 	registryZotPort    = 5000
 )
 
-func NewReconciler(db *sqlite.DB, cluster k8s.Cluster, engine *k8s.Engine, snapshot func() *config.ResolvedConfig, cfg *config.Config, log *slog.Logger) *Reconciler {
+func NewReconciler(db contract.Store, cluster k8s.Cluster, engine *k8s.Engine, snapshot func() *config.ResolvedConfig, cfg *config.Config, log *slog.Logger) *Reconciler {
 	return &Reconciler{db: db, cluster: cluster, engine: engine, snapshot: snapshot, cfg: cfg, log: log}
 }
 

@@ -11,7 +11,7 @@ import (
 
 	"github.com/moureau-dev/menina/internal/core/config"
 	"github.com/moureau-dev/menina/internal/core/secrets"
-	"github.com/moureau-dev/menina/internal/core/state/sqlite"
+	"github.com/moureau-dev/menina/internal/core/state/contract"
 )
 
 type DigestResolver interface {
@@ -20,7 +20,7 @@ type DigestResolver interface {
 
 type Engine struct {
 	cluster  Cluster
-	db       *sqlite.DB
+	db       contract.Store
 	resolver DigestResolver
 	log      *slog.Logger
 }
@@ -36,7 +36,7 @@ type Result struct {
 	NoOp        bool
 }
 
-func NewEngine(cluster Cluster, db *sqlite.DB, resolver DigestResolver, log *slog.Logger) *Engine {
+func NewEngine(cluster Cluster, db contract.Store, resolver DigestResolver, log *slog.Logger) *Engine {
 	return &Engine{cluster: cluster, db: db, resolver: resolver, log: log}
 }
 

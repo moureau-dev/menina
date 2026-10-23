@@ -6,6 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Operational state contract with shared contract tests, an in-memory fake for
+  controller tests, and an existing-database migration test.
+- Versioned API command dispatcher with actor context, in-memory idempotency,
+  shared transport parity tests, and a stdio adapter.
+- API-first desired-state mutations. `apply`, `config revisions`, and
+  `config rollback` execute through the API with server-side base-state and
+  file-hash revalidation, falling back to local files when the control plane is
+  down.
+- Identity profile model and storage, with scopes, attached keys, expiry,
+  status, last-seen tracking, and server-side key resolution. Adds migration
+  `0006_identity`.
+- One-time enrollment tokens with short TTL, hashed-at-rest storage, and
+  transactional consumption that attaches a key to a profile. Adds migration
+  `0007_enrollment_tokens`.
+- Key lifecycle operations: list keys, parse authorized-key fingerprints,
+  revoke one key without disturbing others, rotate a key in one transaction,
+  and set or clear key expiry.
+- Key-derived actors and SSH forced commands. Authenticated keys resolve to
+  profiles, allowlisted commands run with a server-injected actor, the API
+  bridge accepts that actor over the local socket, and `menina identity`
+  manages profiles, keys, and enrollment tokens.
+
 ## [0.1.2] - 2026-10-23
 
 ### Added
