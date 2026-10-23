@@ -82,64 +82,74 @@ reports code, config, and data state separately; verification has a failure
 policy; promotion does not rebuild; deploys cannot execute against config written
 after queueing; and a failed deploy is observable without manual checks.
 
-## Tier 2 — team and security
+## Tier 1b — correctness follow-ups (next)
+
+These are small, high-value hardening items that can land before team features.
+
+- **48 State store contract and migration evidence.** Add the consumer-side
+  store interface, contract tests, a pre-refactor database upgrade test, and a
+  fake store for controller tests. This makes a later SQLite replacement safer
+  and is the quickest high-importance item remaining.
+
+## Tier 2 — API contract, team, and security
 
 **Shared-access gate:** before multiple independent clients or autonomous agents
 share one host, require project-scoped credentials and attributable audit logs.
 A shared administrative identity is not a tenant boundary. RBAC/SSO can follow.
 
-The work is split into independently shippable pieces. Items 37a-38b must land
-together: identity without enforcement is not a security boundary. Item 46
-provides the command path that items 17, 18a, 38b, and 44 attach to.
+The work is split into independently shippable pieces. Item 46 provides the
+command path that items 17, 18a, 38b, and 44 attach to, so land 46 before 38b;
+47 follows 46. Items 37a-38b must land together: identity without enforcement is
+not a security boundary.
+
+### API contract and desired state
+
+1. **46 API command contract.** One dispatcher and versioned request/response
+   types for every transport; server-derived actor context; idempotency keys;
+   shared transport parity tests; optional stdio adapter. Handlers move behind
+   the dispatcher.
+2. **47 API-first desired-state mutations.** Route `apply`,
+   `config revisions`, and `config rollback` through the API with server-side
+   base-state token and file-hash revalidation. Local inspection may remain for
+   diagnostics.
 
 ### Client identity and access
 
-1. **37a Identity/profile model + storage.** Name, scopes, attached keys,
+3. **37a Identity/profile model + storage.** Name, scopes, attached keys,
    expiry, status, and last seen. The server derives the profile from the
    authenticated key; the client never asserts its own identity.
-2. **37b Enrollment token lifecycle.** One-time token, short TTL, hashed at
+4. **37b Enrollment token lifecycle.** One-time token, short TTL, hashed at
    rest, consumed transactionally, never reprinted.
-3. **37c Key lifecycle.** Rotate, revoke, list, display fingerprints, with
+5. **37c Key lifecycle.** Rotate, revoke, list, display fingerprints, with
    optional short TTL / SSH certificates.
-4. **38a Key-derived actor and forced-command wrapper.** Map the authenticated
+6. **38a Key-derived actor and forced-command wrapper.** Map the authenticated
    key to a profile, allowlist `menina` subcommands, inject the actor
    server-side, and have remote clients use the API bridge instead of execing
    the host CLI.
-5. **38b Scope enforcement.** Check scopes against the requested command,
+7. **38b Scope enforcement.** Check scopes against the requested command,
    project, environment, and action.
-6. **39 Client contexts and CI credentials.** `--profile` / `MENINA_PROFILE`
+8. **39 Client contexts and CI credentials.** `--profile` / `MENINA_PROFILE`
    over stored contexts, flag/env precedence, host-key pinning, `whoami`.
-7. **41 One-paste bootstrap.** `setup` prints the reachable host, host-key
+9. **41 One-paste bootstrap.** `setup` prints the reachable host, host-key
    fingerprint, and enrollment command; the installer verifies with `whoami`.
-8. **40 In-process SSH transport.** Remove the `openssh-client` dependency and
-   pin host keys by fingerprint.
+10. **40 In-process SSH transport.** Remove the `openssh-client` dependency and
+    pin host keys by fingerprint.
 
 ### Secrets and registry
 
-9. **16a Project-scoped secret permissions.**
-10. **20 Secret storage isolation** beyond the shared `menina` group.
-11. **16b Per-project/client registry credentials**, preferring short-lived
+11. **16a Project-scoped secret permissions.**
+12. **20 Secret storage isolation** beyond the shared `menina` group.
+13. **16b Per-project/client registry credentials**, preferring short-lived
     registry tokens over a shared htpasswd.
 
 ### Audit and authorization
 
-12. **17 Audit capture and query.** Actor, key, action, target, plan/state
+14. **17 Audit capture and query.** Actor, key, action, target, plan/state
     token, source repo, and timestamps.
-13. **18a Authorization model and enforcement** beyond secrets and registry.
-14. **18b Ownership enforcement.** `source.repo` becomes a check, not a
+15. **18a Authorization model and enforcement** beyond secrets and registry.
+16. **18b Ownership enforcement.** `source.repo` becomes a check, not a
     boundary.
-15. **21 Multi-client readiness gate.**
-
-### API contract and desired state
-
-16. **46 API command contract.** One dispatcher and versioned request/response
-    types for every transport; server-derived actor context; idempotency keys;
-    shared transport parity tests; optional stdio adapter. Handlers move behind
-    the dispatcher.
-17. **47 API-first desired-state mutations.** Route `apply`,
-    `config revisions`, and `config rollback` through the API with server-side
-    base-state token and file-hash revalidation. Local inspection may remain for
-    diagnostics.
+17. **21 Multi-client readiness gate.**
 
 Identity is selected by the execution context, not the manifest. Client-side
 selection is `--profile` / `MENINA_PROFILE` over a stored context, with
@@ -180,12 +190,12 @@ already have identity, scopes, and audit.
 
 These are useful even while staying single-node:
 
-- per-client/per-project backup schedules and retention;
-- aggregate overview of failed deployments, unhealthy apps, disk usage,
-  expiring certificates, and backup failures;
 - edge request metrics and opt-in redacted access logs: requests by route,
   status class, latency, upstream errors, in-flight requests, certificate
   expiry, and snapshot age (item 49);
+- per-client/per-project backup schedules and retention;
+- aggregate overview of failed deployments, unhealthy apps, disk usage,
+  expiring certificates, and backup failures;
 - a tested replacement-host workflow: move a project, its registry state,
   revisions, secrets, and volumes to a new server;
 - resource limits and quotas per project;
@@ -201,8 +211,8 @@ highly available.
 Dependency order:
 
 1. **Control-plane state**
-   - Add a state-store contract, contract tests, a pre-refactor database upgrade
-     test, and a fake store for controller tests (item 48).
+   - Item 48 (Tier 1b) provides the store contract and migration evidence before
+     the writer changes.
    - Replace single-writer SQLite with a replicated/external store (for example
      PostgreSQL) or a deliberately supported HA SQLite topology.
    - Leader election, idempotent job execution, and a single active reconciler.
