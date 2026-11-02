@@ -64,7 +64,7 @@ func (f *File) Render(opts RenderOptions) (*Rendered, error) {
 
 	out := &Rendered{
 		File:        f,
-		Project:     &config.ProjectFile{Name: f.Project},
+		Project:     &config.ProjectFile{Name: f.Project, Namespace: f.Project},
 		Apps:        map[string]*config.AppFile{},
 		Environment: &config.EnvironmentFile{Name: f.Environment, Apps: map[string]*config.AppOverride{}},
 		Overrides:   map[string]*config.AppOverride{},

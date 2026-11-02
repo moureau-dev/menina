@@ -101,6 +101,9 @@ func runChild(ctx context.Context, c *cobra.Command, flags map[string]string, ar
 }
 
 func createProject(app *App, name, namespace, description string) error {
+	if namespace == "" {
+		namespace = name
+	}
 	if err := config.EnsureProjectDirs(app.Opts.ConfigDir, name); err != nil {
 		return err
 	}

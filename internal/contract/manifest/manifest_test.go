@@ -180,6 +180,30 @@ func TestRenderRejectsUnsafeStorage(t *testing.T) {
 	}
 }
 
+func TestWriteDefaultsNewProjectNamespaceToName(t *testing.T) {
+	dir := t.TempDir()
+
+	f, err := Load([]byte(sample), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := f.Render(RenderOptions{ConfigDir: dir, Registry: "registry.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Write(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	project, err := config.LoadProject(config.ProjectsDir(dir), "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Namespace != "demo" {
+		t.Fatalf("namespace = %q, want demo", project.Namespace)
+	}
+}
+
 func TestWriteCreatesConfigAndPreservesProjectMetadata(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.Default()

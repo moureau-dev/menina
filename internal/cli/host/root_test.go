@@ -67,11 +67,28 @@ func TestProjectAndAppCreate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if p.Namespace != "my-platform" {
+		t.Fatalf("namespace = %q, want my-platform", p.Namespace)
+	}
 	if p.Apps["api"] == nil {
 		t.Fatal("api app not created")
 	}
 	if p.Envs["production"] == nil {
 		t.Fatal("production environment not created")
+	}
+}
+
+func TestProjectCreateDefaultsNamespaceToName(t *testing.T) {
+	dir := t.TempDir()
+	if err := execute("--config-dir", dir, "project", "create", "my-app"); err != nil {
+		t.Fatalf("project create: %v", err)
+	}
+	p, err := config.LoadProject(config.ProjectsDir(dir), "my-app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Namespace != "my-app" {
+		t.Fatalf("namespace = %q, want my-app", p.Namespace)
 	}
 }
 

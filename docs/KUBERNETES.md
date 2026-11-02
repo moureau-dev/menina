@@ -70,10 +70,11 @@ verified by `scripts/rbac-e2e.sh`.
 | --- | --- |
 | `menina-system` | The platform identity (ServiceAccount, RBAC, token). |
 | `menina-registry` | The Zot image registry (`registry.namespace`, default). |
-| `<app-namespace>` | Application workloads. Defaults to `platform.defaults.namespace` (`menina-apps`). |
+| `<app-namespace>` | Application workloads. New projects default to the project name; existing projects with an empty namespace fall back to `platform.defaults.namespace` (`menina-apps`). |
 
 **Environments are isolated by namespace.** A project's base namespace comes from
-`project.yml → namespace` (else the default). Each environment then gets
+`project.yml → namespace` (else the platform default). New projects write the
+project name as the base namespace when none is given. Each environment then gets
 `<base>-<environment>` unless its `environments/<env>.yml → namespace` overrides
 it — so `production` and `staging` never share a namespace (deleting one can't
 affect the other). Namespaces Menina creates are labelled

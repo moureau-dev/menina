@@ -93,9 +93,9 @@ canonical entrypoint and includes both subcommands.
 
 | Command | Purpose |
 | --- | --- |
-| `menina create [project-name] [--namespace] [--description] [--environments a,b,c] [--yes]` | Create a project. Prompts the name, then asks **“Do you account for multiple environments?”** — *No* creates only `production`; *Yes* opens an editable list where you add names (shown on each step) and rename them. Then optionally offers to create an app. |
+| `menina create [project-name] [--namespace] [--description] [--environments a,b,c] [--yes]` | Create a project. Prompts the name, then asks **“Do you account for multiple environments?”** — *No* creates only `production`; *Yes* opens an editable list where you add names (shown on each step) and rename them. Then optionally offers to create an app. `--namespace` defaults to the project name. |
 | `menina project` | Interactive: pick a project → run the app menu |
-| `menina project create <name> [--namespace] [--description] [--environments a,b,c]` | Create a project and its environments (`production` by default; `--environments none` for none) |
+| `menina project create <name> [--namespace] [--description] [--environments a,b,c]` | Create a project and its environments (`production` by default; `--environments none` for none). `--namespace` defaults to the project name. |
 | `menina project get <name> [--json]` | Show a project's namespace, apps and environments |
 | `menina project list [--json]` | List projects |
 | `menina project delete <name> [--hard] [--yes]` | Soft-delete (default): workloads stop (scaled to zero), config kept for restore. `--hard`: remove config and prune workloads. PVCs/history retained either way |
