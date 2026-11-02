@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-02
+
 ### Fixed
 - `menina serve` can write desired state again: its systemd unit includes the
   config directory in `ReadWritePaths` and allows setgid config directories, so
