@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-11-02
+
 ### Fixed
 - New projects default `project.yml → namespace` to the project name instead of
   an empty value, so fresh projects no longer share `menina-apps-<environment>`.
