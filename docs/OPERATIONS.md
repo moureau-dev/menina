@@ -27,8 +27,10 @@ app management, `status`, `routes`, `logs`, `doctor`, `app deploy`,
 - `menina serve` and `menina proxy` run as a dedicated unprivileged user with
   systemd hardening (`NoNewPrivileges`, `ProtectSystem=full`, `ProtectHome`,
   `ProtectKernel*`, `ProtectControlGroups`, `PrivateDevices`, `PrivateTmp`,
-  `RestrictNamespaces`, `RestrictSUIDSGID`, `LockPersonality`, and a minimal
-  `RestrictAddressFamilies`). Only the proxy gets `CAP_NET_BIND_SERVICE`.
+  `RestrictNamespaces`, `LockPersonality`, and a minimal
+  `RestrictAddressFamilies`). `menina serve` must create setgid config
+  directories, so it disables `RestrictSUIDSGID`; the proxy keeps it. Only the
+  proxy gets `CAP_NET_BIND_SERVICE`.
 - The registry webhook is bearer-token authenticated and **fails closed**: if
   notifications are enabled without a valid token, `menina serve` refuses to
   start; if disabled, no listener starts. Forwarded headers are trusted only

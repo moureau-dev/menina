@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/moureau-dev/menina/internal/contract/manifest"
+	"github.com/moureau-dev/menina/internal/core/config"
 )
 
 func writeTestManifest(t *testing.T, body string) string {
@@ -73,6 +74,27 @@ func TestParseBuildArgs(t *testing.T) {
 	flags := buildArgFlags(map[string]string{"B": "2", "A": "1"}, map[string]string{"B": "override"})
 	if strings.Join(flags, ",") != "A=1,B=override" {
 		t.Fatalf("flags = %#v", flags)
+	}
+}
+
+func TestValidateFallsBackToHostRegistry(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	if err := config.SavePlatform(dir, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	path := writeTestManifest(t, `project: demo
+environment: production
+apps:
+  web:
+    dockerfile: Dockerfile
+    service: { port: 8080 }
+`)
+	app := &App{opts: Options{ConfigDir: &dir}}
+	cmd := newValidateCommand(app)
+	cmd.SetArgs([]string{"-f", path})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("validate with host registry: %v", err)
 	}
 }
 

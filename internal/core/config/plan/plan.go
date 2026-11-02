@@ -252,7 +252,7 @@ func Apply(configDir string, p *Plan, ifStateToken string, verify bool, actor st
 		return Result{}, err
 	}
 	for _, w := range p.Writes {
-		if err := os.MkdirAll(filepath.Dir(w.Path), 0o770|os.ModeSetgid); err != nil {
+		if err := config.MkdirAllSetgid(filepath.Dir(w.Path), 0o770|os.ModeSetgid); err != nil {
 			return Result{}, err
 		}
 		if err := os.WriteFile(w.Path, w.Content, 0o640); err != nil {

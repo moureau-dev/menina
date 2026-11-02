@@ -28,10 +28,10 @@ ProtectControlGroups=true
 PrivateDevices=true
 PrivateTmp=true
 LockPersonality=true
-RestrictSUIDSGID=true
+RestrictSUIDSGID=false
 RestrictNamespaces=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
-ReadWritePaths=@DATA_DIR@ /run/menina
+ReadWritePaths=@CONFIG_DIR@ @DATA_DIR@ /run/menina
 
 [Install]
 WantedBy=multi-user.target

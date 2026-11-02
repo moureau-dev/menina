@@ -180,6 +180,10 @@ menina job watch <id> --host user@vps --json --timeout 10m   # NDJSON
 ## Shared model
 
 - **Project → Environment → App.**
+- **Namespaces:** new projects default `project.yml → namespace` to the project
+  name; an existing empty namespace uses `platform.defaults.namespace`. Each
+  environment appends `-<environment>` unless `environments/<env>.yml →
+  namespace` overrides it.
 - **Registry:** bundled Zot at `registry.<domain>`. Pushing a bundled-registry
   image auto-deploys matching enabled apps; the tag resolves to a digest.
 - **External images** (for example `redis:7-alpine`) deploy by tag, with no

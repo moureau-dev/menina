@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- `menina serve` can write desired state again: its systemd unit includes the
+  config directory in `ReadWritePaths` and allows setgid config directories, so
+  API apply can create new projects. `menina deploy` installs the corrected
+  unit.
+- `validate` falls back to `config.yml → registry.domain` like `apply`, so
+  manifests that build images validate on a configured host without
+  `defaults.registry`.
+- Route snapshots are published after workload reconciliation, so a new Service
+  is routable immediately instead of waiting for the next reconcile tick.
+
+### Changed
+- `llms.txt` documents the namespace defaults for projects and environments.
+
 ## [0.1.5] - 2026-11-02
 
 ### Fixed

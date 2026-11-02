@@ -213,7 +213,7 @@ func newValidateCommand(app *App) *cobra.Command {
 			}
 			r, err := f.Render(manifest.RenderOptions{
 				ConfigDir: app.configDir(),
-				Registry:  firstNonEmpty(o.Registry, f.Defaults.Registry),
+				Registry:  o.registryFor(app, f),
 				Tag:       o.Tag,
 			})
 			if err != nil {
@@ -279,15 +279,7 @@ func newApplyCommand(app *App) *cobra.Command {
 			if err != nil {
 				return apierrors.Wrap(apierrors.CodeValidation, err)
 			}
-			registry := o.Registry
-			if registry == "" {
-				registry = f.Defaults.Registry
-			}
-			if registry == "" {
-				if cfg, err := app.loadConfig(); err == nil {
-					registry = cfg.Registry.Domain
-				}
-			}
+			registry := o.registryFor(app, f)
 			r, err := f.Render(manifest.RenderOptions{
 				ConfigDir: app.configDir(),
 				Registry:  registry,
@@ -793,6 +785,16 @@ func sshApply(ctx context.Context, app *App, host string, data []byte, o *manife
 		return fmt.Errorf("ssh %s: %w", host, err)
 	}
 	return nil
+}
+
+func (o *manifestOptions) registryFor(app *App, f *manifest.File) string {
+	if registry := firstNonEmpty(o.Registry, f.Defaults.Registry); registry != "" {
+		return registry
+	}
+	if cfg, err := app.loadConfig(); err == nil {
+		return cfg.Registry.Domain
+	}
+	return ""
 }
 
 func firstNonEmpty(values ...string) string {

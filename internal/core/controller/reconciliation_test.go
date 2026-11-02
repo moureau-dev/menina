@@ -209,6 +209,30 @@ func TestReconcileAllRepublishesOnClusterIPDrift(t *testing.T) {
 	}
 }
 
+func TestReconcileAllPublishesRoutesAfterApplyingServices(t *testing.T) {
+	db := testDB(t)
+	cluster := &fakeCluster{clusterIPAfterApply: "10.0.0.9"}
+	cfg := config.Default()
+	cfg.TLS.Terminate = true
+	rec := NewReconciler(db, cluster, k8s.NewEngine(cluster, db, stubResolver{digest: "sha256:x"}, testLogger()), resolvedFunc(), &cfg, testLogger())
+	var published []*edge.Snapshot
+	rec.OnPublish(func(s *edge.Snapshot) { published = append(published, s) })
+
+	rec.ReconcileAll(context.Background())
+	if len(published) != 1 {
+		t.Fatalf("expected one publish, got %d", len(published))
+	}
+	found := false
+	for _, route := range published[0].Routes {
+		if route.Host == "api.hello.com" && route.Backend == "10.0.0.9:8080" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("routes must be published after services are applied, got %+v", published[0].Routes)
+	}
+}
+
 func TestBuildSnapshotSkipsDegradedService(t *testing.T) {
 	db := testDB(t)
 	cluster := &fakeCluster{clusterIP: ""}

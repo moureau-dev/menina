@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/moureau-dev/menina/internal/core/config"
 )
 
 func TestValidatePaths(t *testing.T) {
@@ -30,6 +32,36 @@ func TestHashDetectsTampering(t *testing.T) {
 	p.Writes[0].Content = []byte("b")
 	if Hash(p) == p.ID {
 		t.Fatal("hash did not change after tampering")
+	}
+}
+
+func TestApplyCreatesSetgidProjectDir(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	if err := config.SavePlatform(dir, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "projects", "p", "apps", "api.yml")
+	p := &Plan{
+		Project:     "p",
+		Environment: "production",
+		Writes:      []Write{{Path: path, Content: []byte("name: api\n")}},
+	}
+	base, err := CurrentStateToken(dir, p.Project, p.Environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.BaseState = base
+	p.ID = Hash(p)
+	if _, err := Apply(dir, p, "", false, "test"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(dir, "projects", "p"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSetgid == 0 {
+		t.Fatalf("project dir mode = %v, want setgid", info.Mode())
 	}
 }
 

@@ -196,10 +196,10 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) {
 	}
 	r.reconcileMu.Lock()
 	defer r.reconcileMu.Unlock()
+	r.ReconcileWorkloads(ctx, rc)
 	if err := r.publishLocked(ctx, rc); err != nil {
 		r.log.Warn("route reconciliation failed", "error", err)
 	}
-	r.ReconcileWorkloads(ctx, rc)
 	r.ReconcileTags(ctx)
 }
 

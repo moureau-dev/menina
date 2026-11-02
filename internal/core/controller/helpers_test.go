@@ -30,14 +30,15 @@ func testDB(t *testing.T) *sqlite.DB {
 }
 
 type fakeCluster struct {
-	status     *k8s.WorkloadStatus
-	clusterIP  string
-	applied    []k8s.Workload
-	services   []k8s.ServiceRef
-	workloads  []k8s.WorkloadRef
-	deleted    []string
-	deletedSvc []string
-	scaled     map[string]int
+	status              *k8s.WorkloadStatus
+	clusterIP           string
+	clusterIPAfterApply string
+	applied             []k8s.Workload
+	services            []k8s.ServiceRef
+	workloads           []k8s.WorkloadRef
+	deleted             []string
+	deletedSvc          []string
+	scaled              map[string]int
 }
 
 func (f *fakeCluster) EnsureNamespace(context.Context, string) error { return nil }
@@ -47,6 +48,9 @@ func (f *fakeCluster) ApplyWorkload(_ context.Context, w k8s.Workload) error {
 }
 func (f *fakeCluster) ApplyService(_ context.Context, w k8s.Workload) error {
 	f.applied = append(f.applied, w)
+	if f.clusterIPAfterApply != "" {
+		f.clusterIP = f.clusterIPAfterApply
+	}
 	return nil
 }
 func (f *fakeCluster) DeleteWorkload(_ context.Context, namespace, name string) error {
