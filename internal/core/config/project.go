@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -116,7 +118,14 @@ type ExposureSpec struct {
 	Ports        PortsSpec         `yaml:"ports,omitempty"`
 }
 
+// DefaultStorageName is the name assigned to a single unnamed storage. It keeps
+// the historical PersistentVolumeClaim name `<app>-data` for existing apps.
+const DefaultStorageName = "data"
+
 type StorageSpec struct {
+	// Name identifies the volume within the app. The PVC is named
+	// `<app>-<name>`.
+	Name      string `yaml:"name,omitempty"`
 	Enabled   bool   `yaml:"enabled"`
 	Size      string `yaml:"size"`
 	MountPath string `yaml:"mountPath"`
@@ -124,6 +133,161 @@ type StorageSpec struct {
 	// before a release changes the workload. It is opt-in and fails the release
 	// explicitly when the storage class has no snapshot support.
 	SnapshotBeforeDeploy bool `yaml:"snapshotBeforeDeploy,omitempty"`
+}
+
+// Storages is a workload's list of persistent volumes. It accepts either a
+// single storage object (the legacy shape) or a list of objects.
+type Storages []StorageSpec
+
+// Active returns the enabled storages.
+func (s Storages) Active() Storages {
+	if len(s) == 0 {
+		return nil
+	}
+	out := make(Storages, 0, len(s))
+	for _, storage := range s {
+		if storage.Enabled {
+			out = append(out, storage)
+		}
+	}
+	return out
+}
+
+// StoragePVCName returns the PersistentVolumeClaim name for a workload volume.
+func StoragePVCName(app, storage string) string {
+	if storage == "" {
+		storage = DefaultStorageName
+	}
+	return app + "-" + storage
+}
+
+func (s *Storages) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.MappingNode:
+		storage, err := decodeStorageYAML(value)
+		if err != nil {
+			return err
+		}
+		if storage.Name == "" {
+			storage.Name = DefaultStorageName
+		}
+		*s = Storages{storage}
+		return nil
+	case yaml.SequenceNode:
+		out := make(Storages, 0, len(value.Content))
+		for i, item := range value.Content {
+			if item.Kind != yaml.MappingNode {
+				return fmt.Errorf("storage entry %d must be a mapping", i+1)
+			}
+			storage, err := decodeStorageYAML(item)
+			if err != nil {
+				return err
+			}
+			if storage.Name == "" {
+				if len(value.Content) > 1 {
+					return fmt.Errorf("storage entry %d needs a name", i+1)
+				}
+				storage.Name = DefaultStorageName
+			}
+			out = append(out, storage)
+		}
+		*s = out
+		return nil
+	case yaml.ScalarNode:
+		var raw any
+		if err := value.Decode(&raw); err != nil {
+			return err
+		}
+		if raw == nil {
+			*s = nil
+			return nil
+		}
+		return fmt.Errorf("storage must be a mapping or a list of mappings")
+	default:
+		return fmt.Errorf("storage must be a mapping or a list of mappings")
+	}
+}
+
+func decodeStorageYAML(node *yaml.Node) (StorageSpec, error) {
+	type raw StorageSpec
+	var spec raw
+	if err := node.Decode(&spec); err != nil {
+		return StorageSpec{}, err
+	}
+	out := StorageSpec(spec)
+	if !yamlMappingHasKey(node, "enabled") {
+		out.Enabled = true
+	}
+	return out, nil
+}
+
+func yamlMappingHasKey(node *yaml.Node, key string) bool {
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Storages) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		*s = nil
+		return nil
+	}
+	if trimmed[0] == '[' {
+		var out []StorageSpec
+		if err := json.Unmarshal(trimmed, &out); err != nil {
+			return err
+		}
+		for i := range out {
+			if out[i].Name == "" {
+				if len(out) > 1 {
+					return fmt.Errorf("storage entry %d needs a name", i+1)
+				}
+				out[i].Name = DefaultStorageName
+			}
+		}
+		*s = out
+		return nil
+	}
+	var spec StorageSpec
+	if err := json.Unmarshal(trimmed, &spec); err != nil {
+		return err
+	}
+	if spec.Name == "" {
+		spec.Name = DefaultStorageName
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &fields); err == nil {
+		if _, ok := fields["Enabled"]; !ok {
+			if _, ok := fields["enabled"]; !ok {
+				spec.Enabled = true
+			}
+		}
+	}
+	*s = Storages{spec}
+	return nil
+}
+
+// MarshalYAML keeps the legacy single-storage shape when the app has one volume
+// named `data`, so existing configuration stays readable.
+func (s Storages) MarshalYAML() (any, error) {
+	if len(s) == 0 {
+		return nil, nil
+	}
+	type raw StorageSpec
+	if len(s) == 1 && (s[0].Name == "" || s[0].Name == DefaultStorageName) {
+		storage := raw(s[0])
+		storage.Name = ""
+		return storage, nil
+	}
+	out := make([]raw, len(s))
+	for i, storage := range s {
+		out[i] = raw(storage)
+	}
+	return out, nil
 }
 
 type HealthSpec struct {
@@ -181,7 +345,7 @@ type AppFile struct {
 	Workload     WorkloadSpec      `yaml:"workload"`
 	Resources    ResourceSpec      `yaml:"resources"`
 	Exposure     ExposureSpec      `yaml:"exposure"`
-	Storage      *StorageSpec      `yaml:"storage"`
+	Storage      Storages          `yaml:"storage"`
 	Replicas     *ReplicasSpec     `yaml:"replicas"`
 	Health       *HealthSpec       `yaml:"health"`
 	Verification *VerificationSpec `yaml:"verification,omitempty"`
@@ -201,7 +365,7 @@ type AppOverride struct {
 	Workload     *WorkloadSpec     `yaml:"workload"`
 	Resources    *ResourceSpec     `yaml:"resources"`
 	Exposure     *ExposureSpec     `yaml:"exposure"`
-	Storage      *StorageSpec      `yaml:"storage"`
+	Storage      Storages          `yaml:"storage"`
 	Replicas     *ReplicasSpec     `yaml:"replicas"`
 	Health       *HealthSpec       `yaml:"health"`
 	Verification *VerificationSpec `yaml:"verification,omitempty"`
@@ -256,7 +420,7 @@ type ResolvedApp struct {
 	Workload      WorkloadSpec
 	Resources     ResourceSpec
 	Exposure      ExposureSpec
-	Storage       *StorageSpec
+	Storage       Storages
 	Replicas      ReplicasSpec
 	Health        *HealthSpec
 	Verification  *VerificationSpec

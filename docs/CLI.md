@@ -123,7 +123,7 @@ canonical entrypoint and includes both subcommands.
 | `menina app list --project P [--json]` | List apps |
 | `menina app deploy <name> --project P --environment E [--yes] [--no-wait] [--timeout D] [--verify]` | Deploy and wait for the rollout (print job id + config snapshot version). `--no-wait` queues and returns; `--verify` checks public HTTP routes and TCP L4 ports after the rollout; it is a reachability check, not a correctness/body/status assertion |
 | `menina app status <name> --project P --environment E [--json]` | Last job, release digest and observed status |
-| `menina app reset-volume <name> --project P --environment E [--yes]` | Scale to zero, delete the PVC, and redeploy so the volume is recreated empty (data is lost) |
+| `menina app reset-volume <name> --project P --environment E [--volume V] [--yes]` | Scale to zero, delete one PVC, and redeploy so the volume is recreated empty (data is lost). A single volume is implicit; multi-volume apps require `--volume` |
 | `menina app logs <name> --project P --environment E [--follow] [--tail N] [--since D]` | Stream workload logs, bounded by tail lines and/or age |
 | `menina app rollback <name> --project P --environment E [--digest D] [--yes] [--no-wait] [--timeout D]` | Restore a recorded digest |
 | `menina app scale <name> --project P [--environment/-e E \| --baseline] (--replicas N \| --min M --max X [--target-cpu C] \| --reset)` | Change scaling. `-e E` writes that environment's override; `--baseline` writes the shared baseline; on a terminal with more than one environment and neither given, it prompts. Non-interactive with neither ⇒ baseline |
@@ -133,7 +133,8 @@ canonical entrypoint and includes both subcommands.
 
 `menina app create` flags: `--project`, `--repository`, `--type service|worker`,
 `--port`, `--cpu`, `--memory`, `--replicas N`, `--min-replicas`/`--max-replicas`/
-`--target-cpu`, `--storage`/`--mount`, `--command`, `--yes`.
+`--target-cpu`, `--storage [name=]size[:path]` (repeatable), `--mount`, `--command`,
+`--yes`.
 
 ### App action menu
 

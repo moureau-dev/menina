@@ -287,8 +287,13 @@ different args is rejected.
 - `single-writer` (default) forces `replicas: 1`.
 - `multi-writer` is rejected: Menina does not configure a ReadWriteMany storage
   class yet.
-- One storage per workload; sharing a named storage between workloads is
-  rejected. After translation the volume is still one PVC per app.
+- A workload may mount one or more storages. Each becomes its own PVC named
+  `<app>-<storage>`; a single unnamed inline storage keeps the legacy
+  `<app>-data` name.
+- When more than one volume is listed, every entry must reference a named
+  storage; inline `{ size, path }` entries are only allowed for a single volume.
+- Mount paths must be unique, and a named storage cannot be shared between
+  workloads.
 - Unused storages produce a warning.
 
 ### Verification
@@ -794,8 +799,8 @@ Constraints:
 - No git-diff selection (`--filter` is explicit) and no multi-node/HA support.
   Recovery is an explicit host-side per-app policy, not a client default. Prune
   requires a reviewed `--from-plan`; ownership is a hint, not authorization.
-- One storage per workload; named volumes cannot be shared across workloads;
-  multi-writer/RWX is not configured by Menina.
+- Multiple volumes per workload are supported, but named volumes cannot be
+  shared across workloads and multi-writer/RWX is not configured by Menina.
 - No compose semantics: `dependsOn` is only an explicit readiness ordering, not
   automatic provisioning or networking. Services reach each other by Kubernetes
   Service name.

@@ -3,6 +3,7 @@ package host
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -10,7 +11,8 @@ import (
 )
 
 func appCreate(app *App) *cobra.Command {
-	var project, repository, workload, runAs, cpu, memory, storageSize, mountPath string
+	var project, repository, workload, runAs, cpu, memory, mountPath string
+	var storageSpecs []string
 	var port, replicas, minReplicas, maxReplicas, targetCPU int
 	var yes bool
 	cmd := &cobra.Command{
@@ -64,9 +66,11 @@ func appCreate(app *App) *cobra.Command {
 			if runAs != "" {
 				af.Workload.Command = []string{runAs}
 			}
-			if storageSize != "" {
-				af.Storage = &config.StorageSpec{Enabled: true, Size: storageSize, MountPath: mountPath}
+			storages, err := parseStorageSpecs(storageSpecs, mountPath)
+			if err != nil {
+				return err
 			}
+			af.Storage = storages
 			switch {
 			case cmd.Flags().Changed("min-replicas") || cmd.Flags().Changed("max-replicas"):
 				af.Replicas = &config.ReplicasSpec{Min: minReplicas, Max: maxReplicas, TargetCPU: targetCPU}
@@ -103,11 +107,66 @@ func appCreate(app *App) *cobra.Command {
 	cmd.Flags().IntVar(&minReplicas, "min-replicas", 0, "minimum replicas (enables autoscaling)")
 	cmd.Flags().IntVar(&maxReplicas, "max-replicas", 0, "maximum replicas (enables autoscaling)")
 	cmd.Flags().IntVar(&targetCPU, "target-cpu", 70, "target CPU utilization for autoscaling")
-	cmd.Flags().StringVar(&storageSize, "storage", "", "persistent volume size (e.g. 1Gi)")
-	cmd.Flags().StringVar(&mountPath, "mount", "/data", "storage mount path")
+	cmd.Flags().StringArrayVar(&storageSpecs, "storage", nil, "persistent volume as [name=]size[:path] (repeatable; e.g. 1Gi or data=1Gi:/data)")
+	cmd.Flags().StringVar(&mountPath, "mount", "/data", "default storage mount path")
 	cmd.Flags().StringVar(&runAs, "command", "", "container command override")
 	cmd.Flags().BoolVar(&yes, "yes", false, "non-interactive; use flags only")
 	return cmd
+}
+
+// parseStorageSpecs turns repeated --storage values into volume specs. Each
+// value is [name=]size[:path]; the first form keeps the legacy `--storage 1Gi
+// --mount /data` behavior, while names are required once more than one volume
+// is declared.
+func parseStorageSpecs(values []string, defaultMount string) (config.Storages, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	if defaultMount == "" {
+		defaultMount = "/data"
+	}
+	out := make(config.Storages, 0, len(values))
+	seenName := map[string]bool{}
+	seenPath := map[string]string{}
+	for i, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			return nil, fmt.Errorf("--storage %d is empty", i+1)
+		}
+		name := ""
+		if idx := strings.Index(value, "="); idx >= 0 {
+			name = strings.TrimSpace(value[:idx])
+			value = strings.TrimSpace(value[idx+1:])
+		}
+		size := value
+		path := defaultMount
+		if idx := strings.Index(value, ":"); idx >= 0 {
+			size = strings.TrimSpace(value[:idx])
+			path = strings.TrimSpace(value[idx+1:])
+		}
+		if size == "" {
+			return nil, fmt.Errorf("--storage %q needs a size (e.g. 1Gi or name=1Gi:/data)", raw)
+		}
+		if path == "" {
+			return nil, fmt.Errorf("--storage %q has an empty mount path", raw)
+		}
+		if name == "" {
+			if len(values) > 1 {
+				return nil, fmt.Errorf("--storage %q needs a name (name=size[:path]) when more than one storage is set", raw)
+			}
+			name = config.DefaultStorageName
+		}
+		if seenName[name] {
+			return nil, fmt.Errorf("duplicate storage name %q", name)
+		}
+		seenName[name] = true
+		if other, ok := seenPath[path]; ok {
+			return nil, fmt.Errorf("storages %q and %q use the same mount path %q", other, name, path)
+		}
+		seenPath[path] = name
+		out = append(out, config.StorageSpec{Name: name, Enabled: true, Size: size, MountPath: path})
+	}
+	return out, nil
 }
 
 func appScale(app *App) *cobra.Command {

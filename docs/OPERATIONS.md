@@ -80,7 +80,7 @@ MENINA_BACKUP_PASSPHRASE=... sudo menina backup --out /root/enc.tgz \
 - `--with-secrets`: include `secrets/` (registry password, webhook/CF tokens).
   Combine with `--passphrase` (or `MENINA_BACKUP_PASSPHRASE`) to **encrypt** the
   archive (scrypt + AES-GCM); without it secrets are stored in plaintext.
-- `--with-volumes`: application volume data (each app's `<app>-data` PVC).
+- `--with-volumes`: application volume data (one PVC per storage, `<app>-<storage>`; `<app>-data` for a single unnamed volume).
 - `--with-images`: the registry's `zot-data` PVC (the image blobs).
 - Volume/image capture reads the k3s `local-path` storage directly (fast), so
   `--with-volumes`/`--with-images` **require root**. By default it is

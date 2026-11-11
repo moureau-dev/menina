@@ -43,6 +43,10 @@ storages:
     path: ${MOUNT_BASE}/reports
     access: single-writer
 
+  cache:
+    size: 512Mi
+    path: ${MOUNT_BASE}/cache
+
 # Application definitions.
 # Each app has a dockerfile or an image, a service port, and optional exposure,
 # environment variables, secrets, storage, and replicas.
@@ -54,7 +58,7 @@ apps:
       http:
         hosts: ["api.${DOMAIN}"]
     env: { REDIS_URL: "redis://redis:6379", DB_PATH: "${MOUNT_BASE}/sqlite/data" } # environment variables merged in the container
-    storage: [sqlite] # list of storage names, or a single name, or an object with the name and overrides ({ use: sqlite, path: /data }) or list of such objects
+    storage: [sqlite, cache] # one or more named storages; each becomes its own PVC (<app>-<name>). A single inline object ({ size, path }) is also accepted.
     replicas: 1 # optional, defaults to 1. can be a single number or an object with min and max values
     dependsOn: [pg]    # ready before this app is applied; keep the list short
     verification:      # optional post-rollout correctness checks

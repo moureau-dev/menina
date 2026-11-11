@@ -28,6 +28,29 @@ func deployDB(t *testing.T) *sqlite.DB {
 	return db
 }
 
+func TestApplyResolvedEnsuresOnePVCPerStorage(t *testing.T) {
+	cluster := &stubCluster{}
+	engine := NewEngine(cluster, nil, nil, deployLogger())
+	app := &config.ResolvedApp{
+		Project: "p", Environment: "prod", Name: "api", Namespace: "ns", Enabled: true,
+		Repository: "registry/api", Tag: "prod", Replicas: config.ReplicasSpec{Min: 1, Max: 1},
+		Workload: config.WorkloadSpec{Type: config.WorkloadService, Port: 8080},
+		Storage: config.Storages{
+			{Name: "data", Enabled: true, Size: "1Gi", MountPath: "/data"},
+			{Name: "cache", Enabled: true, Size: "512Mi", MountPath: "/cache"},
+		},
+	}
+	if _, err := engine.applyResolved(context.Background(), app, "registry/api:prod"); err != nil {
+		t.Fatal(err)
+	}
+	if len(cluster.pvcs) != 2 || cluster.pvcs[0] != "ns/api-data" || cluster.pvcs[1] != "ns/api-cache" {
+		t.Fatalf("pvcs = %+v", cluster.pvcs)
+	}
+	if len(cluster.applied) != 1 || len(cluster.applied[0].Storages) != 2 {
+		t.Fatalf("applied = %+v", cluster.applied)
+	}
+}
+
 func TestBuildWorkloadUsesDigestAndResources(t *testing.T) {
 	engine := NewEngine(&stubCluster{}, nil, nil, deployLogger())
 	app := &config.ResolvedApp{
@@ -36,7 +59,7 @@ func TestBuildWorkloadUsesDigestAndResources(t *testing.T) {
 		Workload:  config.WorkloadSpec{Type: config.WorkloadService, Port: 8080},
 		Resources: config.ResourceSpec{CPU: "500m", Memory: "512Mi"},
 		Health:    &config.HealthSpec{Readiness: "/healthz"},
-		Storage:   &config.StorageSpec{Enabled: true, Size: "1Gi", MountPath: "/data"},
+		Storage:   config.Storages{{Name: "data", Enabled: true, Size: "1Gi", MountPath: "/data"}},
 	}
 	w := engine.buildWorkload(app, "sha256:abc")
 	if w.Image != "registry/api@sha256:abc" {
@@ -45,8 +68,8 @@ func TestBuildWorkloadUsesDigestAndResources(t *testing.T) {
 	if w.Replicas != 3 || w.Port != 8080 || w.CPU != "500m" || w.HealthPath != "/healthz" {
 		t.Fatalf("workload = %+v", w)
 	}
-	if w.StorageSize != "1Gi" || w.MountPath != "/data" {
-		t.Fatalf("storage = %+v", w)
+	if len(w.Storages) != 1 || w.Storages[0].Size != "1Gi" || w.Storages[0].MountPath != "/data" {
+		t.Fatalf("storage = %+v", w.Storages)
 	}
 	w2 := engine.buildWorkload(app, "")
 	if w2.Image != "registry/api:prod" {

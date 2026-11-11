@@ -320,20 +320,26 @@ func appVolumeSpecs(cfg *config.Config) ([]VolumeSpec, error) {
 	for _, rp := range resolved.Projects {
 		for _, re := range rp.Environments {
 			for _, app := range re.Apps {
-				if !app.Enabled || app.Storage == nil || !app.Storage.Enabled {
+				if !app.Enabled {
 					continue
 				}
-				size := app.Storage.Size
-				if size == "" {
-					size = "1Gi"
+				for _, storage := range app.Storage.Active() {
+					size := storage.Size
+					if size == "" {
+						size = "1Gi"
+					}
+					name := storage.Name
+					if name == "" {
+						name = config.DefaultStorageName
+					}
+					out = append(out, VolumeSpec{
+						Namespace: app.Namespace,
+						Workload:  app.Name,
+						PVC:       config.StoragePVCName(app.Name, name),
+						Size:      size,
+						RelPath:   filepath.ToSlash(filepath.Join(dirVolumes, app.Project, app.Environment, app.Name, name)),
+					})
 				}
-				out = append(out, VolumeSpec{
-					Namespace: app.Namespace,
-					Workload:  app.Name,
-					PVC:       app.Name + "-data",
-					Size:      size,
-					RelPath:   filepath.ToSlash(filepath.Join(dirVolumes, app.Project, app.Environment, app.Name)),
-				})
 			}
 		}
 	}

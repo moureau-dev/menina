@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Workloads can mount multiple named storages. Each volume becomes its own
+  PVC (`<app>-<storage>`), and manifests list them (`storage: [data, cache]`).
+- `menina app create --storage` is repeatable and accepts
+  `[name=]size[:path]`, so `--storage data=1Gi:/data --storage cache=512Mi:/cache`
+  creates two volumes.
+
+### Changed
+- `menina app reset-volume` takes `--volume` and requires it when an app has
+  more than one volume; a single volume is still implicit.
+- Backup archives store each volume under
+  `volumes/<project>/<environment>/<app>/<storage>` rather than one directory
+  per app. Existing archives still restore because the archive manifest records
+  its own volume paths.
+- Legacy single-storage configuration and pinned release snapshots still decode:
+  a lone storage object is read as the volume named `data`.
+
 ## [0.1.6] - 2026-11-02
 
 ### Fixed

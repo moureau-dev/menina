@@ -8,14 +8,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/moureau-dev/menina/internal/api"
-	"github.com/moureau-dev/menina/internal/api/errors"
-	"github.com/moureau-dev/menina/internal/core/cluster"
+	apierrors "github.com/moureau-dev/menina/internal/api/errors"
+	k8s "github.com/moureau-dev/menina/internal/core/cluster"
 	"github.com/moureau-dev/menina/internal/core/config"
 )
 
@@ -349,17 +350,19 @@ func appDeploy(app *App) *cobra.Command {
 }
 
 func appResetVolume(app *App) *cobra.Command {
-	var project, environment string
+	var project, environment, volume string
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "reset-volume <name>",
 		Short: "Delete and recreate an app's persistent volume (data is lost)",
-		Long: "Scale the app to zero, delete its PersistentVolumeClaim, and queue a\n" +
+		Long: "Scale the app to zero, delete a PersistentVolumeClaim, and queue a\n" +
 			"deployment so the volume is recreated empty and the app comes back up.\n" +
 			"This destroys the volume's data. The scale-to-zero wait ensures the\n" +
-			"running pod has released the volume before it is deleted.",
-		Example: "  menina app reset-volume api --project my-app --environment production --yes",
-		Args:    cobra.ExactArgs(1),
+			"running pod has released the volume before it is deleted. When an app\n" +
+			"has more than one volume, choose one with --volume.",
+		Example: "  menina app reset-volume api --project my-app --environment production --yes\n" +
+			"  menina app reset-volume api --volume cache --project my-app --environment production --yes",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := app.LoadConfig()
 			if err != nil {
@@ -377,10 +380,16 @@ func appResetVolume(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if resolvedApp.Storage == nil || !resolvedApp.Storage.Enabled {
+			storages := resolvedApp.Storage.Active()
+			if len(storages) == 0 {
 				return fmt.Errorf("app %q has no persistent storage to reset", args[0])
 			}
-			prompt := fmt.Sprintf("Delete and recreate the volume for %s/%s/%s? All of its data will be LOST.", project, environment, args[0])
+			target, err := selectStorage(storages, volume)
+			if err != nil {
+				return err
+			}
+			pvc := config.StoragePVCName(args[0], target.Name)
+			prompt := fmt.Sprintf("Delete and recreate volume %q (%s) for %s/%s/%s? All of its data will be LOST.", target.Name, pvc, project, environment, args[0])
 			if !confirmDestructive(app, prompt, yes) {
 				return fmt.Errorf("aborted")
 			}
@@ -406,10 +415,10 @@ func appResetVolume(app *App) *cobra.Command {
 				case <-time.After(2 * time.Second):
 				}
 			}
-			if err := cluster.DeletePVC(cmd.Context(), resolvedApp.Namespace, args[0]+"-data"); err != nil {
+			if err := cluster.DeletePVC(cmd.Context(), resolvedApp.Namespace, pvc); err != nil {
 				return err
 			}
-			app.Infof("Deleted volume %s/%s-data", resolvedApp.Namespace, args[0])
+			app.Infof("Deleted volume %s/%s", resolvedApp.Namespace, pvc)
 			if client, err := app.Control(cfg); err == nil {
 				body := fmt.Sprintf(`{"project":%q,"environment":%q,"app":%q,"confirm":%t}`, project, environment, args[0], yes)
 				var res struct {
@@ -429,10 +438,33 @@ func appResetVolume(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&project, "project", "", "project name")
 	cmd.Flags().StringVar(&environment, "environment", "", "environment name")
+	cmd.Flags().StringVar(&volume, "volume", "", "volume name (required when the app has more than one)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm the reset without prompting")
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("environment")
 	return cmd
+}
+
+// selectStorage picks the volume to reset. A single volume is implicit; a
+// multi-volume app must name one explicitly.
+func selectStorage(storages config.Storages, want string) (config.StorageSpec, error) {
+	if want != "" {
+		for _, storage := range storages {
+			if storage.Name == want {
+				return storage, nil
+			}
+		}
+		return config.StorageSpec{}, fmt.Errorf("app has no volume named %q", want)
+	}
+	if len(storages) == 1 {
+		return storages[0], nil
+	}
+	names := make([]string, 0, len(storages))
+	for _, storage := range storages {
+		names = append(names, storage.Name)
+	}
+	sort.Strings(names)
+	return config.StorageSpec{}, fmt.Errorf("app has multiple volumes; choose one with --volume (%s)", strings.Join(names, ", "))
 }
 
 func appLogs(app *App) *cobra.Command {

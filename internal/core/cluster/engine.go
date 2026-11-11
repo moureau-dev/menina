@@ -91,13 +91,14 @@ func (e *Engine) applyResolved(ctx context.Context, app *config.ResolvedApp, ima
 			w.SecretEnv[name] = name
 		}
 	}
-	if app.Storage != nil && app.Storage.Enabled {
-		size := app.Storage.Size
+	for _, storage := range app.Storage.Active() {
+		size := storage.Size
 		if size == "" {
 			size = "1Gi"
 		}
-		if err := e.cluster.EnsurePVC(ctx, app.Namespace, app.Name+"-data", size, ""); err != nil {
-			return nil, fmt.Errorf("ensure pvc for %s/%s: %w", app.Namespace, app.Name, err)
+		pvc := config.StoragePVCName(app.Name, storage.Name)
+		if err := e.cluster.EnsurePVC(ctx, app.Namespace, pvc, size, ""); err != nil {
+			return nil, fmt.Errorf("ensure pvc for %s/%s: %w", app.Namespace, pvc, err)
 		}
 	}
 	if app.Workload.Type == config.WorkloadService && app.Workload.Port > 0 {
@@ -213,9 +214,12 @@ func (e *Engine) buildWorkloadImage(app *config.ResolvedApp, image string) Workl
 			w.HealthPath = app.Health.Liveness
 		}
 	}
-	if app.Storage != nil && app.Storage.Enabled {
-		w.StorageSize = app.Storage.Size
-		w.MountPath = app.Storage.MountPath
+	for _, storage := range app.Storage.Active() {
+		w.Storages = append(w.Storages, StorageMount{
+			Name:      storage.Name,
+			Size:      storage.Size,
+			MountPath: storage.MountPath,
+		})
 	}
 	for _, p := range app.Exposure.Ports.TCP {
 		w.Ports = append(w.Ports, PortMapping{Port: p, Protocol: "TCP"})

@@ -91,9 +91,9 @@ For each enabled app in each environment, Menina reconciles:
   - Env vars sorted for stable diffs; CPU/memory set as **both requests and
     limits** (equal) when configured.
   - Readiness + liveness HTTP probes when a `health` path is set (same port).
-  - Volumes: a detached data **PVC** (`<app>-data`, mounted at `storage.mountPath`
-    with `fsGroup: 1000`) when storage is enabled; optional ConfigMap and Secret
-    mounts.
+  - Volumes: one detached data **PVC** per declared storage (`<app>-<storage>`,
+    or `<app>-data` for a single unnamed volume), mounted at its `mountPath`
+    with `fsGroup: 1000`; optional ConfigMap and Secret mounts.
   - `worker` workloads run a container with no Service/port; `service` workloads
     get a port and a Service.
 - **Service** (service apps with a port): `ClusterIP`, `port`/`targetPort` =
@@ -104,9 +104,9 @@ For each enabled app in each environment, Menina reconciles:
   replicas are fixed, any stale HPA is **deleted** so the Deployment's replica
   count is authoritative. See the [CLI reference](CLI.md#environments--scaling)
   for baseline vs per-environment scaling.
-- **PersistentVolumeClaim** `<app>-data` when storage is enabled (default
-  `1Gi`, `ReadWriteOnce`, optional `storageClass`; k3s's `local-path`
-  provisioner by default).
+- **PersistentVolumeClaim** `<app>-<storage>` for each declared volume (default
+  `1Gi`, `ReadWriteOnce`, k3s's `local-path` provisioner). A single unnamed
+  storage keeps the historical `<app>-data` name.
 
 Applying is **idempotent**: an unchanged pod template does not trigger a
 rollout. Updates replace `spec`/`labels` in place, preserving server-assigned

@@ -372,56 +372,83 @@ func (f *File) resolveImage(name string, w Workload, tag, registry string) (repo
 	return repository, imageTag, false, nil
 }
 
-func (f *File) resolveStorage(name string, refs StorageRefs, replicas **config.ReplicasSpec) (*config.StorageSpec, map[string]string, error) {
+func (f *File) resolveStorage(name string, refs StorageRefs, replicas **config.ReplicasSpec) (config.Storages, map[string]string, error) {
 	if len(refs) == 0 {
 		return nil, nil, nil
 	}
-	if len(refs) > 1 {
-		return nil, nil, fmt.Errorf("%q: Menina currently supports one storage per workload", name)
-	}
-	ref := refs[0]
 	used := map[string]string{}
-	size, path, access := ref.Size, ref.Path, AccessSingleWriter
-	snapshot := ref.Snapshot
-	if ref.Use != "" {
-		storage, ok := f.Storages[ref.Use]
-		if !ok {
-			return nil, nil, fmt.Errorf("%q references unknown storage %q", name, ref.Use)
+	seen := map[string]bool{}
+	paths := map[string]string{}
+	out := make(config.Storages, 0, len(refs))
+	for i, ref := range refs {
+		storageName := ref.Use
+		if storageName == "" {
+			if len(refs) > 1 {
+				return nil, nil, fmt.Errorf("%q: storage entry %d needs a name; declare it under storages and reference it by name", name, i+1)
+			}
+			storageName = config.DefaultStorageName
 		}
-		size = storage.Size
-		if ref.Path != "" {
-			path = ref.Path
-		} else {
-			path = storage.Path
+		if !workloadNameRe.MatchString(storageName) {
+			return nil, nil, fmt.Errorf("%q: invalid storage name %q: use lowercase letters, digits and hyphens", name, storageName)
 		}
-		access = storage.Access
-		snapshot = snapshot || storage.Snapshot
-		used[ref.Use] = name
-	}
-	if size == "" {
-		return nil, nil, fmt.Errorf("%q: storage size is required", name)
-	}
-	if path == "" {
-		return nil, nil, fmt.Errorf("%q: storage path is required", name)
-	}
-	if access == "" {
-		access = AccessSingleWriter
-	}
-	switch access {
-	case AccessSingleWriter:
-		// Force one replica: SQLite and similar embedded stores are
-		// single-writer, and a fixed count also avoids rollout overlap.
-		if *replicas == nil {
-			*replicas = &config.ReplicasSpec{Min: 1, Max: 1}
-		} else if (*replicas).Autoscaling() || (*replicas).Min != 1 || (*replicas).Max != 1 {
-			return nil, nil, fmt.Errorf("%q: storage is single-writer, so replicas must be 1", name)
+		if seen[storageName] {
+			return nil, nil, fmt.Errorf("%q: storage %q is referenced more than once", name, storageName)
 		}
-	case AccessMultiWriter:
-		return nil, nil, fmt.Errorf("%q: multi-writer storage needs a ReadWriteMany storage class, which Menina does not configure yet", name)
-	default:
-		return nil, nil, fmt.Errorf("%q: invalid storage access %q (single-writer|multi-writer)", name, access)
+		seen[storageName] = true
+
+		size, path, access := ref.Size, ref.Path, AccessSingleWriter
+		snapshot := ref.Snapshot
+		if ref.Use != "" {
+			storage, ok := f.Storages[ref.Use]
+			if !ok {
+				return nil, nil, fmt.Errorf("%q references unknown storage %q", name, ref.Use)
+			}
+			size = storage.Size
+			if ref.Path != "" {
+				path = ref.Path
+			} else {
+				path = storage.Path
+			}
+			access = storage.Access
+			snapshot = snapshot || storage.Snapshot
+			used[ref.Use] = name
+		}
+		if size == "" {
+			return nil, nil, fmt.Errorf("%q: storage %q size is required", name, storageName)
+		}
+		if path == "" {
+			return nil, nil, fmt.Errorf("%q: storage %q path is required", name, storageName)
+		}
+		if other, ok := paths[path]; ok {
+			return nil, nil, fmt.Errorf("%q: storages %q and %q use the same mount path %q", name, other, storageName, path)
+		}
+		paths[path] = storageName
+		if access == "" {
+			access = AccessSingleWriter
+		}
+		switch access {
+		case AccessSingleWriter:
+			// Force one replica: SQLite and similar embedded stores are
+			// single-writer, and a fixed count also avoids rollout overlap.
+			if *replicas == nil {
+				*replicas = &config.ReplicasSpec{Min: 1, Max: 1}
+			} else if (*replicas).Autoscaling() || (*replicas).Min != 1 || (*replicas).Max != 1 {
+				return nil, nil, fmt.Errorf("%q: storage is single-writer, so replicas must be 1", name)
+			}
+		case AccessMultiWriter:
+			return nil, nil, fmt.Errorf("%q: multi-writer storage needs a ReadWriteMany storage class, which Menina does not configure yet", name)
+		default:
+			return nil, nil, fmt.Errorf("%q: invalid storage access %q (single-writer|multi-writer)", name, access)
+		}
+		out = append(out, config.StorageSpec{
+			Name:                 storageName,
+			Enabled:              true,
+			Size:                 size,
+			MountPath:            path,
+			SnapshotBeforeDeploy: snapshot,
+		})
 	}
-	return &config.StorageSpec{Enabled: true, Size: size, MountPath: path, SnapshotBeforeDeploy: snapshot}, used, nil
+	return out, used, nil
 }
 
 func resolvePath(baseDir, path string) string {

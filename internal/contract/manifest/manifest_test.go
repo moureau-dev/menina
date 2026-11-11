@@ -91,7 +91,7 @@ func TestRenderMapsAppsWorkersAndStorage(t *testing.T) {
 	if api.Workload.Type != config.WorkloadService || api.Workload.Port != 8080 {
 		t.Fatalf("api workload = %+v", api.Workload)
 	}
-	if api.Storage == nil || !api.Storage.Enabled || api.Storage.MountPath != "/data" {
+	if len(api.Storage) != 1 || !api.Storage[0].Enabled || api.Storage[0].Name != "data" || api.Storage[0].MountPath != "/data" {
 		t.Fatalf("api storage = %+v", api.Storage)
 	}
 	if got := r.Overrides["api"]; got == nil || got.Exposure == nil || len(got.Exposure.Hosts) != 1 || got.Exposure.Hosts[0] != "api.example.com" {
@@ -105,7 +105,7 @@ func TestRenderMapsAppsWorkersAndStorage(t *testing.T) {
 	if jobs == nil || jobs.Workload.Type != config.WorkloadWorker {
 		t.Fatalf("jobs = %+v", jobs)
 	}
-	if jobs.Storage != nil {
+	if len(jobs.Storage) != 0 {
 		t.Fatalf("worker must not inherit storage: %+v", jobs.Storage)
 	}
 	if jobs.Image.Repository != api.Image.Repository {
@@ -119,7 +119,7 @@ func TestRenderMapsAppsWorkersAndStorage(t *testing.T) {
 	if redis.Image.Repository != "redis" || redis.Image.Tag != "7-alpine" {
 		t.Fatalf("redis image = %+v", redis.Image)
 	}
-	if redis.Storage != nil {
+	if len(redis.Storage) != 0 {
 		t.Fatalf("redis storage = %+v", redis.Storage)
 	}
 
@@ -128,6 +128,39 @@ func TestRenderMapsAppsWorkersAndStorage(t *testing.T) {
 	}
 	if !strings.HasSuffix(r.Targets[0].Dockerfile, "apps/api/Dockerfile") {
 		t.Fatalf("dockerfile = %q", r.Targets[0].Dockerfile)
+	}
+}
+
+func TestRenderMapsMultipleStorages(t *testing.T) {
+	doc := `project: demo
+environment: production
+storages:
+  db: { size: 1Gi, path: /data }
+  cache: { size: 512Mi, path: /cache }
+apps:
+  api:
+    dockerfile: Dockerfile
+    port: 8080
+    storage: [db, cache]
+    replicas: 1
+`
+	f, err := Load([]byte(doc), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := f.Render(RenderOptions{ConfigDir: "/etc/menina", Registry: "registry.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := r.Apps["api"].Storage
+	if len(got) != 2 {
+		t.Fatalf("storage = %+v, want two volumes", got)
+	}
+	if got[0].Name != "db" || got[0].MountPath != "/data" || got[0].Size != "1Gi" {
+		t.Fatalf("db storage = %+v", got[0])
+	}
+	if got[1].Name != "cache" || got[1].MountPath != "/cache" || got[1].Size != "512Mi" {
+		t.Fatalf("cache storage = %+v", got[1])
 	}
 }
 
@@ -159,11 +192,11 @@ func TestRenderRejectsUnsafeStorage(t *testing.T) {
 			want: "cannot be shared",
 		},
 		{
-			name: "multiple storages",
+			name: "duplicate storage",
 			mutate: func(s string) string {
 				return strings.Replace(s, "storage: [data]", "storage: [data, data]", 1)
 			},
-			want: "one storage",
+			want: "more than once",
 		},
 	}
 	for _, tc := range tests {
@@ -273,10 +306,10 @@ workers:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := r.Apps["api"].Storage; got == nil || got.MountPath != "/app" {
+	if got := r.Apps["api"].Storage; len(got) != 1 || got[0].MountPath != "/app" || got[0].Name != "appdata" {
 		t.Fatalf("api storage = %+v", got)
 	}
-	if got := r.Apps["jobs"].Storage; got == nil || got.MountPath != "/job" {
+	if got := r.Apps["jobs"].Storage; len(got) != 1 || got[0].MountPath != "/job" || got[0].Name != "jobdata" {
 		t.Fatalf("worker storage = %+v, want its explicit volume", got)
 	}
 }

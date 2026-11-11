@@ -138,7 +138,7 @@ func TestBuildDeploymentMountsStorageConfigAndSecret(t *testing.T) {
 	c := newFakeAPI(t).cluster(t)
 	w := Workload{
 		App: "zot", Name: "zot", Namespace: "ns", Image: "zot:2", Port: 5000, ContainerPort: 5000,
-		StorageSize: "10Gi", MountPath: "/var/lib/registry",
+		Storages:  []StorageMount{{Name: "data", Size: "10Gi", MountPath: "/var/lib/registry"}},
 		ConfigMap: "zot-config", ConfigMount: "/etc/zot",
 		SecretName: "zot-htpasswd", SecretMount: "/etc/zot-auth",
 	}
@@ -153,6 +153,32 @@ func TestBuildDeploymentMountsStorageConfigAndSecret(t *testing.T) {
 	}
 	if pod.Containers[0].Ports[0].ContainerPort != 5000 {
 		t.Fatalf("port = %d", pod.Containers[0].Ports[0].ContainerPort)
+	}
+}
+
+func TestBuildDeploymentMountsMultipleStorages(t *testing.T) {
+	c := newFakeAPI(t).cluster(t)
+	w := Workload{
+		App: "api", Name: "api", Namespace: "ns", Image: "img:1", Port: 8080,
+		Storages: []StorageMount{
+			{Name: "data", Size: "1Gi", MountPath: "/data"},
+			{Name: "cache", Size: "512Mi", MountPath: "/cache"},
+		},
+	}
+	d := c.buildDeployment(w)
+	pod := d.Spec.Template.Spec
+	if len(pod.Volumes) != 2 {
+		t.Fatalf("volumes = %+v", pod.Volumes)
+	}
+	if got := pod.Volumes[0].PersistentVolumeClaim; got == nil || got.ClaimName != "api-data" {
+		t.Fatalf("volume 0 = %+v", pod.Volumes[0])
+	}
+	if got := pod.Volumes[1].PersistentVolumeClaim; got == nil || got.ClaimName != "api-cache" {
+		t.Fatalf("volume 1 = %+v", pod.Volumes[1])
+	}
+	mounts := pod.Containers[0].VolumeMounts
+	if len(mounts) != 2 || mounts[0].MountPath != "/data" || mounts[1].MountPath != "/cache" {
+		t.Fatalf("mounts = %+v", mounts)
 	}
 }
 

@@ -17,7 +17,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	deployassets "github.com/moureau-dev/menina/deploy"
-	"github.com/moureau-dev/menina/internal/core/cluster"
+	k8s "github.com/moureau-dev/menina/internal/core/cluster"
 	"github.com/moureau-dev/menina/internal/core/config"
 	"github.com/moureau-dev/menina/internal/core/registry"
 	"github.com/moureau-dev/menina/internal/core/secrets"
@@ -314,8 +314,11 @@ func deployZot(ctx context.Context, app *App, cfg *config.Config) error {
 		Replicas:      1,
 		ConfigMap:     zotConfigMapName,
 		ConfigMount:   zotConfigMount,
-		StorageSize:   orDefault(cfg.Registry.PVCSize, "10Gi"),
-		MountPath:     zotRootDir,
+		Storages: []k8s.StorageMount{{
+			Name:      "data",
+			Size:      orDefault(cfg.Registry.PVCSize, "10Gi"),
+			MountPath: zotRootDir,
+		}},
 	}
 	secret, mount, err := ensureZotAuthSecret(ctx, cluster, cfg)
 	if err != nil {

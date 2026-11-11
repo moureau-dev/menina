@@ -178,6 +178,7 @@
         },
         {
           "type": "array",
+          "description": "One or more volumes. When more than one is listed, every entry must reference a named storage under storages; each volume is one PVC named <app>-<storage>.",
           "items": {
             "oneOf": [
               {

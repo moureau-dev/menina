@@ -65,6 +65,9 @@ Top-level: `version`, `project`, `environment`, `vars`, `source`,
 `defaults` (`context`, `tag`, `registry`, `buildArgs`), `storages`, `apps`,
 `workers`.
 
+- `storages` declares named volumes; a workload may mount one or more,
+  each becoming its own PVC (`<app>-<storage>`). A single unnamed inline volume
+  keeps the `<app>-data` name. Named volumes cannot be shared between workloads.
 - `apps` are services: `service: {port}`, optional `exposure.http` and/or
   `exposure.ports`.
 - `workers` are non-listening: no service/port/exposure; may use

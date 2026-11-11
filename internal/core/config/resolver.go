@@ -94,7 +94,7 @@ func (r *Resolver) resolveApp(p *Project, env *EnvironmentFile, app *AppFile, ov
 		Workload:     app.Workload,
 		Resources:    app.Resources,
 		Exposure:     cloneExposure(app.Exposure),
-		Storage:      cloneStorage(app.Storage),
+		Storage:      cloneStorages(app.Storage),
 		Replicas:     cloneReplicas(app.Replicas),
 		Health:       cloneHealth(app.Health),
 		Verification: cloneVerification(app.Verification),
@@ -137,7 +137,7 @@ func (r *Resolver) resolveApp(p *Project, env *EnvironmentFile, app *AppFile, ov
 			ra.Exposure = mergeExposure(ra.Exposure, *override.Exposure)
 		}
 		if override.Storage != nil {
-			ra.Storage = cloneStorage(override.Storage)
+			ra.Storage = cloneStorages(override.Storage)
 		}
 		if override.Health != nil {
 			ra.Health = cloneHealth(override.Health)
@@ -166,6 +166,9 @@ func (r *Resolver) resolveApp(p *Project, env *EnvironmentFile, app *AppFile, ov
 	}
 	if ra.Exposure.Enabled && len(ra.Exposure.Hosts) == 0 {
 		return nil, fmt.Errorf("app %q environment %q enables exposure without hosts", app.Name, env.Name)
+	}
+	if err := normalizeStorages(ra.Storage); err != nil {
+		return nil, fmt.Errorf("app %q environment %q: %w", app.Name, env.Name, err)
 	}
 	if ra.Tag == "" {
 		switch r.cfg.Defaults.ImageTagStrategy {
@@ -380,12 +383,37 @@ func cloneExposure(in ExposureSpec) ExposureSpec {
 	return out
 }
 
-func cloneStorage(in *StorageSpec) *StorageSpec {
-	if in == nil {
+func normalizeStorages(storages Storages) error {
+	seenName := map[string]bool{}
+	seenPath := map[string]string{}
+	for i := range storages {
+		if !storages[i].Enabled {
+			continue
+		}
+		if storages[i].Name == "" {
+			storages[i].Name = DefaultStorageName
+		}
+		name := storages[i].Name
+		if seenName[name] {
+			return fmt.Errorf("storage %q is declared more than once", name)
+		}
+		seenName[name] = true
+		if storages[i].MountPath == "" {
+			continue
+		}
+		if other, ok := seenPath[storages[i].MountPath]; ok {
+			return fmt.Errorf("storages %q and %q use the same mount path %q", other, name, storages[i].MountPath)
+		}
+		seenPath[storages[i].MountPath] = name
+	}
+	return nil
+}
+
+func cloneStorages(in Storages) Storages {
+	if len(in) == 0 {
 		return nil
 	}
-	out := *in
-	return &out
+	return append(Storages(nil), in...)
 }
 
 func cloneReplicas(in *ReplicasSpec) ReplicasSpec {

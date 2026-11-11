@@ -603,14 +603,24 @@ func (k *KubernetesCluster) buildDeployment(w Workload) *kube.Deployment {
 	if w.PullSecret != "" {
 		podSpec.ImagePullSecrets = []kube.LocalObjectReference{{Name: w.PullSecret}}
 	}
-	if w.StorageSize != "" && w.MountPath != "" {
+	if len(w.Storages) > 0 {
 		fsGroup := int64(1000)
 		podSpec.SecurityContext = &kube.PodSecurityContext{FSGroup: &fsGroup}
-		podSpec.Volumes = append(podSpec.Volumes, kube.Volume{
-			Name:                  "data",
-			PersistentVolumeClaim: &kube.PVCVolumeSource{ClaimName: w.Name + "-data"},
-		})
-		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, kube.VolumeMount{Name: "data", MountPath: w.MountPath})
+		for _, storage := range w.Storages {
+			if storage.MountPath == "" {
+				continue
+			}
+			name := storage.Name
+			if name == "" {
+				name = "data"
+			}
+			volumeName := "data-" + SanitizeName(name)
+			podSpec.Volumes = append(podSpec.Volumes, kube.Volume{
+				Name:                  volumeName,
+				PersistentVolumeClaim: &kube.PVCVolumeSource{ClaimName: w.Name + "-" + name},
+			})
+			podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, kube.VolumeMount{Name: volumeName, MountPath: storage.MountPath})
+		}
 	}
 	if w.ConfigMap != "" {
 		mount := w.ConfigMount

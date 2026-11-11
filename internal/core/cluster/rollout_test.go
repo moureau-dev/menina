@@ -23,6 +23,7 @@ type stubCluster struct {
 	failN         int
 	applied       []Workload
 	secretApplied []secretApply
+	pvcs          []string
 }
 
 func (s *stubCluster) statusNow() (*WorkloadStatus, error) {
@@ -75,7 +76,12 @@ func (s *stubCluster) EnsureSecret(_ context.Context, namespace, name string, da
 func (s *stubCluster) EnsureConfigMap(context.Context, string, string, map[string]string) error {
 	return nil
 }
-func (s *stubCluster) EnsurePVC(context.Context, string, string, string, string) error    { return nil }
+func (s *stubCluster) EnsurePVC(_ context.Context, namespace, name, _, _ string) error {
+	s.mu.Lock()
+	s.pvcs = append(s.pvcs, namespace+"/"+name)
+	s.mu.Unlock()
+	return nil
+}
 func (s *stubCluster) DeletePVC(context.Context, string, string) error                    { return nil }
 func (s *stubCluster) Ping(context.Context) error                                         { return nil }
 func (s *stubCluster) CreateVolumeSnapshot(context.Context, string, string, string) error { return nil }

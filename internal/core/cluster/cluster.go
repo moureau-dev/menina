@@ -31,8 +31,7 @@ type Workload struct {
 	CPU           string
 	Memory        string
 	HealthPath    string
-	StorageSize   string
-	MountPath     string
+	Storages      []StorageMount
 	PullSecret    string
 	PullPolicy    string
 	ServiceName   string
@@ -52,6 +51,14 @@ type Workload struct {
 	// rotation without storing the values.
 	SecretHash string
 	Ports      []PortMapping
+}
+
+// StorageMount is a persistent volume attached to a workload. Name identifies
+// the volume within the workload; the PersistentVolumeClaim is `<workload>-<name>`.
+type StorageMount struct {
+	Name      string
+	Size      string
+	MountPath string
 }
 
 // PortMapping is a raw TCP/UDP port exposed on the node (hostPort), bypassing

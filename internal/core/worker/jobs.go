@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moureau-dev/menina/internal/core/cluster"
+	k8s "github.com/moureau-dev/menina/internal/core/cluster"
 	"github.com/moureau-dev/menina/internal/core/config"
 	"github.com/moureau-dev/menina/internal/core/notify"
 	"github.com/moureau-dev/menina/internal/core/registry"
@@ -385,12 +385,16 @@ func (j *Jobs) ProcessJob(ctx context.Context, job sqlite.Job) error {
 		return nil
 	}
 
-	if previousID != "" && app.Storage != nil && app.Storage.Enabled && app.Storage.SnapshotBeforeDeploy {
-		snapshot := oneOffName(app.Name, "snapshot")
-		if err := j.cluster.CreateVolumeSnapshot(ctx, app.Namespace, app.Name+"-data", snapshot); err != nil {
+	for _, storage := range app.Storage.Active() {
+		if previousID == "" || !storage.SnapshotBeforeDeploy {
+			continue
+		}
+		pvc := config.StoragePVCName(app.Name, storage.Name)
+		snapshot := oneOffName(app.Name+"-"+storage.Name, "snapshot")
+		if err := j.cluster.CreateVolumeSnapshot(ctx, app.Namespace, pvc, snapshot); err != nil {
 			return j.releaseFailed(ctx, job, app, relID, previousID, digest, release.TriggerDeployError, true, true, err)
 		}
-		j.log.Info("volume snapshot requested", "app", app.Name, "snapshot", snapshot)
+		j.log.Info("volume snapshot requested", "app", app.Name, "volume", storage.Name, "snapshot", snapshot)
 	}
 
 	if app.Hooks != nil && app.Hooks.PreDeploy != nil {

@@ -132,7 +132,7 @@ func TestCreateAndRestoreVolumes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(vols.captured) != 1 || vols.captured[0].RelPath != "volumes/p/production/api" || vols.captured[0].PVC != "api-data" {
+	if len(vols.captured) != 1 || vols.captured[0].RelPath != "volumes/p/production/api/data" || vols.captured[0].PVC != "api-data" {
 		t.Fatalf("captured = %+v", vols.captured)
 	}
 	if len(m.Volumes) != 1 {
@@ -149,6 +149,54 @@ func TestCreateAndRestoreVolumes(t *testing.T) {
 	}
 	if len(rvols.restored) != 1 || rvols.restored[0].PVC != "api-data" {
 		t.Fatalf("restored = %+v", rvols.restored)
+	}
+}
+
+func TestCreateCapturesEveryVolume(t *testing.T) {
+	ctx := context.Background()
+	src := t.TempDir()
+	cfg := setupConfig(t, src, false)
+	write(t, filepath.Join(src, "projects", "p", "apps", "api.yml"), `name: api
+image:
+  repository: r/api
+workload:
+  type: service
+  port: 80
+storage:
+  - name: data
+    enabled: true
+    size: 1Gi
+    mountPath: /data
+  - name: cache
+    enabled: true
+    size: 512Mi
+    mountPath: /cache
+`)
+	db := openDB(t, cfg.Platform.DBPath)
+	defer db.Close()
+
+	vols := &fakeVols{}
+	_, m, err := Create(ctx, CreateOptions{
+		ConfigDir: src, DataDir: src, DBPath: cfg.Platform.DBPath, Out: filepath.Join(t.TempDir(), "v.tar.gz"),
+		DB: db, Config: cfg, Volumes: vols, WithVolumes: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vols.captured) != 2 {
+		t.Fatalf("captured = %+v", vols.captured)
+	}
+	want := []struct{ pvc, rel string }{
+		{"api-data", "volumes/p/production/api/data"},
+		{"api-cache", "volumes/p/production/api/cache"},
+	}
+	for i, w := range want {
+		if vols.captured[i].PVC != w.pvc || vols.captured[i].RelPath != w.rel {
+			t.Fatalf("captured[%d] = %+v, want %s %s", i, vols.captured[i], w.pvc, w.rel)
+		}
+	}
+	if len(m.Volumes) != 2 {
+		t.Fatalf("manifest volumes = %+v", m.Volumes)
 	}
 }
 

@@ -51,7 +51,7 @@ The resolver combines a shared app definition with per-environment overrides:
 | `workload` | Field-wise: non-zero override fields replace app fields |
 | `resources` | Field-wise merge (non-empty override fields win) |
 | `exposure` | Environment must **opt in**; `enabled` comes from the environment. Public exposure always requires environment-level opt-in |
-| `storage` | Environment override replaces the app's storage block |
+| `storage` | Environment override replaces the app's storage list (all volumes) |
 | `health` | Environment override replaces the app's health block |
 | `replicas` | Environment override wins; else the app value; else platform default. Fixed count (`3`) or range (`{min, max, targetCPU}`), realized as an HPA |
 | `env` | Merged; environment keys win |
