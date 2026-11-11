@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-11-11
+
 ### Added
 - Workloads can mount multiple named storages. Each volume becomes its own
   PVC (`<app>-<storage>`), and manifests list them (`storage: [data, cache]`).
